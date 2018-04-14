@@ -526,6 +526,7 @@ ap_uint<32> byteSwap32(ap_uint<32> inputVector);
 ap_uint<8> lenToKeep(ap_uint<4> length);
 ap_uint<4> keepToLen(ap_uint<8> keepValue);		// This function counts the number of 1s in an 8-bit value
 
+
 void toe(	// Data & Memory Interface
 			stream<axiWord>&						ipRxData,
 			stream<mmStatus>&						rxBufferWriteStatus,
@@ -555,19 +556,18 @@ void toe(	// Data & Memory Interface
 			stream<appReadRequest>&					rxDataReq,
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
-			stream<ap_uint<16> >&					txDataReqMeta,
+			stream<appTxMeta>&					   txDataReqMeta,
 			stream<axiWord>&						txDataReq,
-
 			stream<bool>&							listenPortRsp,
 			stream<appNotification>&				notification,
 			stream<ap_uint<16> >&					rxDataRspMeta,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
-			stream<ap_int<17> >&					txDataRsp,
+			stream<appTxRsp>&					txDataRsp,
+
 			//IP Address Input
 			ap_uint<32>								myIpAddress,
 			//statistic
 			ap_uint<16>&							regSessionCount);
-
 
 #endif
