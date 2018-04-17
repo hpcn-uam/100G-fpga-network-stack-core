@@ -90,3 +90,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<mmCmd>&						rxBufferWriteCmd,
 #endif
 				stream<appNotification>&			rxEng2rxApp_notification);
+
+void rxTCP_pseudoheader_insert(
+								stream<axiWord>&			dataIn,
+								stream<axiWord>&			dataOut);
