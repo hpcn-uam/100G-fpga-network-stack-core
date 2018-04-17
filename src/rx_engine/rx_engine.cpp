@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -31,6 +31,764 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 
 using namespace hls;
 
+
+
+/**
+* In this function the main drawback is dealing with the alignment of the pseudo header
+* before the TCP header. To do this is necessary to detect IP header size, after that 
+* a multiplexor is needed to output the aligned word.
+* In the following figure two output word are drawn. The first one is when IP does not have
+* any option. The second one is when IP is plenty of options (ip_headerlen=15). It also boundaries 
+* are shown.
+*
+*	Fig 1.a. Output word without IP options
+*
+*   +--------------------------------------------------------------+
+*   | current   |                                           |pseudo |
+*   | word      |          previous word  (511 , 160)       |header |
+*   | (63,0)    |                                           |       |
+*   +---------------------------------------------------------------+
+*  512         448                                         96       0
+*
+*	Fig 1.b. Output word plenty of options IP header size(60 bytes)
+*
+*   +---------------------------------------------------------------+
+*   |                                             | previous|pseudo |
+*   |          current word (383,0)               |    word |header |
+*   |                                             |(511,480)|       |
+*   +---------------------------------------------------------------+
+*  512                                           128       96       0
+*
+*	Fig 1.c. Generalisation of the output word.
+*
+*   +---------------------------------------------------------------+
+*   |                                   |    previous word  |pseudo |
+*   |          current word (y,0)       |       (511,x)     |header |
+*   |                                   |                   |       |
+*   +---------------------------------------------------------------+
+*  512                                512-y                 96      0
+*
+*   x = prevword_right_boundary
+*	y = currword_left_boundary
+*/
+
+void rxTCP_pseudoheader_insert(
+								stream<axiWord>&			dataIn,
+								stream<axiWord>&			dataOut) 
+{
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS INTERFACE axis off port=dataIn  name=s_axis_tcp_data
+#pragma HLS INTERFACE axis off port=dataOut name=m_axis_tcp_data
+
+	axiWord 		currWord;
+
+	axiWord 		sendWord;
+	
+	static axiWord 			prevWord;
+	static ap_uint<4> 		ip_headerlen;
+	static ap_uint<4> 		ip_headerlen_zerooffset;
+	static ap_uint<16>		ipTotalLen;
+	ap_uint<16>				tcpTotalLen;
+
+	//static ap_uint<9>		prevword_right_boundary;
+	//static ap_uint<9>		currword_left_boundary;
+	//static ap_uint<9>		sendword_boundary;
+	
+	static ap_uint<6>				keep_extra;
+
+	static ap_uint<32>		ip_dst;
+	static ap_uint<32>		ip_src;
+
+	static ap_uint<1>		last = 0; 		
+
+	enum pseudo_header_state {IP_HEADER ,TCP_PSEUDO_HEADER, TCP_PAYLOAD, TCP_PSEUDO_HEADER_SHORT, EXTRA_WORD};
+	static pseudo_header_state fsm_state = IP_HEADER;
+
+	if (!dataIn.empty()){ 		// Check if there is valid data in the input interface
+		dataIn.read(currWord);
+		ip_headerlen 		= currWord.data( 3, 0); 	// Read IP header len
+		ipTotalLen(7, 0) 	= currWord.data(31, 24);    // Read IP total len
+		ipTotalLen(15, 8) 	= currWord.data(23, 16);
+		ip_src 				= currWord.data(127,96);
+		ip_dst 				= currWord.data(159,128);
+
+		keep_extra = 8 + (ip_headerlen-5) * 4;
+		tcpTotalLen = ipTotalLen - (ip_headerlen *4);
+
+		if (currWord.last){// only one transaction pkt size <=64 bytes
+			sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);				// pseudo header
+			sendWord.data(87 ,80) = tcpTotalLen(15,8);
+			sendWord.data(96 ,88) = tcpTotalLen( 7,0);
+			sendWord.keep(11,0) = 0xFFF;
+			switch(ip_headerlen) {
+				case 5:
+					sendWord.data( 447,  96) 	= prevWord.data(511, 160);
+					sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
+					sendWord.data( 511, 448) 	= 0;
+					sendWord.keep(  63,  56)	= 0;
+					break;
+				case 6:
+					sendWord.data( 415,  96) 	= prevWord.data(511, 192);
+					sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
+					sendWord.data( 511, 416) 	= 0;
+					sendWord.keep(  63,  52)	= 0;
+					break;
+				case 7:
+					sendWord.data( 385,  96) 	= prevWord.data(511, 224);
+					sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
+					sendWord.data( 511, 386) 	= 0;
+					sendWord.keep(  63,  48)	= 0;
+					break;
+				case 8:
+					sendWord.data( 351,  96) 	= prevWord.data(511, 256);
+					sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
+					sendWord.data( 511, 352) 	= 0;
+					sendWord.keep(  63,  44)	= 0;
+					break;
+				case 9:
+					sendWord.data( 319,  96) 	= prevWord.data(511, 288);
+					sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
+					sendWord.data( 511, 320) 	= 0;
+					sendWord.keep(  63,  40)	= 0;
+					break;
+				case 10:
+					sendWord.data( 287,  96) 	= prevWord.data(511, 320);
+					sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
+					sendWord.data( 511, 288) 	= 0;
+					sendWord.keep(  63,  36)	= 0;
+					break;
+				case 11:
+					sendWord.data( 255,  96) 	= prevWord.data(511, 352);
+					sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
+					sendWord.data( 511, 255) 	= 0;
+					sendWord.keep(  63,  32)	= 0;
+					break;
+				case 12:
+					sendWord.data( 223,  96) 	= prevWord.data(511, 384);
+					sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
+					sendWord.data( 511, 224) 	= 0;
+					sendWord.keep(  63,  28)	= 0;
+					break;
+				case 13:
+					sendWord.data( 191,  96) 	= prevWord.data(511, 416);
+					sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
+					sendWord.data( 511, 192) 	= 0;
+					sendWord.keep(  63,  24)	= 0;
+					break;
+				case 14:
+					sendWord.data( 159,  96) 	= prevWord.data(511, 448);
+					sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
+					sendWord.data( 511, 160) 	= 0;
+					sendWord.keep(  63,  20)	= 0;
+					break;
+				case 15:
+					sendWord.data( 127,  96) 	= prevWord.data(511, 480);
+					sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
+					sendWord.data( 511, 128) 	= 0;
+					sendWord.keep(  63,  16)	= 0;
+					break;
+				default:
+					//cout << "Error the offset is not valid" << endl;
+					break;
+			}
+			sendWord.last 		  	= 1;
+			dataOut.write(sendWord);
+		}
+		else{	// pkt size > 64
+			prevWord = currWord;	// save first transaction
+			dataIn.read(currWord);
+			sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);				// pseudo header
+			sendWord.data(87 ,80) = tcpTotalLen(15,8);
+			sendWord.data(96 ,88) = tcpTotalLen( 7,0);
+			sendWord.keep(11,0) = 0xFFF;
+
+			switch(ip_headerlen) {
+				case 5:
+					sendWord.data( 447,  96) 	= prevWord.data(511, 160);
+					sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
+					sendWord.data( 511, 448) 	= currWord.data( 63,   0);
+					sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
+					break;
+				case 6:
+					sendWord.data( 415,  96) 	= prevWord.data(511, 192);
+					sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
+					sendWord.data( 511, 416) 	= currWord.data( 95,   0);
+					sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
+					break;
+				case 7:
+					sendWord.data( 385,  96) 	= prevWord.data(511, 224);
+					sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
+					sendWord.data( 511, 386) 	= currWord.data(127,   0);
+					sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
+					break;
+				case 8:
+					sendWord.data( 351,  96) 	= prevWord.data(511, 256);
+					sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
+					sendWord.data( 511, 352) 	= currWord.data(159,   0);
+					sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
+					break;
+				case 9:
+					sendWord.data( 319,  96) 	= prevWord.data(511, 288);
+					sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
+					sendWord.data( 511, 320) 	= currWord.data(191,   0);
+					sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
+					break;
+				case 10:
+					sendWord.data( 287,  96) 	= prevWord.data(511, 320);
+					sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
+					sendWord.data( 511, 288) 	= currWord.data(223,   0);
+					sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
+					break;
+				case 11:
+					sendWord.data( 255,  96) 	= prevWord.data(511, 352);
+					sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
+					sendWord.data( 511, 255) 	= currWord.data(255,   0);
+					sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
+					break;
+				case 12:
+					sendWord.data( 223,  96) 	= prevWord.data(511, 384);
+					sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
+					sendWord.data( 511, 224) 	= currWord.data(287,   0);
+					sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
+					break;
+				case 13:
+					sendWord.data( 191,  96) 	= prevWord.data(511, 416);
+					sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
+					sendWord.data( 511, 192) 	= currWord.data(319,   0);
+					sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
+					break;
+				case 14:
+					sendWord.data( 159,  96) 	= prevWord.data(511, 448);
+					sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
+					sendWord.data( 511, 160) 	= currWord.data(351,   0);
+					sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
+					break;
+				case 15:
+					sendWord.data( 127,  96) 	= prevWord.data(511, 480);
+					sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
+					sendWord.data( 511, 128) 	= currWord.data(383,   0);
+					sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
+					break;
+				default:
+					//cout << "Error the offset is not valid" << endl;
+					break;
+			}
+
+			if (currWord.last){
+				if(currWord.keep.bit(keep_extra)){ // a extra word is needed
+
+					sendWord.last 		  	= 0;
+					dataOut.write(sendWord);
+
+					switch(ip_headerlen) {
+						case 5:
+							sendWord.data( 447,   0) 	= currWord.data(511,  64);
+							sendWord.keep(  55,   0) 	= currWord.keep( 63,   8);
+							sendWord.data( 511, 448) 	= 0;
+							sendWord.keep(  63,  56)	= 0;
+							break;
+						case 6:
+							sendWord.data( 415,   0) 	= currWord.data(511,  96);
+							sendWord.keep(  51,   0) 	= currWord.keep( 63,  12);
+							sendWord.data( 511, 416) 	= 0;
+							sendWord.keep(  63,  52)	= 0;
+							break;
+						case 7:
+							sendWord.data( 385,   0) 	= currWord.data(511, 128);
+							sendWord.keep(  47,   0) 	= currWord.keep( 63,  16);
+							sendWord.data( 511, 386) 	= 0;
+							sendWord.keep(  63,  48)	= 0;
+							break;
+						case 8:
+							sendWord.data( 351,   0) 	= currWord.data(511, 160);
+							sendWord.keep(  43,   0) 	= currWord.keep( 63,  20);
+							sendWord.data( 511, 352) 	= 0;
+							sendWord.keep(  63,  44)	= 0;
+							break;
+						case 9:
+							sendWord.data( 319,   0) 	= currWord.data(511, 192);
+							sendWord.keep(  39,   0) 	= currWord.keep( 63,  24);
+							sendWord.data( 511, 320) 	= 0;
+							sendWord.keep(  63,  40)	= 0;
+							break;
+						case 10:
+							sendWord.data( 287,   0) 	= currWord.data(511, 224);
+							sendWord.keep(  35,   0) 	= currWord.keep( 63,  28);
+							sendWord.data( 511, 288) 	= 0;
+							sendWord.keep(  63,  36)	= 0;
+							break;
+						case 11:
+							sendWord.data( 255,   0) 	= currWord.data(511, 256);
+							sendWord.keep(  31,   0) 	= currWord.keep( 63,  32);
+							sendWord.data( 511, 255) 	= 0;
+							sendWord.keep(  63,  32)	= 0;
+							break;
+						case 12:
+							sendWord.data( 223,   0) 	= currWord.data(511, 320);
+							sendWord.keep(  27,   0) 	= currWord.keep( 63,  36);
+							sendWord.data( 511, 224) 	= 0;
+							sendWord.keep(  63,  28)	= 0;
+							break;
+						case 13:
+							sendWord.data( 191,   0) 	= currWord.data(511, 352);
+							sendWord.keep(  23,   0) 	= currWord.keep( 63,  40);
+							sendWord.data( 511, 192) 	= 0;
+							sendWord.keep(  63,  24)	= 0;					
+							break;
+						case 14:
+							sendWord.data( 159,   0) 	= currWord.data(511, 384);
+							sendWord.keep(  19,   0) 	= currWord.keep( 63,  44);
+							sendWord.data( 511, 160) 	= 0;
+							sendWord.keep(  63,  20)	= 0;						
+							break;
+						case 15:
+							sendWord.data( 127,   0) 	= currWord.data(511, 416);
+							sendWord.keep(  15,   0) 	= currWord.keep( 63,  48);
+							sendWord.data( 511, 128) 	= 0;
+							sendWord.keep(  63,  16)	= 0;						
+							break;
+						default:
+							//cout << "Error the offset is not valid" << endl;
+							break;
+
+						sendWord.last 		  	= 0;
+						dataOut.write(sendWord);
+					}
+
+				}
+				else{
+					sendWord.last 		  	= 1;
+					dataOut.write(sendWord);
+				}
+			}
+			else{
+
+			}
+
+
+		}
+
+
+
+
+		switch (fsm_state){
+			case (IP_HEADER):
+				dataIn.read(currWord);
+				ip_headerlen 		= currWord.data( 3, 0); 	// Read IP header len
+				ipTotalLen(7, 0) 	= currWord.data(31, 24);    // Read IP total len
+				ipTotalLen(15, 8) 	= currWord.data(23, 16);
+				ip_src 				= currWord.data(127,96);
+				ip_dst 				= currWord.data(159,128);
+
+				ip_headerlen_zerooffset = ip_headerlen - 5;
+
+				keep_extra = 8 + ip_headerlen_zerooffset * 4;
+
+				prevWord = currWord;
+
+//				prevword_right_boundary = 160 + ip_headerlen_zerooffset * 32;
+//				currword_left_boundary  =  64 + ip_headerlen_zerooffset * 32;
+//				sendword_boundary 		= 512 -64 - ip_headerlen_zerooffset * 32;
+
+				if (currWord.last)
+					fsm_state = TCP_PSEUDO_HEADER_SHORT;
+				else
+					fsm_state = TCP_PSEUDO_HEADER;
+				break;
+
+			case (TCP_PSEUDO_HEADER_SHORT):
+
+				tcpTotalLen = ipTotalLen - (ip_headerlen *4);
+				sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);
+				sendWord.data(87 ,80) = tcpTotalLen(15,8);
+				sendWord.data(96 ,88) = tcpTotalLen( 7,0);
+				sendWord.keep(11,0) = 0xFFF;
+
+				sendWord.last 		  	= 1;
+
+//				sendWord.data(  sendword_boundary -1 ,96) 	= prevWord.data(511 , prevword_right_boundary);
+//				sendWord.keep(sendword_boundary/8 -1 ,12) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
+//				sendWord.data( 511,  sendword_boundary) 	= 0;
+//				sendWord.keep( 63, sendword_boundary/8) 	= 0;
+
+				switch(ip_headerlen_zerooffset) {
+					case 0:
+						sendWord.data( 447,  96) 	= prevWord.data(511, 160);
+						sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
+						sendWord.data( 511, 448) 	= 0;
+						sendWord.keep(  63,  56)	= 0;
+						break;
+					case 1:
+						sendWord.data( 415,  96) 	= prevWord.data(511, 192);
+						sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
+						sendWord.data( 511, 416) 	= 0;
+						sendWord.keep(  63,  52)	= 0;
+						break;
+					case 2:
+						sendWord.data( 385,  96) 	= prevWord.data(511, 224);
+						sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
+						sendWord.data( 511, 386) 	= 0;
+						sendWord.keep(  63,  48)	= 0;
+						break;
+					case 3:
+						sendWord.data( 351,  96) 	= prevWord.data(511, 256);
+						sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
+						sendWord.data( 511, 352) 	= 0;
+						sendWord.keep(  63,  44)	= 0;
+						break;
+					case 4:
+						sendWord.data( 319,  96) 	= prevWord.data(511, 288);
+						sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
+						sendWord.data( 511, 320) 	= 0;
+						sendWord.keep(  63,  40)	= 0;
+						break;
+					case 5:
+						sendWord.data( 287,  96) 	= prevWord.data(511, 320);
+						sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
+						sendWord.data( 511, 288) 	= 0;
+						sendWord.keep(  63,  36)	= 0;
+						break;
+					case 6:
+						sendWord.data( 255,  96) 	= prevWord.data(511, 352);
+						sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
+						sendWord.data( 511, 255) 	= 0;
+						sendWord.keep(  63,  32)	= 0;
+						break;
+					case 7:
+						sendWord.data( 223,  96) 	= prevWord.data(511, 384);
+						sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
+						sendWord.data( 511, 224) 	= 0;
+						sendWord.keep(  63,  28)	= 0;
+						break;
+					case 8:
+						sendWord.data( 191,  96) 	= prevWord.data(511, 416);
+						sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
+						sendWord.data( 511, 192) 	= 0;
+						sendWord.keep(  63,  24)	= 0;					
+						break;
+					case 9:
+						sendWord.data( 159,  96) 	= prevWord.data(511, 448);
+						sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
+						sendWord.data( 511, 160) 	= 0;
+						sendWord.keep(  63,  20)	= 0;						
+						break;
+					case 10:
+						sendWord.data( 127,  96) 	= prevWord.data(511, 480);
+						sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
+						sendWord.data( 511, 128) 	= 0;
+						sendWord.keep(  63,  16)	= 0;						
+						break;
+					default:
+						//cout << "Error the offset is not valid" << endl;
+						break;
+				}
+
+				dataOut.write(sendWord);
+
+				fsm_state = IP_HEADER;
+
+				break;
+
+			case (TCP_PSEUDO_HEADER):
+				dataIn.read(currWord);
+				
+				tcpTotalLen = ipTotalLen - (ip_headerlen *4);
+				sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);
+				sendWord.data(87 ,80) = tcpTotalLen(15,8);
+				sendWord.data(96 ,88) = tcpTotalLen( 7,0);
+				sendWord.keep(11,0) = 0xFFF;
+				
+//				sendWord.data(  sendword_boundary -1 ,96) 	= prevWord.data(511 , prevword_right_boundary);
+//				sendWord.keep(sendword_boundary/8 -1 ,12) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
+//				sendWord.data( 511,  sendword_boundary) 	= currWord.data(  currword_left_boundary   -1 , 0);
+//				sendWord.keep( 63, sendword_boundary/8) 	= currWord.keep((currword_left_boundary/8) -1 , 0);
+
+				switch(ip_headerlen_zerooffset) {
+					case 0:
+						sendWord.data( 447,  96) 	= prevWord.data(511, 160);
+						sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
+						sendWord.data( 511, 448) 	= currWord.data( 63,   0);
+						sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
+						break;
+					case 1:
+						sendWord.data( 415,  96) 	= prevWord.data(511, 192);
+						sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
+						sendWord.data( 511, 416) 	= currWord.data( 95,   0);
+						sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
+						break;
+					case 2:
+						sendWord.data( 385,  96) 	= prevWord.data(511, 224);
+						sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
+						sendWord.data( 511, 386) 	= currWord.data(127,   0);
+						sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
+						break;
+					case 3:
+						sendWord.data( 351,  96) 	= prevWord.data(511, 256);
+						sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
+						sendWord.data( 511, 352) 	= currWord.data(159,   0);
+						sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
+						break;
+					case 4:
+						sendWord.data( 319,  96) 	= prevWord.data(511, 288);
+						sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
+						sendWord.data( 511, 320) 	= currWord.data(191,   0);
+						sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
+						break;
+					case 5:
+						sendWord.data( 287,  96) 	= prevWord.data(511, 320);
+						sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
+						sendWord.data( 511, 288) 	= currWord.data(223,   0);
+						sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
+						break;
+					case 6:
+						sendWord.data( 255,  96) 	= prevWord.data(511, 352);
+						sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
+						sendWord.data( 511, 255) 	= currWord.data(255,   0);
+						sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
+						break;
+					case 7:
+						sendWord.data( 223,  96) 	= prevWord.data(511, 384);
+						sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
+						sendWord.data( 511, 224) 	= currWord.data(287,   0);
+						sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
+						break;
+					case 8:
+						sendWord.data( 191,  96) 	= prevWord.data(511, 416);
+						sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
+						sendWord.data( 511, 192) 	= currWord.data(319,   0);
+						sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
+						break;
+					case 9:
+						sendWord.data( 159,  96) 	= prevWord.data(511, 448);
+						sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
+						sendWord.data( 511, 160) 	= currWord.data(351,   0);
+						sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
+						break;
+					case 10:
+						sendWord.data( 127,  96) 	= prevWord.data(511, 480);
+						sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
+						sendWord.data( 511, 128) 	= currWord.data(383,   0);
+						sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
+						break;
+					default:
+						//cout << "Error the offset is not valid" << endl;
+						break;
+				}
+
+
+				if (currWord.last){
+					if (currWord.keep.bit(keep_extra)) {
+						sendWord.last = 0;
+						fsm_state = EXTRA_WORD;
+					}
+					else {
+						sendWord.last=1;
+						fsm_state = IP_HEADER;
+					}
+				}
+				else{
+					sendWord.last = 0;
+					fsm_state = TCP_PAYLOAD;
+				}
+
+				prevWord = currWord;
+				dataOut.write(sendWord);
+				break;
+			
+			case (TCP_PAYLOAD) :
+				dataIn.read(currWord);
+
+//				sendWord.data(  sendword_boundary -1 ,0) 	= prevWord.data(511 , prevword_right_boundary);
+//				sendWord.keep(sendword_boundary/8 -1 ,0) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
+//				sendWord.data( 511,  sendword_boundary) 	= currWord.data(  currword_left_boundary   -1 , 0);
+//				sendWord.keep( 63, sendword_boundary/8) 	= currWord.keep((currword_left_boundary/8) -1 , 0);
+
+
+				switch(ip_headerlen_zerooffset) {
+					case 0:
+						sendWord.data( 447,   0) 	= prevWord.data(511,  64);
+						sendWord.keep(  55,   0) 	= prevWord.keep( 63,   8);
+						sendWord.data( 511, 448) 	= currWord.data( 63,   0);
+						sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
+						break;
+					case 1:
+						sendWord.data( 415,   0) 	= prevWord.data(511,  96);
+						sendWord.keep(  51,   0) 	= prevWord.keep( 63,  12);
+						sendWord.data( 511, 416) 	= currWord.data( 95,   0);
+						sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
+						break;
+					case 2:
+						sendWord.data( 385,   0) 	= prevWord.data(511, 128);
+						sendWord.keep(  47,   0) 	= prevWord.keep( 63,  16);
+						sendWord.data( 511, 386) 	= currWord.data(127,   0);
+						sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
+						break;
+					case 3:
+						sendWord.data( 351,   0) 	= prevWord.data(511, 160);
+						sendWord.keep(  43,   0) 	= prevWord.keep( 63,  20);
+						sendWord.data( 511, 352) 	= currWord.data(159,   0);
+						sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
+						break;
+					case 4:
+						sendWord.data( 319,   0) 	= prevWord.data(511, 192);
+						sendWord.keep(  39,   0) 	= prevWord.keep( 63,  24);
+						sendWord.data( 511, 320) 	= currWord.data(191,   0);
+						sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
+						break;
+					case 5:
+						sendWord.data( 287,   0) 	= prevWord.data(511, 224);
+						sendWord.keep(  35,   0) 	= prevWord.keep( 63,  28);
+						sendWord.data( 511, 288) 	= currWord.data(223,   0);
+						sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
+						break;
+					case 6:
+						sendWord.data( 255,   0) 	= prevWord.data(511, 256);
+						sendWord.keep(  31,   0) 	= prevWord.keep( 63,  32);
+						sendWord.data( 511, 255) 	= currWord.data(255,   0);
+						sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
+						break;
+					case 7:
+						sendWord.data( 223,   0) 	= prevWord.data(511, 320);
+						sendWord.keep(  27,   0) 	= prevWord.keep( 63,  36);
+						sendWord.data( 511, 224) 	= currWord.data(287,   0);
+						sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
+						break;
+					case 8:
+						sendWord.data( 191,   0) 	= prevWord.data(511, 352);
+						sendWord.keep(  23,   0) 	= prevWord.keep( 63,  40);
+						sendWord.data( 511, 192) 	= currWord.data(319,   0);
+						sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
+						break;
+					case 9:
+						sendWord.data( 159,   0) 	= prevWord.data(511, 384);
+						sendWord.keep(  19,   0) 	= prevWord.keep( 63,  44);
+						sendWord.data( 511, 160) 	= currWord.data(351,   0);
+						sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
+						break;
+					case 10:
+						sendWord.data( 127,   0) 	= prevWord.data(511, 416);
+						sendWord.keep(  15,   0) 	= prevWord.keep( 63,  48);
+						sendWord.data( 511, 128) 	= currWord.data(383,   0);
+						sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
+						break;
+					default:
+						//cout << "Error the offset is not valid" << endl;
+						break;
+				}
+
+				if (currWord.last){
+					if (currWord.keep.bit(keep_extra)) {
+						sendWord.last = 0;
+						fsm_state = EXTRA_WORD;
+					}
+					else {
+						sendWord.last=1;
+						fsm_state = IP_HEADER;
+					}
+				}
+				else {
+					sendWord.last = 0;
+				}
+				prevWord = currWord;
+				dataOut.write(sendWord);
+			 	break;
+
+			case (EXTRA_WORD):
+
+//				sendWord.data(  sendword_boundary -1 ,0) 	= prevWord.data(511 , prevword_right_boundary);
+//				sendWord.keep(sendword_boundary/8 -1 ,0) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
+//				sendWord.data( 511,  sendword_boundary) 	= 0;
+//				sendWord.keep( 63, sendword_boundary/8) 	= 0;
+				
+				switch(ip_headerlen_zerooffset) {
+					case 0:
+						sendWord.data( 447,   0) 	= prevWord.data(511,  64);
+						sendWord.keep(  55,   0) 	= prevWord.keep( 63,   8);
+						sendWord.data( 511, 448) 	= 0;
+						sendWord.keep(  63,  56)	= 0;
+						break;
+					case 1:
+						sendWord.data( 415,   0) 	= prevWord.data(511,  96);
+						sendWord.keep(  51,   0) 	= prevWord.keep( 63,  12);
+						sendWord.data( 511, 416) 	= 0;
+						sendWord.keep(  63,  52)	= 0;
+						break;
+					case 2:
+						sendWord.data( 385,   0) 	= prevWord.data(511, 128);
+						sendWord.keep(  47,   0) 	= prevWord.keep( 63,  16);
+						sendWord.data( 511, 386) 	= 0;
+						sendWord.keep(  63,  48)	= 0;
+						break;
+					case 3:
+						sendWord.data( 351,   0) 	= prevWord.data(511, 160);
+						sendWord.keep(  43,   0) 	= prevWord.keep( 63,  20);
+						sendWord.data( 511, 352) 	= 0;
+						sendWord.keep(  63,  44)	= 0;
+						break;
+					case 4:
+						sendWord.data( 319,   0) 	= prevWord.data(511, 192);
+						sendWord.keep(  39,   0) 	= prevWord.keep( 63,  24);
+						sendWord.data( 511, 320) 	= 0;
+						sendWord.keep(  63,  40)	= 0;
+						break;
+					case 5:
+						sendWord.data( 287,   0) 	= prevWord.data(511, 224);
+						sendWord.keep(  35,   0) 	= prevWord.keep( 63,  28);
+						sendWord.data( 511, 288) 	= 0;
+						sendWord.keep(  63,  36)	= 0;
+						break;
+					case 6:
+						sendWord.data( 255,   0) 	= prevWord.data(511, 256);
+						sendWord.keep(  31,   0) 	= prevWord.keep( 63,  32);
+						sendWord.data( 511, 255) 	= 0;
+						sendWord.keep(  63,  32)	= 0;
+						break;
+					case 7:
+						sendWord.data( 223,   0) 	= prevWord.data(511, 320);
+						sendWord.keep(  27,   0) 	= prevWord.keep( 63,  36);
+						sendWord.data( 511, 224) 	= 0;
+						sendWord.keep(  63,  28)	= 0;
+						break;
+					case 8:
+						sendWord.data( 191,   0) 	= prevWord.data(511, 352);
+						sendWord.keep(  23,   0) 	= prevWord.keep( 63,  40);
+						sendWord.data( 511, 192) 	= 0;
+						sendWord.keep(  63,  24)	= 0;					
+						break;
+					case 9:
+						sendWord.data( 159,   0) 	= prevWord.data(511, 384);
+						sendWord.keep(  19,   0) 	= prevWord.keep( 63,  44);
+						sendWord.data( 511, 160) 	= 0;
+						sendWord.keep(  63,  20)	= 0;						
+						break;
+					case 10:
+						sendWord.data( 127,   0) 	= prevWord.data(511, 416);
+						sendWord.keep(  15,   0) 	= prevWord.keep( 63,  48);
+						sendWord.data( 511, 128) 	= 0;
+						sendWord.keep(  63,  16)	= 0;						
+						break;
+					default:
+						//cout << "Error the offset is not valid" << endl;
+						break;
+				}
+
+				sendWord.last=1;
+				dataOut.write(sendWord);
+				fsm_state = IP_HEADER;
+				break;
+
+			default:
+				fsm_state = IP_HEADER;
+				break;
+		}
+	}
+
+
+}
+
 /** @ingroup rx_engine
  * Extracts tcpLength from IP header, removes the header and prepends the IP addresses to the payload,
  * such that the output can be used for the TCP pseudo header creation
@@ -40,134 +798,135 @@ using namespace hls;
  * @param[out]		tcpLenFifoOut, the TCP length is stored into this FIFO
  * @TODO maybe compute TCP length in another way!!
  */
-void rxTcpLengthExtract(stream<axiWord>&			dataIn,
-						stream<axiWord>&			dataOut,
-						stream<ap_uint<16> >&		tcpLenFifoOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
 
-	static ap_uint<8> tle_ipHeaderLen = 0;
-	static ap_uint<16> tle_ipTotalLen = 0;
-	static ap_uint<4> tle_wordCount = 0;
-	static bool tle_insertWord = false;
-	static bool tle_wasLast = false;
-	static bool tle_shift = true;
-	static axiWord tle_prevWord;
-
-	axiWord currWord;
-	axiWord sendWord;
-
-	if (tle_insertWord)
-	{
-		sendWord.data = 0;
-		sendWord.keep = 0xFF;
-		sendWord.last = 0;
-		dataOut.write(sendWord);
-		//printWord(sendWord);
-		tle_insertWord = false;
-	}
-	else if (!dataIn.empty() && !tle_wasLast)
-	{
-		dataIn.read(currWord);
-		switch (tle_wordCount)
-		{
-		case 0:
-			tle_ipHeaderLen = currWord.data(3, 0);
-			tle_ipTotalLen(7, 0) = currWord.data(31, 24);
-			tle_ipTotalLen(15, 8) = currWord.data(23, 16);
-			tle_ipTotalLen -= (tle_ipHeaderLen * 4);
-			tle_ipHeaderLen -= 2; //?
-			tle_wordCount++;
-			break;
-		case 1:
-			// Get source IP address
-			// -> is put into prevWord
-			// Write length
-			tcpLenFifoOut.write(tle_ipTotalLen);
-			tle_ipHeaderLen -= 2;
-			tle_wordCount++;
-			break;
-		case 2:
-			// Get destination IP address
-			sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-			sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-			sendWord.data(63, 32) = currWord.data(31, 0);
-			sendWord.keep(7, 4) = currWord.keep(3, 0);
-			//sendWord.last = currWord.last;
-			sendWord.last = (currWord.keep[4] == 0);
-			dataOut.write(sendWord);
-			//printWord(sendWord);
-			tle_ipHeaderLen -= 1;
-			tle_insertWord = true;
-			tle_wordCount++;
-			break;
-		case 3:
-			switch (tle_ipHeaderLen)
-			{
-			case 0: //half of prevWord contains valuable data and currWord is full of valuable
-				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-				sendWord.data(63, 32) = currWord.data(31, 0);
-				sendWord.keep(7, 4) = currWord.keep(3, 0);
-				//sendWord.last = currWord.last;
-				sendWord.last = (currWord.keep[4] == 0);
-				dataOut.write(sendWord);
-				//printWord(sendWord);
-				tle_shift = true;
-				tle_ipHeaderLen = 0;
-				tle_wordCount++;
-				break;
-			case 1: //prevWord contains shitty data, but currWord is valuable
-				sendWord = currWord;
-				dataOut.write(sendWord);
-				//printWord(sendWord);
-				tle_shift = false;
-				tle_ipHeaderLen = 0;
-				tle_wordCount++;
-				break;
-			default: //prevWord contains shitty data, currWord at least half shitty
-				//Drop this shit
-				tle_ipHeaderLen -= 2;
-				break;
-			}
-			break;
-		default:
-			if (tle_shift)
-			{
-				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-				sendWord.data(63, 32) = currWord.data(31, 0);
-				sendWord.keep(7, 4) = currWord.keep(3, 0);
-				sendWord.last = (currWord.keep[4] == 0);
-				dataOut.write(sendWord);
-			}
-			else
-			{
-				sendWord = currWord;
-				dataOut.write(sendWord);
-			}
-			break;
-		} //switch on WORD_N
-		tle_prevWord = currWord;
-		if (currWord.last)
-		{
-			tle_wordCount = 0;
-			tle_wasLast = !sendWord.last;
-		}
-	} // if !empty
-	else if (tle_wasLast) //Assumption has to be shift
-	{
-		// Send remainng data
-		sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-		sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-		sendWord.data(63, 32) = 0;
-		sendWord.keep(7, 4) = 0x0;
-		sendWord.last = 0x1;
-		dataOut.write(sendWord);
-		tle_wasLast = false;
-	}
-}
+//void rxTcpLengthExtract(stream<axiWord>&			dataIn,
+//						stream<axiWord>&			dataOut,
+//						stream<ap_uint<16> >&		tcpLenFifoOut)
+//{
+//#pragma HLS INLINE off
+//#pragma HLS pipeline II=1
+//
+//	static ap_uint<8> tle_ipHeaderLen = 0;
+//	static ap_uint<16> tle_ipTotalLen = 0;
+//	static ap_uint<4> tle_wordCount = 0;
+//	static bool tle_insertWord = false;
+//	static bool tle_wasLast = false;
+//	static bool tle_shift = true;
+//	static axiWord tle_prevWord;
+//
+//	axiWord currWord;
+//	axiWord sendWord;
+//
+//	if (tle_insertWord)
+//	{
+//		sendWord.data = 0;
+//		sendWord.keep = 0xFF;
+//		sendWord.last = 0;
+//		dataOut.write(sendWord);
+//		//printWord(sendWord);
+//		tle_insertWord = false;
+//	}
+//	else if (!dataIn.empty() && !tle_wasLast)
+//	{
+//		dataIn.read(currWord);
+//		switch (tle_wordCount)
+//		{
+//		case 0:
+//			tle_ipHeaderLen = currWord.data(3, 0);
+//			tle_ipTotalLen(7, 0) = currWord.data(31, 24);
+//			tle_ipTotalLen(15, 8) = currWord.data(23, 16);
+//			tle_ipTotalLen -= (tle_ipHeaderLen * 4);
+//			tle_ipHeaderLen -= 2; //?
+//			tle_wordCount++;
+//			break;
+//		case 1:
+//			// Get source IP address
+//			// -> is put into prevWord
+//			// Write length
+//			tcpLenFifoOut.write(tle_ipTotalLen);
+//			tle_ipHeaderLen -= 2;
+//			tle_wordCount++;
+//			break;
+//		case 2:
+//			// Get destination IP address
+//			sendWord.data(31, 0) = tle_prevWord.data(63, 32);
+//			sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
+//			sendWord.data(63, 32) = currWord.data(31, 0);
+//			sendWord.keep(7, 4) = currWord.keep(3, 0);
+//			//sendWord.last = currWord.last;
+//			sendWord.last = (currWord.keep[4] == 0);
+//			dataOut.write(sendWord);
+//			//printWord(sendWord);
+//			tle_ipHeaderLen -= 1;
+//			tle_insertWord = true;
+//			tle_wordCount++;
+//			break;
+//		case 3:
+//			switch (tle_ipHeaderLen)
+//			{
+//			case 0: //half of prevWord contains valuable data and currWord is full of valuable
+//				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
+//				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
+//				sendWord.data(63, 32) = currWord.data(31, 0);
+//				sendWord.keep(7, 4) = currWord.keep(3, 0);
+//				//sendWord.last = currWord.last;
+//				sendWord.last = (currWord.keep[4] == 0);
+//				dataOut.write(sendWord);
+//				//printWord(sendWord);
+//				tle_shift = true;
+//				tle_ipHeaderLen = 0;
+//				tle_wordCount++;
+//				break;
+//			case 1: //prevWord contains shitty data, but currWord is valuable
+//				sendWord = currWord;
+//				dataOut.write(sendWord);
+//				//printWord(sendWord);
+//				tle_shift = false;
+//				tle_ipHeaderLen = 0;
+//				tle_wordCount++;
+//				break;
+//			default: //prevWord contains shitty data, currWord at least half shitty
+//				//Drop this shit
+//				tle_ipHeaderLen -= 2;
+//				break;
+//			}
+//			break;
+//		default:
+//			if (tle_shift)
+//			{
+//				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
+//				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
+//				sendWord.data(63, 32) = currWord.data(31, 0);
+//				sendWord.keep(7, 4) = currWord.keep(3, 0);
+//				sendWord.last = (currWord.keep[4] == 0);
+//				dataOut.write(sendWord);
+//			}
+//			else
+//			{
+//				sendWord = currWord;
+//				dataOut.write(sendWord);
+//			}
+//			break;
+//		} //switch on WORD_N
+//		tle_prevWord = currWord;
+//		if (currWord.last)
+//		{
+//			tle_wordCount = 0;
+//			tle_wasLast = !sendWord.last;
+//		}
+//	} // if !empty
+//	else if (tle_wasLast) //Assumption has to be shift
+//	{
+//		// Send remainng data
+//		sendWord.data(31, 0) = tle_prevWord.data(63, 32);
+//		sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
+//		sendWord.data(63, 32) = 0;
+//		sendWord.keep(7, 4) = 0x0;
+//		sendWord.last = 0x1;
+//		dataOut.write(sendWord);
+//		tle_wasLast = false;
+//	}
+//}
 
 /** @ingroup rx_engine
  * Constructs the TCP pseudo header and prepends it to the TCP payload
@@ -175,78 +934,78 @@ void rxTcpLengthExtract(stream<axiWord>&			dataIn,
  * @param[in]	tcpLenFifoIn, FIFO containing the TCP length of the current packet
  * @param[out]	dataOut, outgoing Axi-Stream
  */
-void rxInsertPseudoHeader(stream<axiWord>&				dataIn,
-							stream<ap_uint<16> >&		tcpLenFifoIn,
-							stream<axiWord>&			dataOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-
-	static bool iph_wasLast = false;
-	static ap_uint<2> iph_wordCount = 0;
-	axiWord currWord, sendWord;
-	static axiWord iph_prevWord;
-	ap_uint<1> valid;
-	ap_uint<16> tcpLen;
-
-
-	currWord.last = 0;
-	if (iph_wasLast)
-	{
-		sendWord.data(31,0) = iph_prevWord.data(63,32);
-		sendWord.keep(3, 0) = iph_prevWord.keep(7,4);
-		sendWord.keep(7, 4) = 0x0;
-		sendWord.last = 0x1;
-		dataOut.write(sendWord);
-		iph_wasLast = false;
-	}
-	else if(!dataIn.empty())
-	{
-		switch (iph_wordCount)
-		{
-		case 0:
-			dataIn.read(currWord);
-			iph_wordCount++;
-			break;
-		case 1:
-			dataIn.read(currWord);
-			sendWord = iph_prevWord;
-			dataOut.write(sendWord);
-			iph_wordCount++;
-			break;
-		case 2:
-			if (!tcpLenFifoIn.empty())
-			{
-				dataIn.read(currWord);
-				tcpLenFifoIn.read(tcpLen);
-				sendWord.data(15, 0) = 0x0600;
-				sendWord.data(23, 16) = tcpLen(15, 8);
-				sendWord.data(31, 24) = tcpLen(7, 0);
-				sendWord.data(63, 32) = currWord.data(31, 0);
-				sendWord.keep = 0xFF;
-				sendWord.last = 0;
-				dataOut.write(sendWord);
-				iph_wordCount++;
-			}
-			break;
-		default:
-			dataIn.read(currWord);
-			sendWord.data.range(31, 0) = iph_prevWord.data.range(63, 32);
-			sendWord.data.range(63, 32) = currWord.data.range(31, 0);
-			sendWord.keep.range(3, 0) = iph_prevWord.keep.range(7, 4);
-			sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
-			sendWord.last = (currWord.keep[4] == 0); //some "nice" stuff here
-			dataOut.write(sendWord);
-			break;
-		}
-		iph_prevWord = currWord;
-		if (currWord.last == 1)
-		{
-			iph_wordCount = 0;
-			iph_wasLast = !sendWord.last;
-		}
-	}
-}
+//void rxInsertPseudoHeader(stream<axiWord>&				dataIn,
+//							stream<ap_uint<16> >&		tcpLenFifoIn,
+//							stream<axiWord>&			dataOut)
+//{
+//#pragma HLS INLINE off
+//#pragma HLS pipeline II=1
+//
+//	static bool iph_wasLast = false;
+//	static ap_uint<2> iph_wordCount = 0;
+//	axiWord currWord, sendWord;
+//	static axiWord iph_prevWord;
+//	ap_uint<1> valid;
+//	ap_uint<16> tcpLen;
+//
+//
+//	currWord.last = 0;
+//	if (iph_wasLast)
+//	{
+//		sendWord.data(31,0) = iph_prevWord.data(63,32);
+//		sendWord.keep(3, 0) = iph_prevWord.keep(7,4);
+//		sendWord.keep(7, 4) = 0x0;
+//		sendWord.last = 0x1;
+//		dataOut.write(sendWord);
+//		iph_wasLast = false;
+//	}
+//	else if(!dataIn.empty())
+//	{
+//		switch (iph_wordCount)
+//		{
+//		case 0:
+//			dataIn.read(currWord);
+//			iph_wordCount++;
+//			break;
+//		case 1:
+//			dataIn.read(currWord);
+//			sendWord = iph_prevWord;
+//			dataOut.write(sendWord);
+//			iph_wordCount++;
+//			break;
+//		case 2:
+//			if (!tcpLenFifoIn.empty())
+//			{
+//				dataIn.read(currWord);
+//				tcpLenFifoIn.read(tcpLen);
+//				sendWord.data(15, 0) = 0x0600;
+//				sendWord.data(23, 16) = tcpLen(15, 8);
+//				sendWord.data(31, 24) = tcpLen(7, 0);
+//				sendWord.data(63, 32) = currWord.data(31, 0);
+//				sendWord.keep = 0xFF;
+//				sendWord.last = 0;
+//				dataOut.write(sendWord);
+//				iph_wordCount++;
+//			}
+//			break;
+//		default:
+//			dataIn.read(currWord);
+//			sendWord.data.range(31, 0) = iph_prevWord.data.range(63, 32);
+//			sendWord.data.range(63, 32) = currWord.data.range(31, 0);
+//			sendWord.keep.range(3, 0) = iph_prevWord.keep.range(7, 4);
+//			sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
+//			sendWord.last = (currWord.keep[4] == 0); //some "nice" stuff here
+//			dataOut.write(sendWord);
+//			break;
+//		}
+//		iph_prevWord = currWord;
+//		if (currWord.last == 1)
+//		{
+//			iph_wordCount = 0;
+//			iph_wasLast = !sendWord.last;
+//		}
+//	}
+//}
 
 /** @ingroup rx_engine
  *  Checks the TCP checksum writes valid into @p validBuffer
@@ -262,226 +1021,226 @@ void rxInsertPseudoHeader(stream<axiWord>&				dataIn,
  *  @param[out]		tupleFifoOut
  *  @param[out]		portTableOut
  */
-void rxCheckTCPchecksum(stream<axiWord>&					dataIn,
-							stream<axiWord>&				dataOut,
-							stream<bool>&					validFifoOut,
-							stream<rxEngineMetaData>&		metaDataFifoOut,
-							stream<fourTuple>&				tupleFifoOut,
-							stream<ap_uint<16> >&			portTableOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-
-	static ap_uint<17> csa_tcp_sums[4] = {0, 0, 0, 0};
-	static ap_uint<8> csa_dataOffset = 0xFF;
-	static ap_uint<16> csa_wordCount = 0;
-	static fourTuple csa_sessionTuple;
-	static bool csa_shift = false;
-	static bool csa_wasLast = false;
-	static bool csa_checkChecksum = false;
-	static ap_uint<36> halfWord; 
-	axiWord currWord, sendWord;
-	static rxEngineMetaData csa_meta;
-	static ap_uint<16> csa_port;
-
-	static ap_uint<3> csa_cc_state = 0;
-
-	//currWord.last = 0; //mighnt no be necessary any more FIXME to you want to risk it ;)
-	if (!dataIn.empty() && !csa_checkChecksum)
-	{
-		dataIn.read(currWord);
-		switch (csa_wordCount)
-		{
-		case 0:
-			csa_dataOffset = 0xFF;
-			csa_shift = false;
-				// We don't switch bytes, internally we store it Most Significant Byte Last
-				csa_sessionTuple.srcIp = currWord.data(31, 0);
-				csa_sessionTuple.dstIp = currWord.data(63, 32);
-				sendWord.last = currWord.last;
-
-			break;
-		case 1:
-			// Get length
-			csa_meta.length(7, 0) = currWord.data(31, 24);
-			csa_meta.length(15, 8) = currWord.data(23, 16);
-			// We don't switch bytes, internally we store it Most Significant Byte Last
-			csa_sessionTuple.srcPort = currWord.data(47, 32);
-			csa_sessionTuple.dstPort = currWord.data(63, 48);
-			csa_port = currWord.data(63, 48);
-			sendWord.last = currWord.last;
-			break;
-		case 2:
-			// GET SEQ and ACK number
-			csa_meta.seqNumb(7, 0) = currWord.data(31, 24);
-			csa_meta.seqNumb(15, 8) = currWord.data(23, 16);
-			csa_meta.seqNumb(23, 16) = currWord.data(15, 8);
-			csa_meta.seqNumb(31, 24) = currWord.data(7, 0);
-			csa_meta.ackNumb(7, 0) = currWord.data(63, 56);
-			csa_meta.ackNumb(15, 8) = currWord.data(55, 48);
-			csa_meta.ackNumb(23, 16) = currWord.data(47, 40);
-			csa_meta.ackNumb(31, 24) = currWord.data(39, 32);
-			sendWord.last = currWord.last;
-			break;
-		case 3:
-			csa_dataOffset = currWord.data.range(7, 4);
-			csa_meta.length -= (csa_dataOffset * 4);
-			//csa_dataOffset -= 5; //FIXME, do -5
-			/* Control bits:
-			 * [8] == FIN
-			 * [9] == SYN
-			 * [10] == RST
-			 * [11] == PSH
-			 * [12] == ACK
-			 * [13] == URG
-			 */
-			csa_meta.ack = currWord.data[12];
-			csa_meta.rst = currWord.data[10];
-			csa_meta.syn = currWord.data[9];
-			csa_meta.fin = currWord.data[8];
-			csa_meta.winSize(7, 0) = currWord.data(31, 24);
-			csa_meta.winSize(15, 8) = currWord.data(23, 16);
-			// We add checksum as well and check for cs == 0
-			sendWord.last = currWord.last;
-			break;
-		default:
-			if (csa_dataOffset > 6)
-			{
-				csa_dataOffset -= 2;
-			}
-			else if (csa_dataOffset == 6)
-			{
-				csa_dataOffset = 5;
-				csa_shift = true;
-				halfWord.range(31, 0) = currWord.data.range(63, 32);
-				halfWord.range(35, 32) = currWord.keep.range(7, 4);
-				sendWord.last = (currWord.keep[4] == 0);
-			}
-			else // == 5 (or less)
-			{
-				if (!csa_shift)
-				{
-					sendWord = currWord;
-					dataOut.write(sendWord);
-				}
-				else
-				{
-					sendWord.data.range(31, 0) = halfWord.range(31, 0);
-					sendWord.data.range(63, 32) = currWord.data.range(31, 0);
-					sendWord.keep.range(3, 0) = halfWord.range(35, 32);
-					sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
-					sendWord.last = (currWord.keep[4] == 0);
-					/*if (currWord.last && currWord.strb.range(7, 4) != 0)
-					{
-						sendWord.last = 0;
-					}*/
-					dataOut.write(sendWord);
-					halfWord.range(31, 0) = currWord.data.range(63, 32);
-					halfWord.range(35, 32) = currWord.keep.range(7, 4);
-				}
-			}
-			break;
-		} // switch
-		for (int i = 0; i < 4; i++)
-		{
-#pragma HLS UNROLL
-			ap_uint<16> temp;
-			if (currWord.keep.range(i*2+1, i*2) == 0x3)
-			{
-				temp(7, 0) = currWord.data.range(i*16+15, i*16+8);
-				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-				csa_tcp_sums[i] += temp;
-				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
-			}
-			else if (currWord.keep[i*2] == 0x1)
-			{
-				temp(7, 0) = 0;
-				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-				csa_tcp_sums[i] += temp;
-				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
-			}
-		}
-		csa_wordCount++;
-		if(currWord.last == 1)
-		{
-			csa_wordCount = 0;
-			csa_wasLast = !sendWord.last; // moved length test down
-			csa_checkChecksum = true;
-		}
-	}
-	/*if (currWord.last == 1)
-	{
-		csa_wordCount = 0;
-		csa_checkChecksum = true;
-	}*/
-	else if(csa_wasLast) //make if
-	{
-		if (csa_meta.length != 0)
-		{
-			sendWord.data.range(31, 0) = halfWord.range(31, 0);
-			sendWord.data.range(63, 32) = 0;
-			sendWord.keep.range(3, 0) = halfWord.range(35, 32);
-			sendWord.keep.range(7, 4) = 0;
-			sendWord.last = 1;
-			dataOut.write(sendWord);
-		}
-		csa_wasLast = false;
-	}
-	else if (csa_checkChecksum) //make if?
-	{
-		switch (csa_cc_state)
-		{
-		case 0:
-			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
-			csa_tcp_sums[2] = (csa_tcp_sums[2] + (csa_tcp_sums[2] >> 16)) & 0xFFFF;
-			csa_tcp_sums[3] = (csa_tcp_sums[3] + (csa_tcp_sums[3] >> 16)) & 0xFFFF;
-			csa_cc_state++;
-			break;
-		case 1:
-			csa_tcp_sums[0] += csa_tcp_sums[2];
-			csa_tcp_sums[1] += csa_tcp_sums[3];
-			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
-			csa_cc_state++;
-			break;
-		case 2:
-			csa_tcp_sums[0] += csa_tcp_sums[1];
-			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-			csa_cc_state++;
-			break;
-		case 3:
-			csa_tcp_sums[0] = ~csa_tcp_sums[0];
-			csa_cc_state++;
-			break;
-		case 4:
-			// If summation == 0 then checksum is correct
-			if (csa_tcp_sums[0](15, 0) == 0)
-			{
-				// Since pkg is valid, write out metadata, 4-tuple and check port
-				metaDataFifoOut.write(csa_meta);
-				portTableOut.write(csa_port);
-				tupleFifoOut.write(csa_sessionTuple);
-				if (csa_meta.length != 0)
-				{
-					validFifoOut.write(true);
-				}
-			}
-			else if(csa_meta.length != 0)
-			{
-				validFifoOut.write(false);
-			}
-			csa_checkChecksum = false;
-			csa_tcp_sums[0] = 0;
-			csa_tcp_sums[1] = 0;
-			csa_tcp_sums[2] = 0;
-			csa_tcp_sums[3] = 0;
-			csa_cc_state = 0;
-			break;
-		}
-
-	}
-}
+//void rxCheckTCPchecksum(stream<axiWord>&					dataIn,
+//							stream<axiWord>&				dataOut,
+//							stream<bool>&					validFifoOut,
+//							stream<rxEngineMetaData>&		metaDataFifoOut,
+//							stream<fourTuple>&				tupleFifoOut,
+//							stream<ap_uint<16> >&			portTableOut)
+//{
+//#pragma HLS INLINE off
+//#pragma HLS pipeline II=1
+//
+//	static ap_uint<17> csa_tcp_sums[4] = {0, 0, 0, 0};
+//	static ap_uint<8> csa_dataOffset = 0xFF;
+//	static ap_uint<16> csa_wordCount = 0;
+//	static fourTuple csa_sessionTuple;
+//	static bool csa_shift = false;
+//	static bool csa_wasLast = false;
+//	static bool csa_checkChecksum = false;
+//	static ap_uint<36> halfWord;
+//	axiWord currWord, sendWord;
+//	static rxEngineMetaData csa_meta;
+//	static ap_uint<16> csa_port;
+//
+//	static ap_uint<3> csa_cc_state = 0;
+//
+//	//currWord.last = 0; //mighnt no be necessary any more FIXME to you want to risk it ;)
+//	if (!dataIn.empty() && !csa_checkChecksum)
+//	{
+//		dataIn.read(currWord);
+//		switch (csa_wordCount)
+//		{
+//		case 0:
+//			csa_dataOffset = 0xFF;
+//			csa_shift = false;
+//				// We don't switch bytes, internally we store it Most Significant Byte Last
+//				csa_sessionTuple.srcIp = currWord.data(31, 0);
+//				csa_sessionTuple.dstIp = currWord.data(63, 32);
+//				sendWord.last = currWord.last;
+//
+//			break;
+//		case 1:
+//			// Get length
+//			csa_meta.length(7, 0) = currWord.data(31, 24);
+//			csa_meta.length(15, 8) = currWord.data(23, 16);
+//			// We don't switch bytes, internally we store it Most Significant Byte Last
+//			csa_sessionTuple.srcPort = currWord.data(47, 32);
+//			csa_sessionTuple.dstPort = currWord.data(63, 48);
+//			csa_port = currWord.data(63, 48);
+//			sendWord.last = currWord.last;
+//			break;
+//		case 2:
+//			// GET SEQ and ACK number
+//			csa_meta.seqNumb(7, 0) = currWord.data(31, 24);
+//			csa_meta.seqNumb(15, 8) = currWord.data(23, 16);
+//			csa_meta.seqNumb(23, 16) = currWord.data(15, 8);
+//			csa_meta.seqNumb(31, 24) = currWord.data(7, 0);
+//			csa_meta.ackNumb(7, 0) = currWord.data(63, 56);
+//			csa_meta.ackNumb(15, 8) = currWord.data(55, 48);
+//			csa_meta.ackNumb(23, 16) = currWord.data(47, 40);
+//			csa_meta.ackNumb(31, 24) = currWord.data(39, 32);
+//			sendWord.last = currWord.last;
+//			break;
+//		case 3:
+//			csa_dataOffset = currWord.data.range(7, 4);
+//			csa_meta.length -= (csa_dataOffset * 4);
+//			//csa_dataOffset -= 5; //FIXME, do -5
+//			/* Control bits:
+//			 * [8] == FIN
+//			 * [9] == SYN
+//			 * [10] == RST
+//			 * [11] == PSH
+//			 * [12] == ACK
+//			 * [13] == URG
+//			 */
+//			csa_meta.ack = currWord.data[12];
+//			csa_meta.rst = currWord.data[10];
+//			csa_meta.syn = currWord.data[9];
+//			csa_meta.fin = currWord.data[8];
+//			csa_meta.winSize(7, 0) = currWord.data(31, 24);
+//			csa_meta.winSize(15, 8) = currWord.data(23, 16);
+//			// We add checksum as well and check for cs == 0
+//			sendWord.last = currWord.last;
+//			break;
+//		default:
+//			if (csa_dataOffset > 6)
+//			{
+//				csa_dataOffset -= 2;
+//			}
+//			else if (csa_dataOffset == 6)
+//			{
+//				csa_dataOffset = 5;
+//				csa_shift = true;
+//				halfWord.range(31, 0) = currWord.data.range(63, 32);
+//				halfWord.range(35, 32) = currWord.keep.range(7, 4);
+//				sendWord.last = (currWord.keep[4] == 0);
+//			}
+//			else // == 5 (or less)
+//			{
+//				if (!csa_shift)
+//				{
+//					sendWord = currWord;
+//					dataOut.write(sendWord);
+//				}
+//				else
+//				{
+//					sendWord.data.range(31, 0) = halfWord.range(31, 0);
+//					sendWord.data.range(63, 32) = currWord.data.range(31, 0);
+//					sendWord.keep.range(3, 0) = halfWord.range(35, 32);
+//					sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
+//					sendWord.last = (currWord.keep[4] == 0);
+//					/*if (currWord.last && currWord.strb.range(7, 4) != 0)
+//					{
+//						sendWord.last = 0;
+//					}*/
+//					dataOut.write(sendWord);
+//					halfWord.range(31, 0) = currWord.data.range(63, 32);
+//					halfWord.range(35, 32) = currWord.keep.range(7, 4);
+//				}
+//			}
+//			break;
+//		} // switch
+//		for (int i = 0; i < 4; i++)
+//		{
+//#pragma HLS UNROLL
+//			ap_uint<16> temp;
+//			if (currWord.keep.range(i*2+1, i*2) == 0x3)
+//			{
+//				temp(7, 0) = currWord.data.range(i*16+15, i*16+8);
+//				temp(15, 8) = currWord.data.range(i*16+7, i*16);
+//				csa_tcp_sums[i] += temp;
+//				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
+//			}
+//			else if (currWord.keep[i*2] == 0x1)
+//			{
+//				temp(7, 0) = 0;
+//				temp(15, 8) = currWord.data.range(i*16+7, i*16);
+//				csa_tcp_sums[i] += temp;
+//				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
+//			}
+//		}
+//		csa_wordCount++;
+//		if(currWord.last == 1)
+//		{
+//			csa_wordCount = 0;
+//			csa_wasLast = !sendWord.last; // moved length test down
+//			csa_checkChecksum = true;
+//		}
+//	}
+//	/*if (currWord.last == 1)
+//	{
+//		csa_wordCount = 0;
+//		csa_checkChecksum = true;
+//	}*/
+//	else if(csa_wasLast) //make if
+//	{
+//		if (csa_meta.length != 0)
+//		{
+//			sendWord.data.range(31, 0) = halfWord.range(31, 0);
+//			sendWord.data.range(63, 32) = 0;
+//			sendWord.keep.range(3, 0) = halfWord.range(35, 32);
+//			sendWord.keep.range(7, 4) = 0;
+//			sendWord.last = 1;
+//			dataOut.write(sendWord);
+//		}
+//		csa_wasLast = false;
+//	}
+//	else if (csa_checkChecksum) //make if?
+//	{
+//		switch (csa_cc_state)
+//		{
+//		case 0:
+//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
+//			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
+//			csa_tcp_sums[2] = (csa_tcp_sums[2] + (csa_tcp_sums[2] >> 16)) & 0xFFFF;
+//			csa_tcp_sums[3] = (csa_tcp_sums[3] + (csa_tcp_sums[3] >> 16)) & 0xFFFF;
+//			csa_cc_state++;
+//			break;
+//		case 1:
+//			csa_tcp_sums[0] += csa_tcp_sums[2];
+//			csa_tcp_sums[1] += csa_tcp_sums[3];
+//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
+//			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
+//			csa_cc_state++;
+//			break;
+//		case 2:
+//			csa_tcp_sums[0] += csa_tcp_sums[1];
+//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
+//			csa_cc_state++;
+//			break;
+//		case 3:
+//			csa_tcp_sums[0] = ~csa_tcp_sums[0];
+//			csa_cc_state++;
+//			break;
+//		case 4:
+//			// If summation == 0 then checksum is correct
+//			if (csa_tcp_sums[0](15, 0) == 0)
+//			{
+//				// Since pkg is valid, write out metadata, 4-tuple and check port
+//				metaDataFifoOut.write(csa_meta);
+//				portTableOut.write(csa_port);
+//				tupleFifoOut.write(csa_sessionTuple);
+//				if (csa_meta.length != 0)
+//				{
+//					validFifoOut.write(true);
+//				}
+//			}
+//			else if(csa_meta.length != 0)
+//			{
+//				validFifoOut.write(false);
+//			}
+//			csa_checkChecksum = false;
+//			csa_tcp_sums[0] = 0;
+//			csa_tcp_sums[1] = 0;
+//			csa_tcp_sums[2] = 0;
+//			csa_tcp_sums[3] = 0;
+//			csa_cc_state = 0;
+//			break;
+//		}
+//
+//	}
+//}
 
 
 /** @ingroup rx_engine
@@ -492,58 +1251,58 @@ void rxCheckTCPchecksum(stream<axiWord>&					dataIn,
  *  @param[in]		validFifoIn, Valid FIFO indicating if current packet is valid
  *  @param[out]		dataOut, outgoing data stream
  */
-void rxTcpInvalidDropper(stream<axiWord>&				dataIn,
-							stream<bool>&				validFifoIn,
-							stream<axiWord>&			dataOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-
-	enum rtid_StateType {GET_VALID, FWD, DROP};
-	static rtid_StateType rtid_state = GET_VALID;
-
-	axiWord currWord;
-	bool valid;
-
-
-	switch (rtid_state) {
-	case GET_VALID: //Drop1
-		if (!validFifoIn.empty())
-		{
-			validFifoIn.read(valid);
-			if (valid)
-			{
-				rtid_state = FWD;
-			}
-			else
-			{
-				rtid_state = DROP;
-			}
-		}
-		break;
-	case FWD:
-		if(!dataIn.empty() && !dataOut.full())
-		{
-			dataIn.read(currWord);
-			dataOut.write(currWord);
-			if (currWord.last)
-			{
-				rtid_state = GET_VALID;
-			}
-		}
-		break;
-	case DROP:
-		if(!dataIn.empty())
-		{
-			dataIn.read(currWord);
-			if (currWord.last)
-			{
-				rtid_state = GET_VALID;
-			}
-		}
-		break;
-	} // switch
-}
+//void rxTcpInvalidDropper(stream<axiWord>&				dataIn,
+//							stream<bool>&				validFifoIn,
+//							stream<axiWord>&			dataOut)
+//{
+//#pragma HLS INLINE off
+//#pragma HLS pipeline II=1
+//
+//	enum rtid_StateType {GET_VALID, FWD, DROP};
+//	static rtid_StateType rtid_state = GET_VALID;
+//
+//	axiWord currWord;
+//	bool valid;
+//
+//
+//	switch (rtid_state) {
+//	case GET_VALID: //Drop1
+//		if (!validFifoIn.empty())
+//		{
+//			validFifoIn.read(valid);
+//			if (valid)
+//			{
+//				rtid_state = FWD;
+//			}
+//			else
+//			{
+//				rtid_state = DROP;
+//			}
+//		}
+//		break;
+//	case FWD:
+//		if(!dataIn.empty() && !dataOut.full())
+//		{
+//			dataIn.read(currWord);
+//			dataOut.write(currWord);
+//			if (currWord.last)
+//			{
+//				rtid_state = GET_VALID;
+//			}
+//		}
+//		break;
+//	case DROP:
+//		if(!dataIn.empty())
+//		{
+//			dataIn.read(currWord);
+//			if (currWord.last)
+//			{
+//				rtid_state = GET_VALID;
+//			}
+//		}
+//		break;
+//	} // switch
+//}
 
 
 
@@ -573,125 +1332,126 @@ void rxTcpInvalidDropper(stream<axiWord>&				dataIn,
  * @param[out]	rxBufferWriteCmd
  * @param[out]	rxEng2rxApp_notification
  */
-void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
-						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
-						stream<bool>&							portTable2rxEng_rsp,
-						stream<fourTuple>&						tupleBufferIn,
-						stream<sessionLookupQuery>&				rxEng2sLookup_req,
-						stream<extendedEvent>&					rxEng2eventEng_setEvent,
-						stream<bool>&							dropDataFifoOut,
-						stream<rxFsmMetaData>&					fsmMetaDataFifo)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
 
-	static rxEngineMetaData mh_meta;
-	static sessionLookupReply mh_lup;
-	enum mhStateType {META, LOOKUP};
-	static mhStateType mh_state = META;
-	static ap_uint<32> mh_srcIpAddress;
-	static ap_uint<16> mh_dstIpPort;
-
-	fourTuple tuple;
-	bool portIsOpen;
-
-	switch (mh_state)
-	{
-	case META:
-		if (!metaDataFifoIn.empty() && !portTable2rxEng_rsp.empty() && !tupleBufferIn.empty())
-		{
-			metaDataFifoIn.read(mh_meta);
-			portTable2rxEng_rsp.read(portIsOpen);
-			tupleBufferIn.read(tuple);
-			mh_srcIpAddress(7, 0) = tuple.srcIp(31, 24);
-			mh_srcIpAddress(15, 8) = tuple.srcIp(23, 16);
-			mh_srcIpAddress(23, 16) = tuple.srcIp(15, 8);
-			mh_srcIpAddress(31, 24) = tuple.srcIp(7, 0);
-			mh_dstIpPort(7, 0) = tuple.dstPort(15, 8);
-			mh_dstIpPort(15, 8) = tuple.dstPort(7, 0);
-			// CHeck if port is closed
-			if (!portIsOpen)
-			{
-				// SEND RST+ACK
-				if (!mh_meta.rst)
-				{
-					// send necesssary tuple through event
-					fourTuple switchedTuple;
-					switchedTuple.srcIp = tuple.dstIp;
-					switchedTuple.dstIp = tuple.srcIp;
-					switchedTuple.srcPort = tuple.dstPort;
-					switchedTuple.dstPort = tuple.srcPort;
-					if (mh_meta.syn || mh_meta.fin)
-					{
-						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length+1), switchedTuple)); //always 0
-					}
-					else
-					{
-						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length), switchedTuple));
-					}
-				}
-				//else ignore => do nothing
-				if (mh_meta.length != 0)
-				{
-					dropDataFifoOut.write(true);
-				}
-			}
-			else
-			{
-				// Make session lookup, only allow creation of new entry when SYN or SYN_ACK
-				rxEng2sLookup_req.write(sessionLookupQuery(tuple, (mh_meta.syn && !mh_meta.rst && !mh_meta.fin)));
-				mh_state = LOOKUP;
-			}
-		}
-		break;
-	case LOOKUP: //BIG delay here, waiting for LOOKup
-		if (!sLookup2rxEng_rsp.empty())
-		{
-			sLookup2rxEng_rsp.read(mh_lup);
-			if (mh_lup.hit)
-			{
-				//Write out lup and meta
-				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
-			}
-			if (mh_meta.length != 0)
-			{
-				dropDataFifoOut.write(!mh_lup.hit);
-			}
-			/*if (!mh_lup.hit)
-			{
-				// Port is Open, but we have no sessionID, that matches or is free
-				// For SYN we should time out, for everything else sent RST TODO
-				if (mh_meta.length != 0)
-				{
-					dropDataFifoOut.write(true); // always write???
-				}
-				//mh_state = META;
-			}
-			else
-			{
-				//Write out lup and meta
-				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
-
-				// read state
-				/*rxEng2stateTable_upd_req.write(stateQuery(mh_lup.sessionID));
-				// read rxSar & txSar
-				if (!(mh_meta.syn && !mh_meta.rst && !mh_meta.fin)) // Do not read rx_sar for SYN(+ACK)(+ANYTHING) => (!syn || rst || fin
-				{
-					rxEng2rxSar_upd_req.write(rxSarRecvd(mh_lup.sessionID));
-				}
-				if (mh_meta.ack) // Do not read for SYN (ACK+ANYTHING)
-				{
-					rxEng2txSar_upd_req.write(rxTxSarQuery(mh_lup.sessionID));
-				}*/
-				//mh_state = META;
-			//}
-			mh_state = META;
-		}
-
-		break;
-	}//switch
-}
-
+//void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
+//						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
+//						stream<bool>&							portTable2rxEng_rsp,
+//						stream<fourTuple>&						tupleBufferIn,
+//						stream<sessionLookupQuery>&				rxEng2sLookup_req,
+//						stream<extendedEvent>&					rxEng2eventEng_setEvent,
+//						stream<bool>&							dropDataFifoOut,
+//						stream<rxFsmMetaData>&					fsmMetaDataFifo)
+//{
+//#pragma HLS INLINE off
+//#pragma HLS pipeline II=1
+//
+//	static rxEngineMetaData mh_meta;
+//	static sessionLookupReply mh_lup;
+//	enum mhStateType {META, LOOKUP};
+//	static mhStateType mh_state = META;
+//	static ap_uint<32> mh_srcIpAddress;
+//	static ap_uint<16> mh_dstIpPort;
+//
+//	fourTuple tuple;
+//	bool portIsOpen;
+//
+//	switch (mh_state)
+//	{
+//	case META:
+//		if (!metaDataFifoIn.empty() && !portTable2rxEng_rsp.empty() && !tupleBufferIn.empty())
+//		{
+//			metaDataFifoIn.read(mh_meta);
+//			portTable2rxEng_rsp.read(portIsOpen);
+//			tupleBufferIn.read(tuple);
+//			mh_srcIpAddress(7, 0) = tuple.srcIp(31, 24);
+//			mh_srcIpAddress(15, 8) = tuple.srcIp(23, 16);
+//			mh_srcIpAddress(23, 16) = tuple.srcIp(15, 8);
+//			mh_srcIpAddress(31, 24) = tuple.srcIp(7, 0);
+//			mh_dstIpPort(7, 0) = tuple.dstPort(15, 8);
+//			mh_dstIpPort(15, 8) = tuple.dstPort(7, 0);
+//			// CHeck if port is closed
+//			if (!portIsOpen)
+//			{
+//				// SEND RST+ACK
+//				if (!mh_meta.rst)
+//				{
+//					// send necesssary tuple through event
+//					fourTuple switchedTuple;
+//					switchedTuple.srcIp = tuple.dstIp;
+//					switchedTuple.dstIp = tuple.srcIp;
+//					switchedTuple.srcPort = tuple.dstPort;
+//					switchedTuple.dstPort = tuple.srcPort;
+//					if (mh_meta.syn || mh_meta.fin)
+//					{
+//						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length+1), switchedTuple)); //always 0
+//					}
+//					else
+//					{
+//						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length), switchedTuple));
+//					}
+//				}
+//				//else ignore => do nothing
+//				if (mh_meta.length != 0)
+//				{
+//					dropDataFifoOut.write(true);
+//				}
+//			}
+//			else
+//			{
+//				// Make session lookup, only allow creation of new entry when SYN or SYN_ACK
+//				rxEng2sLookup_req.write(sessionLookupQuery(tuple, (mh_meta.syn && !mh_meta.rst && !mh_meta.fin)));
+//				mh_state = LOOKUP;
+//			}
+//		}
+//		break;
+//	case LOOKUP: //BIG delay here, waiting for LOOKup
+//		if (!sLookup2rxEng_rsp.empty())
+//		{
+//			sLookup2rxEng_rsp.read(mh_lup);
+//			if (mh_lup.hit)
+//			{
+//				//Write out lup and meta
+//				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
+//			}
+//			if (mh_meta.length != 0)
+//			{
+//				dropDataFifoOut.write(!mh_lup.hit);
+//			}
+//			/*if (!mh_lup.hit)
+//			{
+//				// Port is Open, but we have no sessionID, that matches or is free
+//				// For SYN we should time out, for everything else sent RST TODO
+//				if (mh_meta.length != 0)
+//				{
+//					dropDataFifoOut.write(true); // always write???
+//				}
+//				//mh_state = META;
+//			}
+//			else
+//			{
+//				//Write out lup and meta
+//				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
+//
+//				// read state
+//				rxEng2stateTable_upd_req.write(stateQuery(mh_lup.sessionID));
+//				// read rxSar & txSar
+//				if (!(mh_meta.syn && !mh_meta.rst && !mh_meta.fin)) // Do not read rx_sar for SYN(+ACK)(+ANYTHING) => (!syn || rst || fin
+//				{
+//					rxEng2rxSar_upd_req.write(rxSarRecvd(mh_lup.sessionID));
+//				}
+//				if (mh_meta.ack) // Do not read for SYN (ACK+ANYTHING)
+//				{
+//					rxEng2txSar_upd_req.write(rxTxSarQuery(mh_lup.sessionID));
+//				}*/
+//				//mh_state = META;
+//			//}
+//			mh_state = META;
+//		}
+//
+//		break;
+//	}//switch
+//}
+/*
 void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 						stream<sessionState>&					stateTable2rxEng_upd_rsp,
 						stream<rxSarEntry>&						rxSar2rxEng_upd_rsp,
@@ -1091,13 +1851,14 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 		break;
 	} //switch state
 }
-
+*/
 /** @ingroup rx_engine
  *	Drops packets if their metadata did not match / are invalid, as indicated by @param dropBuffer
  *	@param[in]		dataIn, incoming data stream
  *	@param[in]		dropFifoIn, Drop-FIFO indicating if packet needs to be dropped
  *	@param[out]		rxBufferDataOut, outgoing data stream
  */
+/*
 void rxPackageDropper(stream<axiWord>&		dataIn,
 					  stream<bool>&			dropFifoIn1,
 					  stream<bool>&			dropFifoIn2,
@@ -1160,7 +1921,7 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
 		break;
 	} // switch
 }
-
+*/
 /** @ingroup rx_engine
  *  Delays the notifications to the application until the data is actually is written to memory
  *  @param[in]		rxWriteStatusIn, the status which we get back from the DATA MOVER it indicates if the write was successful
@@ -1168,6 +1929,7 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
  *  @param[out]		notificationOut, outgoing notifications
  *  @TODO Handle unsuccessful write to memory
  */
+/*
 void rxAppNotificationDelayer(	stream<mmStatus>&				rxWriteStatusIn, stream<appNotification>&		internalNotificationFifoIn,
 								stream<appNotification>&		notificationOut, stream<ap_uint<1> > &doubleAccess) {
 #pragma HLS INLINE off
@@ -1214,7 +1976,8 @@ void rxAppNotificationDelayer(	stream<mmStatus>&				rxWriteStatusIn, stream<appN
 		}
 	}
 }
-
+*/
+/*
 void rxEventMerger(stream<extendedEvent>& in1, stream<event>& in2, stream<extendedEvent>& out)
 {
 	#pragma HLS PIPELINE II=1
@@ -1229,7 +1992,8 @@ void rxEventMerger(stream<extendedEvent>& in1, stream<event>& in2, stream<extend
 		out.write(in2.read());
 	}
 }
-
+*/
+/*
 void rxEngMemWrite(	stream<axiWord>& 				rxMemWrDataIn, stream<mmCmd>&				rxMemWrCmdIn,
 					stream<mmCmd>&					rxMemWrCmdOut, stream<axiWord>&				rxMemWrDataOut,
 					stream<ap_uint<1> >&			doubleAccess) {
@@ -1357,7 +2121,7 @@ void rxEngMemWrite(	stream<axiWord>& 				rxMemWrDataIn, stream<mmCmd>&				rxMemW
 		break;
 	} //switch
 }
-
+*/
 /** @ingroup rx_engine
  *  The @ref rx_engine is processing the data packets on the receiving path.
  *  When a new packet enters the engine its TCP checksum is tested, afterwards the header is parsed
@@ -1385,6 +2149,7 @@ void rxEngMemWrite(	stream<axiWord>& 				rxMemWrDataIn, stream<mmCmd>&				rxMemW
  *  @param[out]		rxBufferWriteCmd
  *  @param[out]		rxEng2rxApp_notification
  */
+/*
 void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<sessionLookupReply>&			sLookup2rxEng_rsp,
 				stream<sessionState>&				stateTable2rxEng_upd_rsp,
@@ -1520,3 +2285,4 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 }
 
+*/
