@@ -30,8 +30,87 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "rx_engine.hpp"
 
 using namespace hls;
+using namespace std;
 
+void combine_words(
+					axiWord currentWord, 
+					axiWord previousWord, 
+					ap_uint<4> ip_headerlen,
+					axiWord* sendWord){
 
+	switch(ip_headerlen) {
+		case 5:
+			sendWord->data( 447,   0) 	= previousWord.data(511,  64);
+			sendWord->keep(  55,   0) 	= previousWord.keep( 63,   8);
+			sendWord->data( 511, 448) 	= currentWord.data(  63,   0);
+			sendWord->keep(  63,  56)	= currentWord.keep(   7,   0);
+			break;
+		case 6:
+			sendWord->data( 415,   0) 	= previousWord.data(511,  96);
+			sendWord->keep(  51,   0) 	= previousWord.keep( 63,  12);
+			sendWord->data( 511, 416) 	= currentWord.data(  95,   0);
+			sendWord->keep(  63,  52)	= currentWord.keep(  11,   0);
+			break;
+		case 7:
+			sendWord->data( 383,   0) 	= previousWord.data(511, 128);
+			sendWord->keep(  47,   0) 	= previousWord.keep( 63,  16);
+			sendWord->data( 511, 384) 	= currentWord.data( 127,   0);
+			sendWord->keep(  63,  48)	= currentWord.keep(  15,   0);
+			break;
+		case 8:
+			sendWord->data( 351,   0) 	= previousWord.data(511, 160);
+			sendWord->keep(  43,   0) 	= previousWord.keep( 63,  20);
+			sendWord->data( 511, 352) 	= currentWord.data( 159,   0);
+			sendWord->keep(  63,  44)	= currentWord.keep(  19,   0);
+			break;
+		case 9:
+			sendWord->data( 319,   0) 	= previousWord.data(511, 192);
+			sendWord->keep(  39,   0) 	= previousWord.keep( 63,  36);
+			sendWord->data( 511, 320) 	= currentWord.data( 191,   0);
+			sendWord->keep(  63,  40)	= currentWord.keep(  23,   0);
+			break;
+		case 10:
+			sendWord->data( 287,   0) 	= previousWord.data(511, 224);
+			sendWord->keep(  35,   0) 	= previousWord.keep( 63,  28);
+			sendWord->data( 511, 288) 	= currentWord.data( 223,   0);
+			sendWord->keep(  63,  36)	= currentWord.keep(  27,   0);
+			break;
+		case 11:
+			sendWord->data( 255,   0) 	= previousWord.data(511, 256);
+			sendWord->keep(  31,   0) 	= previousWord.keep( 63,  32);
+			sendWord->data( 511, 256) 	= currentWord.data( 255,   0);
+			sendWord->keep(  63,  32)	= currentWord.keep(  31,   0);
+			break;
+		case 12:
+			sendWord->data( 223,   0) 	= previousWord.data(511, 288);
+			sendWord->keep(  27,   0) 	= previousWord.keep( 63,  36);
+			sendWord->data( 511, 224) 	= currentWord.data( 287,   0);
+			sendWord->keep(  63,  28)	= currentWord.keep(  35,   0);
+			break;
+		case 13:
+			sendWord->data( 191,   0) 	= previousWord.data(511, 320);
+			sendWord->keep(  23,   0) 	= previousWord.keep( 63,  40);
+			sendWord->data( 511, 192) 	= currentWord.data( 319,   0);
+			sendWord->keep(  63,  24)	= currentWord.keep(  39,   0);
+			break;
+		case 14:
+			sendWord->data( 159,   0) 	= previousWord.data(511, 352);
+			sendWord->keep(  19,   0) 	= previousWord.keep( 63,  44);
+			sendWord->data( 511, 160) 	= currentWord.data( 351,   0);
+			sendWord->keep(  63,  20)	= currentWord.keep(  43,   0);
+			break;
+		case 15:
+			sendWord->data( 127,   0) 	= previousWord.data(511, 384);
+			sendWord->keep(  15,   0) 	= previousWord.keep( 63,  48);
+			sendWord->data( 511, 128) 	= currentWord.data( 383,   0);
+			sendWord->keep(  63,  16)	= currentWord.keep(  47,   0);
+			break;
+		default:
+			cout << "Error the offset is not valid" << endl;
+			break;
+	}
+
+}
 
 /**
 * In this function the main drawback is dealing with the alignment of the pseudo header
@@ -89,291 +168,29 @@ void rxTCP_pseudoheader_insert(
 	
 	static axiWord 			prevWord;
 	static ap_uint<4> 		ip_headerlen;
-	static ap_uint<4> 		ip_headerlen_zerooffset;
 	static ap_uint<16>		ipTotalLen;
 	ap_uint<16>				tcpTotalLen;
-
-	//static ap_uint<9>		prevword_right_boundary;
-	//static ap_uint<9>		currword_left_boundary;
-	//static ap_uint<9>		sendword_boundary;
 	
 	static ap_uint<6>				keep_extra;
 
 	static ap_uint<32>		ip_dst;
 	static ap_uint<32>		ip_src;
 
-	static ap_uint<1>		last = 0; 		
+	static ap_uint<1>		pseudo_header = 0;
 
-	enum pseudo_header_state {IP_HEADER ,TCP_PSEUDO_HEADER, TCP_PAYLOAD, TCP_PSEUDO_HEADER_SHORT, EXTRA_WORD};
+	static ap_uint<1> 		extra_word=0;
+
+	enum pseudo_header_state {IP_HEADER ,TCP_PAYLOAD};
 	static pseudo_header_state fsm_state = IP_HEADER;
-
-	if (!dataIn.empty()){ 		// Check if there is valid data in the input interface
-		dataIn.read(currWord);
-		ip_headerlen 		= currWord.data( 3, 0); 	// Read IP header len
-		ipTotalLen(7, 0) 	= currWord.data(31, 24);    // Read IP total len
-		ipTotalLen(15, 8) 	= currWord.data(23, 16);
-		ip_src 				= currWord.data(127,96);
-		ip_dst 				= currWord.data(159,128);
-
-		keep_extra = 8 + (ip_headerlen-5) * 4;
-		tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-
-		if (currWord.last){// only one transaction pkt size <=64 bytes
-			sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);				// pseudo header
-			sendWord.data(87 ,80) = tcpTotalLen(15,8);
-			sendWord.data(96 ,88) = tcpTotalLen( 7,0);
-			sendWord.keep(11,0) = 0xFFF;
-			switch(ip_headerlen) {
-				case 5:
-					sendWord.data( 447,  96) 	= prevWord.data(511, 160);
-					sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
-					sendWord.data( 511, 448) 	= 0;
-					sendWord.keep(  63,  56)	= 0;
-					break;
-				case 6:
-					sendWord.data( 415,  96) 	= prevWord.data(511, 192);
-					sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
-					sendWord.data( 511, 416) 	= 0;
-					sendWord.keep(  63,  52)	= 0;
-					break;
-				case 7:
-					sendWord.data( 385,  96) 	= prevWord.data(511, 224);
-					sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
-					sendWord.data( 511, 386) 	= 0;
-					sendWord.keep(  63,  48)	= 0;
-					break;
-				case 8:
-					sendWord.data( 351,  96) 	= prevWord.data(511, 256);
-					sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
-					sendWord.data( 511, 352) 	= 0;
-					sendWord.keep(  63,  44)	= 0;
-					break;
-				case 9:
-					sendWord.data( 319,  96) 	= prevWord.data(511, 288);
-					sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
-					sendWord.data( 511, 320) 	= 0;
-					sendWord.keep(  63,  40)	= 0;
-					break;
-				case 10:
-					sendWord.data( 287,  96) 	= prevWord.data(511, 320);
-					sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
-					sendWord.data( 511, 288) 	= 0;
-					sendWord.keep(  63,  36)	= 0;
-					break;
-				case 11:
-					sendWord.data( 255,  96) 	= prevWord.data(511, 352);
-					sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
-					sendWord.data( 511, 255) 	= 0;
-					sendWord.keep(  63,  32)	= 0;
-					break;
-				case 12:
-					sendWord.data( 223,  96) 	= prevWord.data(511, 384);
-					sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
-					sendWord.data( 511, 224) 	= 0;
-					sendWord.keep(  63,  28)	= 0;
-					break;
-				case 13:
-					sendWord.data( 191,  96) 	= prevWord.data(511, 416);
-					sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
-					sendWord.data( 511, 192) 	= 0;
-					sendWord.keep(  63,  24)	= 0;
-					break;
-				case 14:
-					sendWord.data( 159,  96) 	= prevWord.data(511, 448);
-					sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
-					sendWord.data( 511, 160) 	= 0;
-					sendWord.keep(  63,  20)	= 0;
-					break;
-				case 15:
-					sendWord.data( 127,  96) 	= prevWord.data(511, 480);
-					sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
-					sendWord.data( 511, 128) 	= 0;
-					sendWord.keep(  63,  16)	= 0;
-					break;
-				default:
-					//cout << "Error the offset is not valid" << endl;
-					break;
-			}
-			sendWord.last 		  	= 1;
-			dataOut.write(sendWord);
-		}
-		else{	// pkt size > 64
-			prevWord = currWord;	// save first transaction
-			dataIn.read(currWord);
-			sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);				// pseudo header
-			sendWord.data(87 ,80) = tcpTotalLen(15,8);
-			sendWord.data(96 ,88) = tcpTotalLen( 7,0);
-			sendWord.keep(11,0) = 0xFFF;
-
-			switch(ip_headerlen) {
-				case 5:
-					sendWord.data( 447,  96) 	= prevWord.data(511, 160);
-					sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
-					sendWord.data( 511, 448) 	= currWord.data( 63,   0);
-					sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
-					break;
-				case 6:
-					sendWord.data( 415,  96) 	= prevWord.data(511, 192);
-					sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
-					sendWord.data( 511, 416) 	= currWord.data( 95,   0);
-					sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
-					break;
-				case 7:
-					sendWord.data( 385,  96) 	= prevWord.data(511, 224);
-					sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
-					sendWord.data( 511, 386) 	= currWord.data(127,   0);
-					sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
-					break;
-				case 8:
-					sendWord.data( 351,  96) 	= prevWord.data(511, 256);
-					sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
-					sendWord.data( 511, 352) 	= currWord.data(159,   0);
-					sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
-					break;
-				case 9:
-					sendWord.data( 319,  96) 	= prevWord.data(511, 288);
-					sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
-					sendWord.data( 511, 320) 	= currWord.data(191,   0);
-					sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
-					break;
-				case 10:
-					sendWord.data( 287,  96) 	= prevWord.data(511, 320);
-					sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
-					sendWord.data( 511, 288) 	= currWord.data(223,   0);
-					sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
-					break;
-				case 11:
-					sendWord.data( 255,  96) 	= prevWord.data(511, 352);
-					sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
-					sendWord.data( 511, 255) 	= currWord.data(255,   0);
-					sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
-					break;
-				case 12:
-					sendWord.data( 223,  96) 	= prevWord.data(511, 384);
-					sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
-					sendWord.data( 511, 224) 	= currWord.data(287,   0);
-					sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
-					break;
-				case 13:
-					sendWord.data( 191,  96) 	= prevWord.data(511, 416);
-					sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
-					sendWord.data( 511, 192) 	= currWord.data(319,   0);
-					sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
-					break;
-				case 14:
-					sendWord.data( 159,  96) 	= prevWord.data(511, 448);
-					sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
-					sendWord.data( 511, 160) 	= currWord.data(351,   0);
-					sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
-					break;
-				case 15:
-					sendWord.data( 127,  96) 	= prevWord.data(511, 480);
-					sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
-					sendWord.data( 511, 128) 	= currWord.data(383,   0);
-					sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
-					break;
-				default:
-					//cout << "Error the offset is not valid" << endl;
-					break;
-			}
-
-			if (currWord.last){
-				if(currWord.keep.bit(keep_extra)){ // a extra word is needed
-
-					sendWord.last 		  	= 0;
-					dataOut.write(sendWord);
-
-					switch(ip_headerlen) {
-						case 5:
-							sendWord.data( 447,   0) 	= currWord.data(511,  64);
-							sendWord.keep(  55,   0) 	= currWord.keep( 63,   8);
-							sendWord.data( 511, 448) 	= 0;
-							sendWord.keep(  63,  56)	= 0;
-							break;
-						case 6:
-							sendWord.data( 415,   0) 	= currWord.data(511,  96);
-							sendWord.keep(  51,   0) 	= currWord.keep( 63,  12);
-							sendWord.data( 511, 416) 	= 0;
-							sendWord.keep(  63,  52)	= 0;
-							break;
-						case 7:
-							sendWord.data( 385,   0) 	= currWord.data(511, 128);
-							sendWord.keep(  47,   0) 	= currWord.keep( 63,  16);
-							sendWord.data( 511, 386) 	= 0;
-							sendWord.keep(  63,  48)	= 0;
-							break;
-						case 8:
-							sendWord.data( 351,   0) 	= currWord.data(511, 160);
-							sendWord.keep(  43,   0) 	= currWord.keep( 63,  20);
-							sendWord.data( 511, 352) 	= 0;
-							sendWord.keep(  63,  44)	= 0;
-							break;
-						case 9:
-							sendWord.data( 319,   0) 	= currWord.data(511, 192);
-							sendWord.keep(  39,   0) 	= currWord.keep( 63,  24);
-							sendWord.data( 511, 320) 	= 0;
-							sendWord.keep(  63,  40)	= 0;
-							break;
-						case 10:
-							sendWord.data( 287,   0) 	= currWord.data(511, 224);
-							sendWord.keep(  35,   0) 	= currWord.keep( 63,  28);
-							sendWord.data( 511, 288) 	= 0;
-							sendWord.keep(  63,  36)	= 0;
-							break;
-						case 11:
-							sendWord.data( 255,   0) 	= currWord.data(511, 256);
-							sendWord.keep(  31,   0) 	= currWord.keep( 63,  32);
-							sendWord.data( 511, 255) 	= 0;
-							sendWord.keep(  63,  32)	= 0;
-							break;
-						case 12:
-							sendWord.data( 223,   0) 	= currWord.data(511, 320);
-							sendWord.keep(  27,   0) 	= currWord.keep( 63,  36);
-							sendWord.data( 511, 224) 	= 0;
-							sendWord.keep(  63,  28)	= 0;
-							break;
-						case 13:
-							sendWord.data( 191,   0) 	= currWord.data(511, 352);
-							sendWord.keep(  23,   0) 	= currWord.keep( 63,  40);
-							sendWord.data( 511, 192) 	= 0;
-							sendWord.keep(  63,  24)	= 0;					
-							break;
-						case 14:
-							sendWord.data( 159,   0) 	= currWord.data(511, 384);
-							sendWord.keep(  19,   0) 	= currWord.keep( 63,  44);
-							sendWord.data( 511, 160) 	= 0;
-							sendWord.keep(  63,  20)	= 0;						
-							break;
-						case 15:
-							sendWord.data( 127,   0) 	= currWord.data(511, 416);
-							sendWord.keep(  15,   0) 	= currWord.keep( 63,  48);
-							sendWord.data( 511, 128) 	= 0;
-							sendWord.keep(  63,  16)	= 0;						
-							break;
-						default:
-							//cout << "Error the offset is not valid" << endl;
-							break;
-
-						sendWord.last 		  	= 0;
-						dataOut.write(sendWord);
-					}
-
-				}
-				else{
-					sendWord.last 		  	= 1;
-					dataOut.write(sendWord);
-				}
-			}
-			else{
-
-			}
-
-
-		}
-
-
-
-
+	if (extra_word) {
+		extra_word 	  = 0;
+		currWord.data = 0;
+		currWord.keep = 0;
+		combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+		sendWord.last 			= 1;
+		dataOut.write(sendWord);
+	}
+	else if (!dataIn.empty()){
 		switch (fsm_state){
 			case (IP_HEADER):
 				dataIn.read(currWord);
@@ -383,410 +200,65 @@ void rxTCP_pseudoheader_insert(
 				ip_src 				= currWord.data(127,96);
 				ip_dst 				= currWord.data(159,128);
 
-				ip_headerlen_zerooffset = ip_headerlen - 5;
-
-				keep_extra = 8 + ip_headerlen_zerooffset * 4;
+				keep_extra = 8 + (ip_headerlen-5) * 4;
 
 				prevWord = currWord;
-
-//				prevword_right_boundary = 160 + ip_headerlen_zerooffset * 32;
-//				currword_left_boundary  =  64 + ip_headerlen_zerooffset * 32;
-//				sendword_boundary 		= 512 -64 - ip_headerlen_zerooffset * 32;
-
-				if (currWord.last)
-					fsm_state = TCP_PSEUDO_HEADER_SHORT;
-				else
-					fsm_state = TCP_PSEUDO_HEADER;
-				break;
-
-			case (TCP_PSEUDO_HEADER_SHORT):
-
-				tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-				sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);
-				sendWord.data(87 ,80) = tcpTotalLen(15,8);
-				sendWord.data(96 ,88) = tcpTotalLen( 7,0);
-				sendWord.keep(11,0) = 0xFFF;
-
-				sendWord.last 		  	= 1;
-
-//				sendWord.data(  sendword_boundary -1 ,96) 	= prevWord.data(511 , prevword_right_boundary);
-//				sendWord.keep(sendword_boundary/8 -1 ,12) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
-//				sendWord.data( 511,  sendword_boundary) 	= 0;
-//				sendWord.keep( 63, sendword_boundary/8) 	= 0;
-
-				switch(ip_headerlen_zerooffset) {
-					case 0:
-						sendWord.data( 447,  96) 	= prevWord.data(511, 160);
-						sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
-						sendWord.data( 511, 448) 	= 0;
-						sendWord.keep(  63,  56)	= 0;
-						break;
-					case 1:
-						sendWord.data( 415,  96) 	= prevWord.data(511, 192);
-						sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
-						sendWord.data( 511, 416) 	= 0;
-						sendWord.keep(  63,  52)	= 0;
-						break;
-					case 2:
-						sendWord.data( 385,  96) 	= prevWord.data(511, 224);
-						sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
-						sendWord.data( 511, 386) 	= 0;
-						sendWord.keep(  63,  48)	= 0;
-						break;
-					case 3:
-						sendWord.data( 351,  96) 	= prevWord.data(511, 256);
-						sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
-						sendWord.data( 511, 352) 	= 0;
-						sendWord.keep(  63,  44)	= 0;
-						break;
-					case 4:
-						sendWord.data( 319,  96) 	= prevWord.data(511, 288);
-						sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
-						sendWord.data( 511, 320) 	= 0;
-						sendWord.keep(  63,  40)	= 0;
-						break;
-					case 5:
-						sendWord.data( 287,  96) 	= prevWord.data(511, 320);
-						sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
-						sendWord.data( 511, 288) 	= 0;
-						sendWord.keep(  63,  36)	= 0;
-						break;
-					case 6:
-						sendWord.data( 255,  96) 	= prevWord.data(511, 352);
-						sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
-						sendWord.data( 511, 255) 	= 0;
-						sendWord.keep(  63,  32)	= 0;
-						break;
-					case 7:
-						sendWord.data( 223,  96) 	= prevWord.data(511, 384);
-						sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
-						sendWord.data( 511, 224) 	= 0;
-						sendWord.keep(  63,  28)	= 0;
-						break;
-					case 8:
-						sendWord.data( 191,  96) 	= prevWord.data(511, 416);
-						sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
-						sendWord.data( 511, 192) 	= 0;
-						sendWord.keep(  63,  24)	= 0;					
-						break;
-					case 9:
-						sendWord.data( 159,  96) 	= prevWord.data(511, 448);
-						sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
-						sendWord.data( 511, 160) 	= 0;
-						sendWord.keep(  63,  20)	= 0;						
-						break;
-					case 10:
-						sendWord.data( 127,  96) 	= prevWord.data(511, 480);
-						sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
-						sendWord.data( 511, 128) 	= 0;
-						sendWord.keep(  63,  16)	= 0;						
-						break;
-					default:
-						//cout << "Error the offset is not valid" << endl;
-						break;
-				}
-
-				dataOut.write(sendWord);
-
-				fsm_state = IP_HEADER;
-
-				break;
-
-			case (TCP_PSEUDO_HEADER):
-				dataIn.read(currWord);
-				
-				tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-				sendWord.data(79 ,0) = (0x0600,ip_dst,ip_src);
-				sendWord.data(87 ,80) = tcpTotalLen(15,8);
-				sendWord.data(96 ,88) = tcpTotalLen( 7,0);
-				sendWord.keep(11,0) = 0xFFF;
-				
-//				sendWord.data(  sendword_boundary -1 ,96) 	= prevWord.data(511 , prevword_right_boundary);
-//				sendWord.keep(sendword_boundary/8 -1 ,12) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
-//				sendWord.data( 511,  sendword_boundary) 	= currWord.data(  currword_left_boundary   -1 , 0);
-//				sendWord.keep( 63, sendword_boundary/8) 	= currWord.keep((currword_left_boundary/8) -1 , 0);
-
-				switch(ip_headerlen_zerooffset) {
-					case 0:
-						sendWord.data( 447,  96) 	= prevWord.data(511, 160);
-						sendWord.keep(  55,  12) 	= prevWord.keep( 63,  20);
-						sendWord.data( 511, 448) 	= currWord.data( 63,   0);
-						sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
-						break;
-					case 1:
-						sendWord.data( 415,  96) 	= prevWord.data(511, 192);
-						sendWord.keep(  51,  12) 	= prevWord.keep( 63,  24);
-						sendWord.data( 511, 416) 	= currWord.data( 95,   0);
-						sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
-						break;
-					case 2:
-						sendWord.data( 385,  96) 	= prevWord.data(511, 224);
-						sendWord.keep(  47,  12) 	= prevWord.keep( 63,  28);
-						sendWord.data( 511, 386) 	= currWord.data(127,   0);
-						sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
-						break;
-					case 3:
-						sendWord.data( 351,  96) 	= prevWord.data(511, 256);
-						sendWord.keep(  43,  12) 	= prevWord.keep( 63,  32);
-						sendWord.data( 511, 352) 	= currWord.data(159,   0);
-						sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
-						break;
-					case 4:
-						sendWord.data( 319,  96) 	= prevWord.data(511, 288);
-						sendWord.keep(  39,  12) 	= prevWord.keep( 63,  36);
-						sendWord.data( 511, 320) 	= currWord.data(191,   0);
-						sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
-						break;
-					case 5:
-						sendWord.data( 287,  96) 	= prevWord.data(511, 320);
-						sendWord.keep(  35,  12) 	= prevWord.keep( 63,  40);
-						sendWord.data( 511, 288) 	= currWord.data(223,   0);
-						sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
-						break;
-					case 6:
-						sendWord.data( 255,  96) 	= prevWord.data(511, 352);
-						sendWord.keep(  31,  12) 	= prevWord.keep( 63,  44);
-						sendWord.data( 511, 255) 	= currWord.data(255,   0);
-						sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
-						break;
-					case 7:
-						sendWord.data( 223,  96) 	= prevWord.data(511, 384);
-						sendWord.keep(  27,  12) 	= prevWord.keep( 63,  48);
-						sendWord.data( 511, 224) 	= currWord.data(287,   0);
-						sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
-						break;
-					case 8:
-						sendWord.data( 191,  96) 	= prevWord.data(511, 416);
-						sendWord.keep(  23,  12) 	= prevWord.keep( 63,  52);
-						sendWord.data( 511, 192) 	= currWord.data(319,   0);
-						sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
-						break;
-					case 9:
-						sendWord.data( 159,  96) 	= prevWord.data(511, 448);
-						sendWord.keep(  19,  12) 	= prevWord.keep( 63,  56);
-						sendWord.data( 511, 160) 	= currWord.data(351,   0);
-						sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
-						break;
-					case 10:
-						sendWord.data( 127,  96) 	= prevWord.data(511, 480);
-						sendWord.keep(  15,  12) 	= prevWord.keep( 63,  60);
-						sendWord.data( 511, 128) 	= currWord.data(383,   0);
-						sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
-						break;
-					default:
-						//cout << "Error the offset is not valid" << endl;
-						break;
-				}
-
 
 				if (currWord.last){
-					if (currWord.keep.bit(keep_extra)) {
-						sendWord.last = 0;
-						fsm_state = EXTRA_WORD;
-					}
-					else {
-						sendWord.last=1;
-						fsm_state = IP_HEADER;
-					}
+					currWord.data = 0;
+					currWord.keep = 0;
+
+				 	combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+					
+					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
+					sendWord.data( 79 ,0) 	= (0x0600,ip_dst,ip_src);
+					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
+					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
+					sendWord.keep(11,0) 	= 0xFFF;
+					sendWord.last 			= 1;
+					
+					dataOut.write(sendWord);
 				}
 				else{
-					sendWord.last = 0;
 					fsm_state = TCP_PAYLOAD;
+					pseudo_header = 1;
 				}
-
-				prevWord = currWord;
-				dataOut.write(sendWord);
 				break;
-			
+
 			case (TCP_PAYLOAD) :
 				dataIn.read(currWord);
 
-//				sendWord.data(  sendword_boundary -1 ,0) 	= prevWord.data(511 , prevword_right_boundary);
-//				sendWord.keep(sendword_boundary/8 -1 ,0) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
-//				sendWord.data( 511,  sendword_boundary) 	= currWord.data(  currword_left_boundary   -1 , 0);
-//				sendWord.keep( 63, sendword_boundary/8) 	= currWord.keep((currword_left_boundary/8) -1 , 0);
-
-
-				switch(ip_headerlen_zerooffset) {
-					case 0:
-						sendWord.data( 447,   0) 	= prevWord.data(511,  64);
-						sendWord.keep(  55,   0) 	= prevWord.keep( 63,   8);
-						sendWord.data( 511, 448) 	= currWord.data( 63,   0);
-						sendWord.keep(  63,  56)	= currWord.keep(  7,   0);
-						break;
-					case 1:
-						sendWord.data( 415,   0) 	= prevWord.data(511,  96);
-						sendWord.keep(  51,   0) 	= prevWord.keep( 63,  12);
-						sendWord.data( 511, 416) 	= currWord.data( 95,   0);
-						sendWord.keep(  63,  52)	= currWord.keep( 11,   0);
-						break;
-					case 2:
-						sendWord.data( 385,   0) 	= prevWord.data(511, 128);
-						sendWord.keep(  47,   0) 	= prevWord.keep( 63,  16);
-						sendWord.data( 511, 386) 	= currWord.data(127,   0);
-						sendWord.keep(  63,  48)	= currWord.keep( 15,   0);
-						break;
-					case 3:
-						sendWord.data( 351,   0) 	= prevWord.data(511, 160);
-						sendWord.keep(  43,   0) 	= prevWord.keep( 63,  20);
-						sendWord.data( 511, 352) 	= currWord.data(159,   0);
-						sendWord.keep(  63,  44)	= currWord.keep( 19,   0);
-						break;
-					case 4:
-						sendWord.data( 319,   0) 	= prevWord.data(511, 192);
-						sendWord.keep(  39,   0) 	= prevWord.keep( 63,  24);
-						sendWord.data( 511, 320) 	= currWord.data(191,   0);
-						sendWord.keep(  63,  40)	= currWord.keep( 23,   0);
-						break;
-					case 5:
-						sendWord.data( 287,   0) 	= prevWord.data(511, 224);
-						sendWord.keep(  35,   0) 	= prevWord.keep( 63,  28);
-						sendWord.data( 511, 288) 	= currWord.data(223,   0);
-						sendWord.keep(  63,  36)	= currWord.keep( 27,   0);
-						break;
-					case 6:
-						sendWord.data( 255,   0) 	= prevWord.data(511, 256);
-						sendWord.keep(  31,   0) 	= prevWord.keep( 63,  32);
-						sendWord.data( 511, 255) 	= currWord.data(255,   0);
-						sendWord.keep(  63,  32)	= currWord.keep( 31,   0);
-						break;
-					case 7:
-						sendWord.data( 223,   0) 	= prevWord.data(511, 320);
-						sendWord.keep(  27,   0) 	= prevWord.keep( 63,  36);
-						sendWord.data( 511, 224) 	= currWord.data(287,   0);
-						sendWord.keep(  63,  28)	= currWord.keep( 35,   0);
-						break;
-					case 8:
-						sendWord.data( 191,   0) 	= prevWord.data(511, 352);
-						sendWord.keep(  23,   0) 	= prevWord.keep( 63,  40);
-						sendWord.data( 511, 192) 	= currWord.data(319,   0);
-						sendWord.keep(  63,  24)	= currWord.keep( 39,   0);
-						break;
-					case 9:
-						sendWord.data( 159,   0) 	= prevWord.data(511, 384);
-						sendWord.keep(  19,   0) 	= prevWord.keep( 63,  44);
-						sendWord.data( 511, 160) 	= currWord.data(351,   0);
-						sendWord.keep(  63,  20)	= currWord.keep( 43,   0);
-						break;
-					case 10:
-						sendWord.data( 127,   0) 	= prevWord.data(511, 416);
-						sendWord.keep(  15,   0) 	= prevWord.keep( 63,  48);
-						sendWord.data( 511, 128) 	= currWord.data(383,   0);
-						sendWord.keep(  63,  16)	= currWord.keep( 47,   0);
-						break;
-					default:
-						//cout << "Error the offset is not valid" << endl;
-						break;
+				combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+				if (pseudo_header){
+					pseudo_header = 0;
+					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
+					sendWord.data( 79 ,0) 	= (0x0600,ip_dst,ip_src);
+					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
+					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
+					sendWord.keep(11,0) 	= 0xFFF;
 				}
 
+				sendWord.last = 0;
+				prevWord = currWord;
 				if (currWord.last){
 					if (currWord.keep.bit(keep_extra)) {
-						sendWord.last = 0;
-						fsm_state = EXTRA_WORD;
+						extra_word = 1;
 					}
 					else {
 						sendWord.last=1;
-						fsm_state = IP_HEADER;
 					}
+					fsm_state = IP_HEADER;
 				}
-				else {
-					sendWord.last = 0;
-				}
-				prevWord = currWord;
+
 				dataOut.write(sendWord);
+
 			 	break;
-
-			case (EXTRA_WORD):
-
-//				sendWord.data(  sendword_boundary -1 ,0) 	= prevWord.data(511 , prevword_right_boundary);
-//				sendWord.keep(sendword_boundary/8 -1 ,0) 	= prevWord.keep(63  ,  prevword_right_boundary/8);
-//				sendWord.data( 511,  sendword_boundary) 	= 0;
-//				sendWord.keep( 63, sendword_boundary/8) 	= 0;
-				
-				switch(ip_headerlen_zerooffset) {
-					case 0:
-						sendWord.data( 447,   0) 	= prevWord.data(511,  64);
-						sendWord.keep(  55,   0) 	= prevWord.keep( 63,   8);
-						sendWord.data( 511, 448) 	= 0;
-						sendWord.keep(  63,  56)	= 0;
-						break;
-					case 1:
-						sendWord.data( 415,   0) 	= prevWord.data(511,  96);
-						sendWord.keep(  51,   0) 	= prevWord.keep( 63,  12);
-						sendWord.data( 511, 416) 	= 0;
-						sendWord.keep(  63,  52)	= 0;
-						break;
-					case 2:
-						sendWord.data( 385,   0) 	= prevWord.data(511, 128);
-						sendWord.keep(  47,   0) 	= prevWord.keep( 63,  16);
-						sendWord.data( 511, 386) 	= 0;
-						sendWord.keep(  63,  48)	= 0;
-						break;
-					case 3:
-						sendWord.data( 351,   0) 	= prevWord.data(511, 160);
-						sendWord.keep(  43,   0) 	= prevWord.keep( 63,  20);
-						sendWord.data( 511, 352) 	= 0;
-						sendWord.keep(  63,  44)	= 0;
-						break;
-					case 4:
-						sendWord.data( 319,   0) 	= prevWord.data(511, 192);
-						sendWord.keep(  39,   0) 	= prevWord.keep( 63,  24);
-						sendWord.data( 511, 320) 	= 0;
-						sendWord.keep(  63,  40)	= 0;
-						break;
-					case 5:
-						sendWord.data( 287,   0) 	= prevWord.data(511, 224);
-						sendWord.keep(  35,   0) 	= prevWord.keep( 63,  28);
-						sendWord.data( 511, 288) 	= 0;
-						sendWord.keep(  63,  36)	= 0;
-						break;
-					case 6:
-						sendWord.data( 255,   0) 	= prevWord.data(511, 256);
-						sendWord.keep(  31,   0) 	= prevWord.keep( 63,  32);
-						sendWord.data( 511, 255) 	= 0;
-						sendWord.keep(  63,  32)	= 0;
-						break;
-					case 7:
-						sendWord.data( 223,   0) 	= prevWord.data(511, 320);
-						sendWord.keep(  27,   0) 	= prevWord.keep( 63,  36);
-						sendWord.data( 511, 224) 	= 0;
-						sendWord.keep(  63,  28)	= 0;
-						break;
-					case 8:
-						sendWord.data( 191,   0) 	= prevWord.data(511, 352);
-						sendWord.keep(  23,   0) 	= prevWord.keep( 63,  40);
-						sendWord.data( 511, 192) 	= 0;
-						sendWord.keep(  63,  24)	= 0;					
-						break;
-					case 9:
-						sendWord.data( 159,   0) 	= prevWord.data(511, 384);
-						sendWord.keep(  19,   0) 	= prevWord.keep( 63,  44);
-						sendWord.data( 511, 160) 	= 0;
-						sendWord.keep(  63,  20)	= 0;						
-						break;
-					case 10:
-						sendWord.data( 127,   0) 	= prevWord.data(511, 416);
-						sendWord.keep(  15,   0) 	= prevWord.keep( 63,  48);
-						sendWord.data( 511, 128) 	= 0;
-						sendWord.keep(  63,  16)	= 0;						
-						break;
-					default:
-						//cout << "Error the offset is not valid" << endl;
-						break;
-				}
-
-				sendWord.last=1;
-				dataOut.write(sendWord);
-				fsm_state = IP_HEADER;
-				break;
 
 			default:
 				fsm_state = IP_HEADER;
 				break;
 		}
 	}
-
-
 }
 
 /** @ingroup rx_engine
