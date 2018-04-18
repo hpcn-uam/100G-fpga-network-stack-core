@@ -41,7 +41,12 @@ struct rxEngineMetaData
 	ap_uint<32> ackNumb;
 	ap_uint<16> winSize;
 	ap_uint<16> length;
+	ap_uint<4>  tcp_header_length;
+	ap_uint<1>	cwr;
+	ap_uint<1>	ecn;
+	ap_uint<1>	urg;
 	ap_uint<1>	ack;
+	ap_uint<1>	psh;
 	ap_uint<1>	rst;
 	ap_uint<1>	syn;
 	ap_uint<1>	fin;
@@ -94,3 +99,11 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 void rxTCP_pseudoheader_insert(
 								stream<axiWord>&			dataIn,
 								stream<axiWord>&			dataOut);
+
+void rxCheckTCPchecksum(
+							stream<axiWord>&				dataIn,
+							stream<axiWord>&				dataOut,
+							stream<bool>&					validFifoOut,
+							stream<rxEngineMetaData>&		metaDataFifoOut,
+							stream<fourTuple>&				tupleFifoOut,
+							stream<ap_uint<16> >&			portTableOut);

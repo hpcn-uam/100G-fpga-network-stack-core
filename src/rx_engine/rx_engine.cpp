@@ -112,6 +112,16 @@ void combine_words(
 
 }
 
+/** @ingroup rx_engine
+ * Extracts tcpLength from IP header, removes the header and prepends the IP addresses to the payload,
+ * such that the output can be used for the TCP pseudo header creation
+ * The TCP length is computed from the total length and the IP header length
+ * @param[in]		dataIn, incoming data stream
+ * @param[out]		dataOut, outgoing data stream
+ * @param[out]		tcpLenFifoOut, the TCP length is stored into this FIFO
+ * @TODO maybe compute TCP length in another way!!
+ */
+
 /**
 * In this function the main drawback is dealing with the alignment of the pseudo header
 * before the TCP header. To do this is necessary to detect IP header size, after that 
@@ -162,26 +172,21 @@ void rxTCP_pseudoheader_insert(
 #pragma HLS INTERFACE axis off port=dataIn  name=s_axis_tcp_data
 #pragma HLS INTERFACE axis off port=dataOut name=m_axis_tcp_data
 
-	axiWord 		currWord;
-
-	axiWord 		sendWord;
-	
+	axiWord 				currWord;
+	axiWord 				sendWord;
+	ap_uint<16>				tcpTotalLen;
 	static axiWord 			prevWord;
 	static ap_uint<4> 		ip_headerlen;
 	static ap_uint<16>		ipTotalLen;
-	ap_uint<16>				tcpTotalLen;
-	
-	static ap_uint<6>				keep_extra;
-
+	static ap_uint<6>		keep_extra;
 	static ap_uint<32>		ip_dst;
 	static ap_uint<32>		ip_src;
-
 	static ap_uint<1>		pseudo_header = 0;
-
 	static ap_uint<1> 		extra_word=0;
 
 	enum pseudo_header_state {IP_HEADER ,TCP_PAYLOAD};
 	static pseudo_header_state fsm_state = IP_HEADER;
+
 	if (extra_word) {
 		extra_word 	  = 0;
 		currWord.data = 0;
@@ -220,8 +225,8 @@ void rxTCP_pseudoheader_insert(
 					dataOut.write(sendWord);
 				}
 				else{
-					fsm_state = TCP_PAYLOAD;
 					pseudo_header = 1;
+					fsm_state = TCP_PAYLOAD;
 				}
 				break;
 
@@ -261,223 +266,6 @@ void rxTCP_pseudoheader_insert(
 	}
 }
 
-/** @ingroup rx_engine
- * Extracts tcpLength from IP header, removes the header and prepends the IP addresses to the payload,
- * such that the output can be used for the TCP pseudo header creation
- * The TCP length is computed from the total length and the IP header length
- * @param[in]		dataIn, incoming data stream
- * @param[out]		dataOut, outgoing data stream
- * @param[out]		tcpLenFifoOut, the TCP length is stored into this FIFO
- * @TODO maybe compute TCP length in another way!!
- */
-
-//void rxTcpLengthExtract(stream<axiWord>&			dataIn,
-//						stream<axiWord>&			dataOut,
-//						stream<ap_uint<16> >&		tcpLenFifoOut)
-//{
-//#pragma HLS INLINE off
-//#pragma HLS pipeline II=1
-//
-//	static ap_uint<8> tle_ipHeaderLen = 0;
-//	static ap_uint<16> tle_ipTotalLen = 0;
-//	static ap_uint<4> tle_wordCount = 0;
-//	static bool tle_insertWord = false;
-//	static bool tle_wasLast = false;
-//	static bool tle_shift = true;
-//	static axiWord tle_prevWord;
-//
-//	axiWord currWord;
-//	axiWord sendWord;
-//
-//	if (tle_insertWord)
-//	{
-//		sendWord.data = 0;
-//		sendWord.keep = 0xFF;
-//		sendWord.last = 0;
-//		dataOut.write(sendWord);
-//		//printWord(sendWord);
-//		tle_insertWord = false;
-//	}
-//	else if (!dataIn.empty() && !tle_wasLast)
-//	{
-//		dataIn.read(currWord);
-//		switch (tle_wordCount)
-//		{
-//		case 0:
-//			tle_ipHeaderLen = currWord.data(3, 0);
-//			tle_ipTotalLen(7, 0) = currWord.data(31, 24);
-//			tle_ipTotalLen(15, 8) = currWord.data(23, 16);
-//			tle_ipTotalLen -= (tle_ipHeaderLen * 4);
-//			tle_ipHeaderLen -= 2; //?
-//			tle_wordCount++;
-//			break;
-//		case 1:
-//			// Get source IP address
-//			// -> is put into prevWord
-//			// Write length
-//			tcpLenFifoOut.write(tle_ipTotalLen);
-//			tle_ipHeaderLen -= 2;
-//			tle_wordCount++;
-//			break;
-//		case 2:
-//			// Get destination IP address
-//			sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-//			sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-//			sendWord.data(63, 32) = currWord.data(31, 0);
-//			sendWord.keep(7, 4) = currWord.keep(3, 0);
-//			//sendWord.last = currWord.last;
-//			sendWord.last = (currWord.keep[4] == 0);
-//			dataOut.write(sendWord);
-//			//printWord(sendWord);
-//			tle_ipHeaderLen -= 1;
-//			tle_insertWord = true;
-//			tle_wordCount++;
-//			break;
-//		case 3:
-//			switch (tle_ipHeaderLen)
-//			{
-//			case 0: //half of prevWord contains valuable data and currWord is full of valuable
-//				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-//				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-//				sendWord.data(63, 32) = currWord.data(31, 0);
-//				sendWord.keep(7, 4) = currWord.keep(3, 0);
-//				//sendWord.last = currWord.last;
-//				sendWord.last = (currWord.keep[4] == 0);
-//				dataOut.write(sendWord);
-//				//printWord(sendWord);
-//				tle_shift = true;
-//				tle_ipHeaderLen = 0;
-//				tle_wordCount++;
-//				break;
-//			case 1: //prevWord contains shitty data, but currWord is valuable
-//				sendWord = currWord;
-//				dataOut.write(sendWord);
-//				//printWord(sendWord);
-//				tle_shift = false;
-//				tle_ipHeaderLen = 0;
-//				tle_wordCount++;
-//				break;
-//			default: //prevWord contains shitty data, currWord at least half shitty
-//				//Drop this shit
-//				tle_ipHeaderLen -= 2;
-//				break;
-//			}
-//			break;
-//		default:
-//			if (tle_shift)
-//			{
-//				sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-//				sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-//				sendWord.data(63, 32) = currWord.data(31, 0);
-//				sendWord.keep(7, 4) = currWord.keep(3, 0);
-//				sendWord.last = (currWord.keep[4] == 0);
-//				dataOut.write(sendWord);
-//			}
-//			else
-//			{
-//				sendWord = currWord;
-//				dataOut.write(sendWord);
-//			}
-//			break;
-//		} //switch on WORD_N
-//		tle_prevWord = currWord;
-//		if (currWord.last)
-//		{
-//			tle_wordCount = 0;
-//			tle_wasLast = !sendWord.last;
-//		}
-//	} // if !empty
-//	else if (tle_wasLast) //Assumption has to be shift
-//	{
-//		// Send remainng data
-//		sendWord.data(31, 0) = tle_prevWord.data(63, 32);
-//		sendWord.keep(3, 0) = tle_prevWord.keep(7, 4);
-//		sendWord.data(63, 32) = 0;
-//		sendWord.keep(7, 4) = 0x0;
-//		sendWord.last = 0x1;
-//		dataOut.write(sendWord);
-//		tle_wasLast = false;
-//	}
-//}
-
-/** @ingroup rx_engine
- * Constructs the TCP pseudo header and prepends it to the TCP payload
- * @param[in]	dataIn, incoming Axi-Stream
- * @param[in]	tcpLenFifoIn, FIFO containing the TCP length of the current packet
- * @param[out]	dataOut, outgoing Axi-Stream
- */
-//void rxInsertPseudoHeader(stream<axiWord>&				dataIn,
-//							stream<ap_uint<16> >&		tcpLenFifoIn,
-//							stream<axiWord>&			dataOut)
-//{
-//#pragma HLS INLINE off
-//#pragma HLS pipeline II=1
-//
-//	static bool iph_wasLast = false;
-//	static ap_uint<2> iph_wordCount = 0;
-//	axiWord currWord, sendWord;
-//	static axiWord iph_prevWord;
-//	ap_uint<1> valid;
-//	ap_uint<16> tcpLen;
-//
-//
-//	currWord.last = 0;
-//	if (iph_wasLast)
-//	{
-//		sendWord.data(31,0) = iph_prevWord.data(63,32);
-//		sendWord.keep(3, 0) = iph_prevWord.keep(7,4);
-//		sendWord.keep(7, 4) = 0x0;
-//		sendWord.last = 0x1;
-//		dataOut.write(sendWord);
-//		iph_wasLast = false;
-//	}
-//	else if(!dataIn.empty())
-//	{
-//		switch (iph_wordCount)
-//		{
-//		case 0:
-//			dataIn.read(currWord);
-//			iph_wordCount++;
-//			break;
-//		case 1:
-//			dataIn.read(currWord);
-//			sendWord = iph_prevWord;
-//			dataOut.write(sendWord);
-//			iph_wordCount++;
-//			break;
-//		case 2:
-//			if (!tcpLenFifoIn.empty())
-//			{
-//				dataIn.read(currWord);
-//				tcpLenFifoIn.read(tcpLen);
-//				sendWord.data(15, 0) = 0x0600;
-//				sendWord.data(23, 16) = tcpLen(15, 8);
-//				sendWord.data(31, 24) = tcpLen(7, 0);
-//				sendWord.data(63, 32) = currWord.data(31, 0);
-//				sendWord.keep = 0xFF;
-//				sendWord.last = 0;
-//				dataOut.write(sendWord);
-//				iph_wordCount++;
-//			}
-//			break;
-//		default:
-//			dataIn.read(currWord);
-//			sendWord.data.range(31, 0) = iph_prevWord.data.range(63, 32);
-//			sendWord.data.range(63, 32) = currWord.data.range(31, 0);
-//			sendWord.keep.range(3, 0) = iph_prevWord.keep.range(7, 4);
-//			sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
-//			sendWord.last = (currWord.keep[4] == 0); //some "nice" stuff here
-//			dataOut.write(sendWord);
-//			break;
-//		}
-//		iph_prevWord = currWord;
-//		if (currWord.last == 1)
-//		{
-//			iph_wordCount = 0;
-//			iph_wasLast = !sendWord.last;
-//		}
-//	}
-//}
 
 /** @ingroup rx_engine
  *  Checks the TCP checksum writes valid into @p validBuffer
@@ -493,227 +281,143 @@ void rxTCP_pseudoheader_insert(
  *  @param[out]		tupleFifoOut
  *  @param[out]		portTableOut
  */
-//void rxCheckTCPchecksum(stream<axiWord>&					dataIn,
-//							stream<axiWord>&				dataOut,
-//							stream<bool>&					validFifoOut,
-//							stream<rxEngineMetaData>&		metaDataFifoOut,
-//							stream<fourTuple>&				tupleFifoOut,
-//							stream<ap_uint<16> >&			portTableOut)
-//{
-//#pragma HLS INLINE off
-//#pragma HLS pipeline II=1
-//
-//	static ap_uint<17> csa_tcp_sums[4] = {0, 0, 0, 0};
-//	static ap_uint<8> csa_dataOffset = 0xFF;
-//	static ap_uint<16> csa_wordCount = 0;
-//	static fourTuple csa_sessionTuple;
-//	static bool csa_shift = false;
-//	static bool csa_wasLast = false;
-//	static bool csa_checkChecksum = false;
-//	static ap_uint<36> halfWord;
-//	axiWord currWord, sendWord;
-//	static rxEngineMetaData csa_meta;
-//	static ap_uint<16> csa_port;
-//
-//	static ap_uint<3> csa_cc_state = 0;
-//
-//	//currWord.last = 0; //mighnt no be necessary any more FIXME to you want to risk it ;)
-//	if (!dataIn.empty() && !csa_checkChecksum)
-//	{
-//		dataIn.read(currWord);
-//		switch (csa_wordCount)
-//		{
-//		case 0:
-//			csa_dataOffset = 0xFF;
-//			csa_shift = false;
-//				// We don't switch bytes, internally we store it Most Significant Byte Last
-//				csa_sessionTuple.srcIp = currWord.data(31, 0);
-//				csa_sessionTuple.dstIp = currWord.data(63, 32);
-//				sendWord.last = currWord.last;
-//
-//			break;
-//		case 1:
-//			// Get length
-//			csa_meta.length(7, 0) = currWord.data(31, 24);
-//			csa_meta.length(15, 8) = currWord.data(23, 16);
-//			// We don't switch bytes, internally we store it Most Significant Byte Last
-//			csa_sessionTuple.srcPort = currWord.data(47, 32);
-//			csa_sessionTuple.dstPort = currWord.data(63, 48);
-//			csa_port = currWord.data(63, 48);
-//			sendWord.last = currWord.last;
-//			break;
-//		case 2:
-//			// GET SEQ and ACK number
-//			csa_meta.seqNumb(7, 0) = currWord.data(31, 24);
-//			csa_meta.seqNumb(15, 8) = currWord.data(23, 16);
-//			csa_meta.seqNumb(23, 16) = currWord.data(15, 8);
-//			csa_meta.seqNumb(31, 24) = currWord.data(7, 0);
-//			csa_meta.ackNumb(7, 0) = currWord.data(63, 56);
-//			csa_meta.ackNumb(15, 8) = currWord.data(55, 48);
-//			csa_meta.ackNumb(23, 16) = currWord.data(47, 40);
-//			csa_meta.ackNumb(31, 24) = currWord.data(39, 32);
-//			sendWord.last = currWord.last;
-//			break;
-//		case 3:
-//			csa_dataOffset = currWord.data.range(7, 4);
-//			csa_meta.length -= (csa_dataOffset * 4);
-//			//csa_dataOffset -= 5; //FIXME, do -5
-//			/* Control bits:
-//			 * [8] == FIN
-//			 * [9] == SYN
-//			 * [10] == RST
-//			 * [11] == PSH
-//			 * [12] == ACK
-//			 * [13] == URG
-//			 */
-//			csa_meta.ack = currWord.data[12];
-//			csa_meta.rst = currWord.data[10];
-//			csa_meta.syn = currWord.data[9];
-//			csa_meta.fin = currWord.data[8];
-//			csa_meta.winSize(7, 0) = currWord.data(31, 24);
-//			csa_meta.winSize(15, 8) = currWord.data(23, 16);
-//			// We add checksum as well and check for cs == 0
-//			sendWord.last = currWord.last;
-//			break;
-//		default:
-//			if (csa_dataOffset > 6)
-//			{
-//				csa_dataOffset -= 2;
-//			}
-//			else if (csa_dataOffset == 6)
-//			{
-//				csa_dataOffset = 5;
-//				csa_shift = true;
-//				halfWord.range(31, 0) = currWord.data.range(63, 32);
-//				halfWord.range(35, 32) = currWord.keep.range(7, 4);
-//				sendWord.last = (currWord.keep[4] == 0);
-//			}
-//			else // == 5 (or less)
-//			{
-//				if (!csa_shift)
-//				{
-//					sendWord = currWord;
-//					dataOut.write(sendWord);
-//				}
-//				else
-//				{
-//					sendWord.data.range(31, 0) = halfWord.range(31, 0);
-//					sendWord.data.range(63, 32) = currWord.data.range(31, 0);
-//					sendWord.keep.range(3, 0) = halfWord.range(35, 32);
-//					sendWord.keep.range(7, 4) = currWord.keep.range(3, 0);
-//					sendWord.last = (currWord.keep[4] == 0);
-//					/*if (currWord.last && currWord.strb.range(7, 4) != 0)
-//					{
-//						sendWord.last = 0;
-//					}*/
-//					dataOut.write(sendWord);
-//					halfWord.range(31, 0) = currWord.data.range(63, 32);
-//					halfWord.range(35, 32) = currWord.keep.range(7, 4);
-//				}
-//			}
-//			break;
-//		} // switch
-//		for (int i = 0; i < 4; i++)
-//		{
-//#pragma HLS UNROLL
-//			ap_uint<16> temp;
-//			if (currWord.keep.range(i*2+1, i*2) == 0x3)
-//			{
-//				temp(7, 0) = currWord.data.range(i*16+15, i*16+8);
-//				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-//				csa_tcp_sums[i] += temp;
-//				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
-//			}
-//			else if (currWord.keep[i*2] == 0x1)
-//			{
-//				temp(7, 0) = 0;
-//				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-//				csa_tcp_sums[i] += temp;
-//				csa_tcp_sums[i] = (csa_tcp_sums[i] + (csa_tcp_sums[i] >> 16)) & 0xFFFF;
-//			}
-//		}
-//		csa_wordCount++;
-//		if(currWord.last == 1)
-//		{
-//			csa_wordCount = 0;
-//			csa_wasLast = !sendWord.last; // moved length test down
-//			csa_checkChecksum = true;
-//		}
-//	}
-//	/*if (currWord.last == 1)
-//	{
-//		csa_wordCount = 0;
-//		csa_checkChecksum = true;
-//	}*/
-//	else if(csa_wasLast) //make if
-//	{
-//		if (csa_meta.length != 0)
-//		{
-//			sendWord.data.range(31, 0) = halfWord.range(31, 0);
-//			sendWord.data.range(63, 32) = 0;
-//			sendWord.keep.range(3, 0) = halfWord.range(35, 32);
-//			sendWord.keep.range(7, 4) = 0;
-//			sendWord.last = 1;
-//			dataOut.write(sendWord);
-//		}
-//		csa_wasLast = false;
-//	}
-//	else if (csa_checkChecksum) //make if?
-//	{
-//		switch (csa_cc_state)
-//		{
-//		case 0:
-//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-//			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
-//			csa_tcp_sums[2] = (csa_tcp_sums[2] + (csa_tcp_sums[2] >> 16)) & 0xFFFF;
-//			csa_tcp_sums[3] = (csa_tcp_sums[3] + (csa_tcp_sums[3] >> 16)) & 0xFFFF;
-//			csa_cc_state++;
-//			break;
-//		case 1:
-//			csa_tcp_sums[0] += csa_tcp_sums[2];
-//			csa_tcp_sums[1] += csa_tcp_sums[3];
-//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-//			csa_tcp_sums[1] = (csa_tcp_sums[1] + (csa_tcp_sums[1] >> 16)) & 0xFFFF;
-//			csa_cc_state++;
-//			break;
-//		case 2:
-//			csa_tcp_sums[0] += csa_tcp_sums[1];
-//			csa_tcp_sums[0] = (csa_tcp_sums[0] + (csa_tcp_sums[0] >> 16)) & 0xFFFF;
-//			csa_cc_state++;
-//			break;
-//		case 3:
-//			csa_tcp_sums[0] = ~csa_tcp_sums[0];
-//			csa_cc_state++;
-//			break;
-//		case 4:
-//			// If summation == 0 then checksum is correct
-//			if (csa_tcp_sums[0](15, 0) == 0)
-//			{
-//				// Since pkg is valid, write out metadata, 4-tuple and check port
-//				metaDataFifoOut.write(csa_meta);
-//				portTableOut.write(csa_port);
-//				tupleFifoOut.write(csa_sessionTuple);
-//				if (csa_meta.length != 0)
-//				{
-//					validFifoOut.write(true);
-//				}
-//			}
-//			else if(csa_meta.length != 0)
-//			{
-//				validFifoOut.write(false);
-//			}
-//			csa_checkChecksum = false;
-//			csa_tcp_sums[0] = 0;
-//			csa_tcp_sums[1] = 0;
-//			csa_tcp_sums[2] = 0;
-//			csa_tcp_sums[3] = 0;
-//			csa_cc_state = 0;
-//			break;
-//		}
-//
-//	}
-//}
+void rxCheckTCPchecksum(
+							stream<axiWord>&				dataIn,
+							stream<axiWord>&				dataOut,
+							stream<bool>&					validFifoOut,
+							stream<rxEngineMetaData>&		metaDataFifoOut,
+							stream<fourTuple>&				tupleFifoOut,
+							stream<ap_uint<16> >&			portTableOut)
+{
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
 
+	axiWord 				currWord;
+
+	static rxEngineMetaData rxMetaInfo;
+	static fourTuple 		rxTupleInfo;
+	static ap_uint<16> 		packet_checksum;
+	static ap_uint<1> 		first_word=1;
+	static ap_uint<16> 		dstPort;
+	static ap_uint<1> 		compute_checksum=0;
+
+	static ap_uint<16> word_sum[64]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	
+	ap_uint<16> tmp;
+	ap_uint<17> tmp1;
+	
+
+
+	static ap_uint<17> ip_sums_L1[16];
+	static ap_uint<18> ip_sums_L2[8];
+	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
+	static ap_uint<20> ip_sums_L4[2];
+	static ap_uint<21> ip_sums_L5;
+	ap_uint<17> final_sum;
+	ap_uint<16> res_checksum;
+
+	ap_uint<1> 	correct_checksum=false;
+
+	if (!dataIn.empty() && !compute_checksum){
+		
+		dataIn.read(currWord);
+
+		if (first_word){
+			first_word=0;
+
+			packet_checksum 	= (currWord.data(231,224),currWord.data(239,232));
+
+			// Get four tuple info
+			rxTupleInfo.srcIp	= ((ap_uint<8>)currWord.data( 7 ,  0), (ap_uint<8>)currWord.data(15 ,  8), (ap_uint<8>)currWord.data(23 , 16), (ap_uint<8>)currWord.data(31 , 24));
+			rxTupleInfo.dstIp	= ((ap_uint<8>)currWord.data(39 , 32), (ap_uint<8>)currWord.data(47 , 40), (ap_uint<8>)currWord.data(55 , 48), (ap_uint<8>)currWord.data(63 , 56));
+			rxTupleInfo.srcPort	= (currWord.data(103, 96), currWord.data(111,104));
+			dstPort 			= (currWord.data(119,112), currWord.data(127,120));
+			rxTupleInfo.dstPort	= dstPort;
+			// Get Meta Info
+			rxMetaInfo.seqNumb	= ((ap_uint<8>)currWord.data(135,128),(ap_uint<8>)currWord.data(143,136),(ap_uint<8>)currWord.data(151,144),(ap_uint<8>)currWord.data(159,152));
+			rxMetaInfo.ackNumb	= ((ap_uint<8>)currWord.data(167,160),(ap_uint<8>)currWord.data(175,168),(ap_uint<8>)currWord.data(183,176),(ap_uint<8>)currWord.data(191,184));
+			rxMetaInfo.winSize	= (currWord.data(215,208),currWord.data(223,216));
+			rxMetaInfo.length 	= (currWord.data(87 ,80),currWord.data(95 ,88));
+			rxMetaInfo.tcp_header_length 	= currWord.data(199 ,196);
+			rxMetaInfo.cwr 		= currWord.data.bit(207);
+			rxMetaInfo.ecn 		= currWord.data.bit(206);
+			rxMetaInfo.urg 		= currWord.data.bit(205);
+			rxMetaInfo.ack 		= currWord.data.bit(204);
+			rxMetaInfo.psh 		= currWord.data.bit(203);
+			rxMetaInfo.rst 		= currWord.data.bit(202);
+			rxMetaInfo.syn 		= currWord.data.bit(201);
+			rxMetaInfo.fin 		= currWord.data.bit(200);
+
+		}
+
+
+		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
+#pragma HLS UNROLL
+
+			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
+			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+
+			tmp1 		= word_sum[i] + tmp;
+			word_sum[i] = tmp1(15,0) + tmp1.bit(16);	// one's complement adder
+
+		}
+
+		if(currWord.last){
+			compute_checksum = 1;
+			first_word=1;
+		}
+	}
+	else if(compute_checksum) {
+		compute_checksum = 0;
+
+		//adder tree
+		for (int i = 0; i < 16; i++) {
+		#pragma HLS unroll
+			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
+		}
+
+		//adder tree L2
+		for (int i = 0; i < 8; i++) {
+		#pragma HLS unroll
+			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
+		}
+		//ip_sums_L2[7] = ip_sums_L1[14];
+
+		//adder tree L3
+		for (int i = 0; i < 4; i++) {
+		#pragma HLS unroll
+			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
+		}
+
+		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
+		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
+
+		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
+
+		final_sum = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
+		final_sum = final_sum.bit(16) + final_sum;
+
+		res_checksum = ~(final_sum.range(15,0)); // ones complement
+
+		reset_adder : for (int i=0 ; i < 32 ; i++ ){
+#pragma HLS UNROLL
+			word_sum[i] = 0;
+
+		}
+
+		if (res_checksum == 0){
+			correct_checksum=true;
+			metaDataFifoOut.write(rxMetaInfo);
+			tupleFifoOut.write(rxTupleInfo);
+			portTableOut.write(dstPort);
+		}
+
+		validFifoOut.write(correct_checksum);
+	}
+
+
+}
+	
 
 /** @ingroup rx_engine
  *  For each packet it reads the valid value from @param validFifoIn

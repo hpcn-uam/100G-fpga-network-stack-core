@@ -40,6 +40,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <stdint.h>
 #include <vector>
 
+#define ETH_INTERFACE_WIDTH 512
+
 static const ap_uint<16> MSS=1460; //536
 
 static const uint16_t MAX_SESSIONS = 10000;
@@ -49,6 +51,8 @@ static const uint16_t MAX_SESSIONS = 10000;
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
 #define RX_DDR_BYPASS 0
+
+
 
 
 #define noOfTxSessions 1 // Number of Tx Sessions to open for testing
@@ -116,15 +120,17 @@ enum sessionState {CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_
 
 enum { WORD_0, WORD_1, WORD_2, WORD_3, WORD_4 };
 
-struct axiWord
-{
-	ap_uint<64>		data;
-	ap_uint<8>		keep;
+template<int D>
+struct my_axis {
+	ap_uint< D >	data;
+	ap_uint<D/8>	keep;
 	ap_uint<1>		last;
-	axiWord() {}
-	axiWord(ap_uint<64>	 data, ap_uint<8> keep, ap_uint<1> last)
+	my_axis() {}
+	my_axis(ap_uint<64>	 data, ap_uint<8> keep, ap_uint<1> last)
 				: data(data), keep(keep), last(last) {}
 };
+
+typedef my_axis<ETH_INTERFACE_WIDTH> axiWord;
 
 struct fourTuple
 {
