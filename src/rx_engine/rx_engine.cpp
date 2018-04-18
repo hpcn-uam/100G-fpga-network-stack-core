@@ -168,10 +168,6 @@ void rxTCP_pseudoheader_insert(
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-#pragma HLS INTERFACE ap_ctrl_none port=return
-#pragma HLS INTERFACE axis off port=dataIn  name=s_axis_tcp_data
-#pragma HLS INTERFACE axis off port=dataOut name=m_axis_tcp_data
-
 	axiWord 				currWord;
 	axiWord 				sendWord;
 	ap_uint<16>				tcpTotalLen;
@@ -293,6 +289,8 @@ void rxCheckTCPchecksum(
 #pragma HLS pipeline II=1
 
 	axiWord 				currWord;
+	axiWord 				sendWord;
+	static axiWord 			prevWord;
 
 	static rxEngineMetaData rxMetaInfo;
 	static fourTuple 		rxTupleInfo;
@@ -300,12 +298,15 @@ void rxCheckTCPchecksum(
 	static ap_uint<1> 		first_word=1;
 	static ap_uint<16> 		dstPort;
 	static ap_uint<1> 		compute_checksum=0;
+	static ap_uint<4> 		tcp_offset;
 
 	static ap_uint<16> word_sum[64]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	
 	ap_uint<16> tmp;
 	ap_uint<17> tmp1;
+	ap_uint<17> tmp2;
 	
+	static ap_uint<1> 	send_packet;
 
 
 	static ap_uint<17> ip_sums_L1[16];
@@ -321,24 +322,33 @@ void rxCheckTCPchecksum(
 	if (!dataIn.empty() && !compute_checksum){
 		
 		dataIn.read(currWord);
-
+		
 		if (first_word){
 			first_word=0;
 
 			packet_checksum 	= (currWord.data(231,224),currWord.data(239,232));
 
 			// Get four tuple info
-			rxTupleInfo.srcIp	= ((ap_uint<8>)currWord.data( 7 ,  0), (ap_uint<8>)currWord.data(15 ,  8), (ap_uint<8>)currWord.data(23 , 16), (ap_uint<8>)currWord.data(31 , 24));
-			rxTupleInfo.dstIp	= ((ap_uint<8>)currWord.data(39 , 32), (ap_uint<8>)currWord.data(47 , 40), (ap_uint<8>)currWord.data(55 , 48), (ap_uint<8>)currWord.data(63 , 56));
-			rxTupleInfo.srcPort	= (currWord.data(103, 96), currWord.data(111,104));
 			dstPort 			= (currWord.data(119,112), currWord.data(127,120));
-			rxTupleInfo.dstPort	= dstPort;
+
+//			rxTupleInfo.srcIp	= ((ap_uint<8>)currWord.data( 7 ,  0), (ap_uint<8>)currWord.data(15 ,  8), (ap_uint<8>)currWord.data(23 , 16), (ap_uint<8>)currWord.data(31 , 24));
+//			rxTupleInfo.dstIp	= ((ap_uint<8>)currWord.data(39 , 32), (ap_uint<8>)currWord.data(47 , 40), (ap_uint<8>)currWord.data(55 , 48), (ap_uint<8>)currWord.data(63 , 56));
+//			rxTupleInfo.srcPort	= (currWord.data(103, 96), currWord.data(111,104));
+//			rxTupleInfo.dstPort	= dstPort;
+			
+			// Do not swap info
+			rxTupleInfo.srcIp	= currWord.data(31 ,  0);
+			rxTupleInfo.dstIp	= currWord.data(63 , 32);
+			rxTupleInfo.srcPort	= currWord.data(111, 96);
+			rxTupleInfo.dstPort	= currWord.data(239,231);
+			
+			tcp_offset 			= currWord.data(199 ,196);
+
 			// Get Meta Info
 			rxMetaInfo.seqNumb	= ((ap_uint<8>)currWord.data(135,128),(ap_uint<8>)currWord.data(143,136),(ap_uint<8>)currWord.data(151,144),(ap_uint<8>)currWord.data(159,152));
 			rxMetaInfo.ackNumb	= ((ap_uint<8>)currWord.data(167,160),(ap_uint<8>)currWord.data(175,168),(ap_uint<8>)currWord.data(183,176),(ap_uint<8>)currWord.data(191,184));
 			rxMetaInfo.winSize	= (currWord.data(215,208),currWord.data(223,216));
-			rxMetaInfo.length 	= (currWord.data(87 ,80),currWord.data(95 ,88));
-			rxMetaInfo.tcp_header_length 	= currWord.data(199 ,196);
+			rxMetaInfo.length 	= (currWord.data(87 ,80),currWord.data(95 ,88)) - tcp_offset * 4;
 			rxMetaInfo.cwr 		= currWord.data.bit(207);
 			rxMetaInfo.ecn 		= currWord.data.bit(206);
 			rxMetaInfo.urg 		= currWord.data.bit(205);
@@ -348,8 +358,23 @@ void rxCheckTCPchecksum(
 			rxMetaInfo.syn 		= currWord.data.bit(201);
 			rxMetaInfo.fin 		= currWord.data.bit(200);
 
+			send_packet = currWord.last;
+
+		}
+		else{
+			sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
+			sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
+
+			if (sendWord.last && currWord.keep.bit(tcp_offset* 4 + 12)){
+				sendWord.last = 0;
+				send_packet  = 1;
+			}
+			else
+				sendWord.last = currWord.last;
+			dataOut.write(sendWord);
 		}
 
+		prevWord = currWord;
 
 		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
 #pragma HLS UNROLL
@@ -358,7 +383,14 @@ void rxCheckTCPchecksum(
 			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
 
 			tmp1 		= word_sum[i] + tmp;
-			word_sum[i] = tmp1(15,0) + tmp1.bit(16);	// one's complement adder
+			tmp2 		= word_sum[i] + tmp + 1;
+
+			if (tmp1.bit(16)) 				// one's complement adder
+				word_sum[i] = tmp2(15,0);
+			else
+				word_sum[i] = tmp1(15,0);
+
+			//word_sum[i] = tmp1(15,0) + tmp1.bit(16);
 
 		}
 
@@ -368,6 +400,17 @@ void rxCheckTCPchecksum(
 		}
 	}
 	else if(compute_checksum) {
+
+		if (send_packet) {
+			send_packet=0;
+			if (rxMetaInfo.length>0){
+				sendWord.data = prevWord.data(511,tcp_offset*32 + 96);
+				sendWord.keep = prevWord.keep( 63, tcp_offset*4 + 12);
+				sendWord.last = 1;
+				dataOut.write(sendWord);
+			}
+		}
+
 		compute_checksum = 0;
 
 		//adder tree
@@ -381,7 +424,6 @@ void rxCheckTCPchecksum(
 		#pragma HLS unroll
 			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
 		}
-		//ip_sums_L2[7] = ip_sums_L1[14];
 
 		//adder tree L3
 		for (int i = 0; i < 4; i++) {
@@ -391,7 +433,6 @@ void rxCheckTCPchecksum(
 
 		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
 		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
-
 		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
 
 		final_sum = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
@@ -427,65 +468,58 @@ void rxCheckTCPchecksum(
  *  @param[in]		validFifoIn, Valid FIFO indicating if current packet is valid
  *  @param[out]		dataOut, outgoing data stream
  */
-//void rxTcpInvalidDropper(stream<axiWord>&				dataIn,
-//							stream<bool>&				validFifoIn,
-//							stream<axiWord>&			dataOut)
-//{
-//#pragma HLS INLINE off
-//#pragma HLS pipeline II=1
-//
-//	enum rtid_StateType {GET_VALID, FWD, DROP};
-//	static rtid_StateType rtid_state = GET_VALID;
-//
-//	axiWord currWord;
-//	bool valid;
-//
-//
-//	switch (rtid_state) {
-//	case GET_VALID: //Drop1
-//		if (!validFifoIn.empty())
-//		{
-//			validFifoIn.read(valid);
-//			if (valid)
-//			{
-//				rtid_state = FWD;
-//			}
-//			else
-//			{
-//				rtid_state = DROP;
-//			}
-//		}
-//		break;
-//	case FWD:
-//		if(!dataIn.empty() && !dataOut.full())
-//		{
-//			dataIn.read(currWord);
-//			dataOut.write(currWord);
-//			if (currWord.last)
-//			{
-//				rtid_state = GET_VALID;
-//			}
-//		}
-//		break;
-//	case DROP:
-//		if(!dataIn.empty())
-//		{
-//			dataIn.read(currWord);
-//			if (currWord.last)
-//			{
-//				rtid_state = GET_VALID;
-//			}
-//		}
-//		break;
-//	} // switch
-//}
+void rxTcpInvalidDropper(
+							stream<axiWord>&			dataIn,
+							stream<bool>&				validFifoIn,
+							stream<axiWord>&			dataOut)
+{
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+	enum rtid_StateType {GET_VALID, FWD, DROP};
+	static rtid_StateType rtid_state = GET_VALID;
+
+	axiWord currWord;
+	bool valid;
+
+	switch (rtid_state) {
+	case GET_VALID: 
+		if (!validFifoIn.empty()) {
+			validFifoIn.read(valid);
+			if (valid) {				
+				rtid_state = FWD;	// Checksum correct
+			}
+			else {
+				rtid_state = DROP;  // Checksum incorrect
+			}
+		}
+		break;
+	case FWD:
+		if(!dataIn.empty() && !dataOut.full()) {
+			dataIn.read(currWord);
+			dataOut.write(currWord);
+			if (currWord.last) {
+				rtid_state = GET_VALID;
+			}
+		}
+		break;
+	case DROP:
+		if(!dataIn.empty()) {
+			dataIn.read(currWord);
+			if (currWord.last) {
+				rtid_state = GET_VALID;
+			}
+		}
+		break;
+	}
+}
 
 
 
 
 /** @ingroup rx_engine
  * The module contains 2 state machines nested into each other. The outer state machine
- * loads the metadata and does the session lookup. The inner state machin then evaluates all
+ * loads the metadata and does the session lookup. The inner state machine then evaluates all
  * this data. This inner state machine mostly represents the TCP state machine and contains
  * all the logic how to update the metadata, what events are triggered and so on. It is the key
  * part of the @ref rx_engine.
@@ -509,125 +543,110 @@ void rxCheckTCPchecksum(
  * @param[out]	rxEng2rxApp_notification
  */
 
-//void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
-//						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
-//						stream<bool>&							portTable2rxEng_rsp,
-//						stream<fourTuple>&						tupleBufferIn,
-//						stream<sessionLookupQuery>&				rxEng2sLookup_req,
-//						stream<extendedEvent>&					rxEng2eventEng_setEvent,
-//						stream<bool>&							dropDataFifoOut,
-//						stream<rxFsmMetaData>&					fsmMetaDataFifo)
-//{
-//#pragma HLS INLINE off
-//#pragma HLS pipeline II=1
-//
-//	static rxEngineMetaData mh_meta;
-//	static sessionLookupReply mh_lup;
-//	enum mhStateType {META, LOOKUP};
-//	static mhStateType mh_state = META;
-//	static ap_uint<32> mh_srcIpAddress;
-//	static ap_uint<16> mh_dstIpPort;
-//
-//	fourTuple tuple;
-//	bool portIsOpen;
-//
-//	switch (mh_state)
-//	{
-//	case META:
-//		if (!metaDataFifoIn.empty() && !portTable2rxEng_rsp.empty() && !tupleBufferIn.empty())
-//		{
-//			metaDataFifoIn.read(mh_meta);
-//			portTable2rxEng_rsp.read(portIsOpen);
-//			tupleBufferIn.read(tuple);
-//			mh_srcIpAddress(7, 0) = tuple.srcIp(31, 24);
-//			mh_srcIpAddress(15, 8) = tuple.srcIp(23, 16);
-//			mh_srcIpAddress(23, 16) = tuple.srcIp(15, 8);
-//			mh_srcIpAddress(31, 24) = tuple.srcIp(7, 0);
-//			mh_dstIpPort(7, 0) = tuple.dstPort(15, 8);
-//			mh_dstIpPort(15, 8) = tuple.dstPort(7, 0);
-//			// CHeck if port is closed
-//			if (!portIsOpen)
-//			{
-//				// SEND RST+ACK
-//				if (!mh_meta.rst)
-//				{
-//					// send necesssary tuple through event
-//					fourTuple switchedTuple;
-//					switchedTuple.srcIp = tuple.dstIp;
-//					switchedTuple.dstIp = tuple.srcIp;
-//					switchedTuple.srcPort = tuple.dstPort;
-//					switchedTuple.dstPort = tuple.srcPort;
-//					if (mh_meta.syn || mh_meta.fin)
-//					{
-//						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length+1), switchedTuple)); //always 0
-//					}
-//					else
-//					{
-//						rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length), switchedTuple));
-//					}
-//				}
-//				//else ignore => do nothing
-//				if (mh_meta.length != 0)
-//				{
-//					dropDataFifoOut.write(true);
-//				}
-//			}
-//			else
-//			{
-//				// Make session lookup, only allow creation of new entry when SYN or SYN_ACK
-//				rxEng2sLookup_req.write(sessionLookupQuery(tuple, (mh_meta.syn && !mh_meta.rst && !mh_meta.fin)));
-//				mh_state = LOOKUP;
-//			}
-//		}
-//		break;
-//	case LOOKUP: //BIG delay here, waiting for LOOKup
-//		if (!sLookup2rxEng_rsp.empty())
-//		{
-//			sLookup2rxEng_rsp.read(mh_lup);
-//			if (mh_lup.hit)
-//			{
-//				//Write out lup and meta
-//				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
-//			}
-//			if (mh_meta.length != 0)
-//			{
-//				dropDataFifoOut.write(!mh_lup.hit);
-//			}
-//			/*if (!mh_lup.hit)
-//			{
-//				// Port is Open, but we have no sessionID, that matches or is free
-//				// For SYN we should time out, for everything else sent RST TODO
-//				if (mh_meta.length != 0)
-//				{
-//					dropDataFifoOut.write(true); // always write???
-//				}
-//				//mh_state = META;
-//			}
-//			else
-//			{
-//				//Write out lup and meta
-//				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
-//
-//				// read state
-//				rxEng2stateTable_upd_req.write(stateQuery(mh_lup.sessionID));
-//				// read rxSar & txSar
-//				if (!(mh_meta.syn && !mh_meta.rst && !mh_meta.fin)) // Do not read rx_sar for SYN(+ACK)(+ANYTHING) => (!syn || rst || fin
-//				{
-//					rxEng2rxSar_upd_req.write(rxSarRecvd(mh_lup.sessionID));
-//				}
-//				if (mh_meta.ack) // Do not read for SYN (ACK+ANYTHING)
-//				{
-//					rxEng2txSar_upd_req.write(rxTxSarQuery(mh_lup.sessionID));
-//				}*/
-//				//mh_state = META;
-//			//}
-//			mh_state = META;
-//		}
-//
-//		break;
-//	}//switch
-//}
-/*
+void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
+						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
+						stream<bool>&							portTable2rxEng_rsp,
+						stream<fourTuple>&						tupleBufferIn,
+						stream<sessionLookupQuery>&				rxEng2sLookup_req,
+						stream<extendedEvent>&					rxEng2eventEng_setEvent,
+						stream<bool>&							dropDataFifoOut,
+						stream<rxFsmMetaData>&					fsmMetaDataFifo)
+{
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+	static rxEngineMetaData mh_meta;
+	static sessionLookupReply mh_lup;
+	enum mhStateType {META, LOOKUP};
+	static mhStateType mh_state = META;
+	static ap_uint<32> mh_srcIpAddress;
+	static ap_uint<16> mh_dstIpPort;
+
+	fourTuple tuple;
+	bool portIsOpen;
+
+	switch (mh_state) {
+		case META:
+			if (!metaDataFifoIn.empty() && !portTable2rxEng_rsp.empty() && !tupleBufferIn.empty()) {
+				
+				metaDataFifoIn.read(mh_meta);
+				portTable2rxEng_rsp.read(portIsOpen);
+				tupleBufferIn.read(tuple);
+
+				mh_srcIpAddress = ((ap_uint<8>)tuple.srcIp( 7 ,  0), (ap_uint<8>)tuple.srcIp(15 ,  8), (ap_uint<8>)tuple.srcIp(23 , 16), (ap_uint<8>)tuple.srcIp(31 , 24));
+				mh_dstIpPort = (tuple.dstPort(7, 0),tuple.dstPort(15, 8));
+
+				if (!portIsOpen) {									// Check if port is closed
+					// SEND RST+ACK
+					if (!mh_meta.rst) {
+						// send necessary tuple through event
+						fourTuple switchedTuple;
+						switchedTuple.srcIp = tuple.dstIp;
+						switchedTuple.dstIp = tuple.srcIp;
+						switchedTuple.srcPort = tuple.dstPort;
+						switchedTuple.dstPort = tuple.srcPort;
+						if (mh_meta.syn || mh_meta.fin) {
+							rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length+1), switchedTuple)); //always 0
+						}
+						else {
+							rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length), switchedTuple));
+						}
+					}
+					//else ignore => do nothing
+					if (mh_meta.length != 0) {
+						dropDataFifoOut.write(true);
+					}
+				}
+				else {
+					// Make session lookup, only allow creation of new entry when SYN or SYN_ACK
+					rxEng2sLookup_req.write(sessionLookupQuery(tuple, (mh_meta.syn && !mh_meta.rst && !mh_meta.fin)));
+					mh_state = LOOKUP;
+				}
+			}
+			break;
+		case LOOKUP: //BIG delay here, waiting for LOOKup
+			if (!sLookup2rxEng_rsp.empty()) {
+				sLookup2rxEng_rsp.read(mh_lup);
+				if (mh_lup.hit) {
+					//Write out lup and meta
+					fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
+				}
+				if (mh_meta.length != 0) {
+					dropDataFifoOut.write(!mh_lup.hit);
+				}
+	//			if (!mh_lup.hit)
+	//			{
+	//				// Port is Open, but we have no sessionID, that matches or is free
+	//				// For SYN we should time out, for everything else sent RST TODO
+	//				if (mh_meta.length != 0) {
+	//					dropDataFifoOut.write(true); // always write???
+	//				}
+	//				//mh_state = META;
+	//			}
+	//			else {
+	//				//Write out lup and meta
+	//				fsmMetaDataFifo.write(rxFsmMetaData(mh_lup.sessionID, mh_srcIpAddress, mh_dstIpPort, mh_meta));
+	//
+	//				// read state
+	//				rxEng2stateTable_upd_req.write(stateQuery(mh_lup.sessionID));
+	//				// read rxSar & txSar
+	//				if (!(mh_meta.syn && !mh_meta.rst && !mh_meta.fin)) // Do not read rx_sar for SYN(+ACK)(+ANYTHING) => (!syn || rst || fin
+	//				{
+	//					rxEng2rxSar_upd_req.write(rxSarRecvd(mh_lup.sessionID));
+	//				}
+	//				if (mh_meta.ack) // Do not read for SYN (ACK+ANYTHING)
+	//				{
+	//					rxEng2txSar_upd_req.write(rxTxSarQuery(mh_lup.sessionID));
+	//				}
+	//				//mh_state = META;
+	//			//}
+				mh_state = META;
+			}
+
+			break;
+	}//switch
+}
+
 void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 						stream<sessionState>&					stateTable2rxEng_upd_rsp,
 						stream<rxSarEntry>&						rxSar2rxEng_upd_rsp,
@@ -1027,15 +1046,15 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 		break;
 	} //switch state
 }
-*/
+
 /** @ingroup rx_engine
  *	Drops packets if their metadata did not match / are invalid, as indicated by @param dropBuffer
  *	@param[in]		dataIn, incoming data stream
  *	@param[in]		dropFifoIn, Drop-FIFO indicating if packet needs to be dropped
  *	@param[out]		rxBufferDataOut, outgoing data stream
  */
-/*
-void rxPackageDropper(stream<axiWord>&		dataIn,
+
+void rxPacketDropper(stream<axiWord>&		dataIn,
 					  stream<bool>&			dropFifoIn1,
 					  stream<bool>&			dropFifoIn2,
 					  stream<axiWord>&		rxBufferDataOut) {
@@ -1049,29 +1068,23 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
 
 	switch (tpf_state) {
 	case READ_DROP1: //Drop1
-		if (!dropFifoIn1.empty())
-		{
+		if (!dropFifoIn1.empty()) {
 			dropFifoIn1.read(drop);
-			if (drop)
-			{
+			if (drop) {
 				tpf_state = DROP;
 			}
-			else
-			{
+			else {
 				tpf_state = READ_DROP2;
 			}
 		}
 		break;
 	case READ_DROP2:
-		if (!dropFifoIn2.empty())
-		{
+		if (!dropFifoIn2.empty()) {
 			dropFifoIn2.read(drop);
-			if (drop)
-			{
+			if (drop) {
 				tpf_state = DROP;
 			}
-			else
-			{
+			else {
 				tpf_state = FWD;
 			}
 		}
@@ -1079,8 +1092,7 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
 	case FWD:
 		if(!dataIn.empty() && !rxBufferDataOut.full()) {
 			axiWord currWord = dataIn.read();
-			if (currWord.last)
-			{
+			if (currWord.last) {
 				tpf_state = READ_DROP1;
 			}
 			rxBufferDataOut.write(currWord);
@@ -1089,15 +1101,14 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
 	case DROP:
 		if(!dataIn.empty()) {
 			axiWord currWord = dataIn.read();
-			if (currWord.last)
-			{
+			if (currWord.last) {
 				tpf_state = READ_DROP1;
 			}
 		}
 		break;
 	} // switch
 }
-*/
+
 /** @ingroup rx_engine
  *  Delays the notifications to the application until the data is actually is written to memory
  *  @param[in]		rxWriteStatusIn, the status which we get back from the DATA MOVER it indicates if the write was successful
@@ -1105,7 +1116,7 @@ void rxPackageDropper(stream<axiWord>&		dataIn,
  *  @param[out]		notificationOut, outgoing notifications
  *  @TODO Handle unsuccessful write to memory
  */
-/*
+
 void rxAppNotificationDelayer(	stream<mmStatus>&				rxWriteStatusIn, stream<appNotification>&		internalNotificationFifoIn,
 								stream<appNotification>&		notificationOut, stream<ap_uint<1> > &doubleAccess) {
 #pragma HLS INLINE off
@@ -1152,27 +1163,32 @@ void rxAppNotificationDelayer(	stream<mmStatus>&				rxWriteStatusIn, stream<appN
 		}
 	}
 }
-*/
-/*
-void rxEventMerger(stream<extendedEvent>& in1, stream<event>& in2, stream<extendedEvent>& out)
+
+
+void rxEventMerger(
+					stream<extendedEvent>& in1, 
+					stream<event>& in2, 
+					stream<extendedEvent>& out)
 {
 	#pragma HLS PIPELINE II=1
 	#pragma HLS INLINE
 
-	if (!in1.empty())
-	{
+	if (!in1.empty()) {
 		out.write(in1.read());
 	}
-	else if (!in2.empty())
-	{
+	else if (!in2.empty()) {
 		out.write(in2.read());
 	}
 }
-*/
+
 /*
-void rxEngMemWrite(	stream<axiWord>& 				rxMemWrDataIn, stream<mmCmd>&				rxMemWrCmdIn,
-					stream<mmCmd>&					rxMemWrCmdOut, stream<axiWord>&				rxMemWrDataOut,
-					stream<ap_uint<1> >&			doubleAccess) {
+void rxEngMemWrite(	
+					stream<axiWord>& 				rxMemWrDataIn, 
+					stream<mmCmd>&					rxMemWrCmdIn,
+					stream<mmCmd>&					rxMemWrCmdOut, 
+					stream<axiWord>&				rxMemWrDataOut,
+					stream<ap_uint<1> >&			doubleAccess) 
+{
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 
@@ -1325,7 +1341,7 @@ void rxEngMemWrite(	stream<axiWord>& 				rxMemWrDataIn, stream<mmCmd>&				rxMemW
  *  @param[out]		rxBufferWriteCmd
  *  @param[out]		rxEng2rxApp_notification
  */
-/*
+
 void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<sessionLookupReply>&			sLookup2rxEng_rsp,
 				stream<sessionState>&				stateTable2rxEng_upd_rsp,
@@ -1351,31 +1367,28 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 #endif
 				stream<appNotification>&			rxEng2rxApp_notification)
 {
-//#pragma HLS DATAFLOW
-//#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS DATAFLOW
+#pragma HLS INTERFACE ap_ctrl_none port=return
 #pragma HLS INLINE
 
 	// Axi Streams
-	static stream<axiWord>		rxEng_dataBuffer0("rxEng_dataBuffer0");
-	static stream<axiWord>		rxEng_dataBuffer1("rxEng_dataBuffer1");
-	static stream<axiWord>		rxEng_dataBuffer2("rxEng_dataBuffer2");
-	static stream<axiWord>		rxEng_dataBuffer3("rxEng_dataBuffer3");
-	#pragma HLS stream variable=rxEng_dataBuffer0 depth=8
-	#pragma HLS stream variable=rxEng_dataBuffer1 depth=8
-	#pragma HLS stream variable=rxEng_dataBuffer2 depth=256 //critical, tcp checksum computation
-	#pragma HLS stream variable=rxEng_dataBuffer3 depth=8
-	#pragma HLS DATA_PACK variable=rxEng_dataBuffer0
-	#pragma HLS DATA_PACK variable=rxEng_dataBuffer1
-	#pragma HLS DATA_PACK variable=rxEng_dataBuffer2
-	#pragma HLS DATA_PACK variable=rxEng_dataBuffer3
+	static stream<axiWord>		rxEng_pseudo_packet("rxEng_pseudo_packet");
+	static stream<axiWord>		rxEng_pkt_buffer_wait_checksum("rxEng_pkt_buffer_wait_checksum");
+	static stream<axiWord>		rxEng_pkt_buffer("rxEng_pkt_buffer");
+	#pragma HLS stream variable=rxEng_pseudo_packet depth=8
+	#pragma HLS stream variable=rxEng_pkt_buffer_wait_checksum depth=256 //critical, tcp checksum computation
+	#pragma HLS stream variable=rxEng_pkt_buffer depth=8
+	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet
+	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer_wait_checksum
+	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer
 
 	// Meta Streams/FIFOs
-	static stream<bool>					rxEng_tcpValidFifo("rx_tcpValidFifo");
+	static stream<bool>					rxEng_tcpCorrect_checksum("rx_tcpValidFifo");
 	static stream<rxEngineMetaData>		rxEng_metaDataFifo("rx_metaDataFifo");
 	static stream<rxFsmMetaData>		rxEng_fsmMetaDataFifo("rxEng_fsmMetaDataFifo");
 	static stream<fourTuple>			rxEng_tupleBuffer("rx_tupleBuffer");
 	static stream<ap_uint<16> >			rxEng_tcpLenFifo("rx_tcpLenFifo");
-	#pragma HLS stream variable=rxEng_tcpValidFifo depth=2
+	#pragma HLS stream variable=rxEng_tcpCorrect_checksum depth=2
 	#pragma HLS stream variable=rxEng_metaDataFifo depth=2
 	#pragma HLS stream variable=rxEng_tupleBuffer depth=2
 	#pragma HLS stream variable=rxEng_tcpLenFifo depth=2
@@ -1410,14 +1423,24 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 	static stream<ap_uint<1> >				rxEngDoubleAccess("rxEngDoubleAccess");
 	#pragma HLS stream variable=rxEngDoubleAccess depth=8
-	rxTcpLengthExtract(ipRxData, rxEng_dataBuffer0, rxEng_tcpLenFifo);
 
-	rxInsertPseudoHeader(rxEng_dataBuffer0, rxEng_tcpLenFifo, rxEng_dataBuffer1);
+	rxTCP_pseudoheader_insert( 
+			ipRxData, 
+			rxEng_pseudo_packet);
 
-	rxCheckTCPchecksum(rxEng_dataBuffer1, rxEng_dataBuffer2, rxEng_tcpValidFifo, rxEng_metaDataFifo,
-						rxEng_tupleBuffer, rxEng2portTable_req);
+	rxCheckTCPchecksum(
+			rxEng_pseudo_packet, 
+			rxEng_pkt_buffer_wait_checksum, 
+			rxEng_tcpCorrect_checksum, 
+			rxEng_metaDataFifo,
+			rxEng_tupleBuffer, 
+			rxEng2portTable_req);
 
-	rxTcpInvalidDropper(rxEng_dataBuffer2, rxEng_tcpValidFifo, rxEng_dataBuffer3);
+	rxTcpInvalidDropper(
+			rxEng_pkt_buffer_wait_checksum, 
+			rxEng_tcpCorrect_checksum, 
+			rxEng_pkt_buffer);
+
 
 	rxMetadataHandler(	rxEng_metaDataFifo,
 						sLookup2rxEng_rsp,
@@ -1449,16 +1472,16 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 #endif
 
 #if !(RX_DDR_BYPASS)
-	rxPackageDropper(rxEng_dataBuffer3, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxPkgDrop2rxMemWriter);
+	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxPkgDrop2rxMemWriter);
 
-	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
+//	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
 
 	rxAppNotificationDelayer(rxBufferWriteStatus, rx_internalNotificationFifo, rxEng2rxApp_notification, rxEngDoubleAccess);
 #else
-	rxPackageDropper(rxEng_dataBuffer3, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxBufferWriteData);
+	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxBufferWriteData);
 #endif
 	rxEventMerger(rxEng_metaHandlerEventFifo, rxEng_fsmEventFifo, rxEng2eventEng_setEvent);
 
 }
 
-*/
+

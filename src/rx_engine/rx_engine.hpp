@@ -41,7 +41,6 @@ struct rxEngineMetaData
 	ap_uint<32> ackNumb;
 	ap_uint<16> winSize;
 	ap_uint<16> length;
-	ap_uint<4>  tcp_header_length;
 	ap_uint<1>	cwr;
 	ap_uint<1>	ecn;
 	ap_uint<1>	urg;
