@@ -300,7 +300,7 @@ void rxCheckTCPchecksum(
 	static ap_uint<1> 		compute_checksum=0;
 	static ap_uint<4> 		tcp_offset;
 
-	static ap_uint<16> word_sum[64]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 	
 	ap_uint<16> tmp;
 	ap_uint<17> tmp1;
@@ -365,7 +365,7 @@ void rxCheckTCPchecksum(
 			sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
 			sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
 
-			if (sendWord.last && currWord.keep.bit(tcp_offset* 4 + 12)){
+			if (currWord.last && currWord.keep.bit(tcp_offset* 4 + 12)){
 				sendWord.last = 0;
 				send_packet  = 1;
 			}
