@@ -119,7 +119,6 @@ void combine_words(
  * @param[in]		dataIn, incoming data stream
  * @param[out]		dataOut, outgoing data stream
  * @param[out]		tcpLenFifoOut, the TCP length is stored into this FIFO
- * @TODO maybe compute TCP length in another way!!
  */
 
 /**
@@ -314,7 +313,8 @@ void rxCheckTCPchecksum(
 	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
 	static ap_uint<20> ip_sums_L4[2];
 	static ap_uint<21> ip_sums_L5;
-	ap_uint<17> final_sum;
+	ap_uint<17> final_sum_r; // real add
+	ap_uint<17> final_sum_o; // overflowed add
 	ap_uint<16> res_checksum;
 
 	ap_uint<1> 	correct_checksum=false;
@@ -365,7 +365,7 @@ void rxCheckTCPchecksum(
 			sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
 			sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
 
-			if (currWord.last && currWord.keep.bit(tcp_offset* 4 + 12)){
+			if (currWord.last && currWord.keep.bit((int)(tcp_offset* 4 + 12))){
 				sendWord.last = 0;
 				send_packet  = 1;
 			}
@@ -417,6 +417,8 @@ void rxCheckTCPchecksum(
 		for (int i = 0; i < 16; i++) {
 		#pragma HLS unroll
 			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
+			word_sum[i*2]   = 0; // clear adder variable
+			word_sum[i*2+1] = 0;
 		}
 
 		//adder tree L2
@@ -435,16 +437,16 @@ void rxCheckTCPchecksum(
 		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
 		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
 
-		final_sum = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
-		final_sum = final_sum.bit(16) + final_sum;
+		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
+		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
 
-		res_checksum = ~(final_sum.range(15,0)); // ones complement
+		if (final_sum_r.bit(16))
+			res_checksum = ~(final_sum_o.range(15,0));
+		else
+			res_checksum = ~(final_sum_r.range(15,0));
 
-		reset_adder : for (int i=0 ; i < 32 ; i++ ){
-#pragma HLS UNROLL
-			word_sum[i] = 0;
-
-		}
+//		final_sum_r = final_sum_r.bit(16) + final_sum_r;
+//		res_checksum = ~(final_sum.range(15,0)); // ones complement
 
 		if (res_checksum == 0){
 			correct_checksum=true;
@@ -462,8 +464,8 @@ void rxCheckTCPchecksum(
 
 /** @ingroup rx_engine
  *  For each packet it reads the valid value from @param validFifoIn
- *  If the packet is valid the data stream is passed on
- *  If it is not valid it is dropped
+ *  If the packet checksum is correct the data stream is forwarded.
+ *  If it is not correct it is dropped
  *  @param[in]		dataIn, incoming data stream
  *  @param[in]		validFifoIn, Valid FIFO indicating if current packet is valid
  *  @param[out]		dataOut, outgoing data stream
@@ -665,6 +667,7 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 #endif
 						stream<appNotification>&				rxEng2rxApp_notification)
 {
+//#pragma HLS LATENCY max=2
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
@@ -676,373 +679,306 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 	static bool fsm_txSarRequest = false;
 
 
-	ap_uint<4> control_bits = 0;
+	static ap_uint<4> control_bits = 0;
 	sessionState tcpState;
 	rxSarEntry rxSar;
 	rxTxSarReply txSar;
 
 
-	switch(fsm_state)
-	{
-	case LOAD:
-		if (!fsmMetaDataFifo.empty())
-		{
-			fsmMetaDataFifo.read(fsm_meta);
-			// read state
-			rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID));
-			// Always read rxSar, even though not required for SYN-ACK
-			rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID));
-			// read txSar
-			if (fsm_meta.meta.ack) // Do not read for SYN (ACK+ANYTHING)
-			{
-				rxEng2txSar_upd_req.write(rxTxSarQuery(fsm_meta.sessionID));
-				fsm_txSarRequest  = true;
-			}
-			fsm_state = TRANSITION;
-		}
-		break;
-	case TRANSITION:
-		// Check if transition to LOAD occurs
-		if (!stateTable2rxEng_upd_rsp.empty() && !rxSar2rxEng_upd_rsp.empty()
-						&& !(fsm_txSarRequest && txSar2rxEng_upd_rsp.empty()))
-		{
-			fsm_state = LOAD;
-			fsm_txSarRequest = false;
-		}
+	switch(fsm_state) {
+		case LOAD:
+			if (!fsmMetaDataFifo.empty()) {
+				fsmMetaDataFifo.read(fsm_meta);
+				
+				rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID)); // query the current session state
+				rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID)); 		// Always read rxSar, even though not required for SYN-ACK. Query 
+				
+				if (fsm_meta.meta.ack) {// Do not read for SYN (ACK+ANYTHING)
+					rxEng2txSar_upd_req.write(rxTxSarQuery(fsm_meta.sessionID)); // read txSar
+					fsm_txSarRequest  = true;
+				}
 
-		control_bits[0] = fsm_meta.meta.ack;
-		control_bits[1] = fsm_meta.meta.syn;
-		control_bits[2] = fsm_meta.meta.fin;
-		control_bits[3] = fsm_meta.meta.rst;
-		switch (control_bits)
-		{
-		case 1: //ACK
-			//if (!rxSar2rxEng_upd_rsp.empty() && !stateTable2rxEng_upd_rsp.empty() && !txSar2rxEng_upd_rsp.empty())
-			if (fsm_state == LOAD)
-			{
+				control_bits[0] = fsm_meta.meta.ack; 	// Compose selection signal
+				control_bits[1] = fsm_meta.meta.syn;
+				control_bits[2] = fsm_meta.meta.fin;
+				control_bits[3] = fsm_meta.meta.rst;
+				
+				fsm_state = TRANSITION;
+			}
+			break;
+		case TRANSITION:
+			// Check if transition to LOAD occurs
+			if (!stateTable2rxEng_upd_rsp.empty() && !rxSar2rxEng_upd_rsp.empty()
+							&& !(fsm_txSarRequest && txSar2rxEng_upd_rsp.empty())) {
+				fsm_txSarRequest = false;
+
 				stateTable2rxEng_upd_rsp.read(tcpState);
 				rxSar2rxEng_upd_rsp.read(rxSar);
-				txSar2rxEng_upd_rsp.read(txSar);
-				rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
-				if (tcpState == ESTABLISHED || tcpState == SYN_RECEIVED || tcpState == FIN_WAIT_1 || tcpState == CLOSING || tcpState == LAST_ACK)
-				{
-					// Check if new ACK arrived
-					if (fsm_meta.meta.ackNumb == txSar.prevAck && txSar.prevAck != txSar.nextByte)
-					{
-						// Not new ACK increase counter
-						txSar.count++;
-					}
-					else
-					{
-						// Notify probeTimer about new ACK
-						rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
-						// Check for SlowStart & Increase Congestion Window
-						if (txSar.cong_window <= (txSar.slowstart_threshold-MSS))
-						{
-							txSar.cong_window += MSS;
-						}
-						else if (txSar.cong_window <= 0xF7FF)
-						{
-							txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
-						}
-						txSar.count = 0;
-					}
-					// TX SAR
-					if ((txSar.prevAck <= fsm_meta.meta.ackNumb && fsm_meta.meta.ackNumb <= txSar.nextByte)
-							|| ((txSar.prevAck <= fsm_meta.meta.ackNumb || fsm_meta.meta.ackNumb <= txSar.nextByte) && txSar.nextByte < txSar.prevAck))
-					{
-						rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count)));
-					}
 
-					// Check if packet contains payload
-					if (fsm_meta.meta.length != 0)
-					{
-						ap_uint<32> newRecvd = fsm_meta.meta.seqNumb+fsm_meta.meta.length;
-						// Second part makes sure that app pointer is not overtaken
-						ap_uint<16> free_space = ((rxSar.appd - rxSar.recvd(15, 0)) - 1);
-						// Check if segment in order and if enough free space is available
-						if ((fsm_meta.meta.seqNumb == rxSar.recvd) && (free_space > fsm_meta.meta.length))
-						{
-							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, newRecvd, 1));
-							// Build memory address
-							ap_uint<32> pkgAddr;
-							pkgAddr(31, 30) = 0x0;
-							pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
-							pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
-#if !(RX_DDR_BYPASS)
-							rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
+				if (fsm_txSarRequest) {
+					txSar2rxEng_upd_rsp.read(txSar); // FIXME for default it was a non-block read. Why?
+				}
+				
+				fsm_state = LOAD;
+
+			} // When all responses needed are valid proceed
+			
+			switch (control_bits) {
+				case 1: //ACK
+					if (fsm_state == LOAD) {
+						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte))); 		// Reset Retransmit Timer
+						if (tcpState == ESTABLISHED || tcpState == SYN_RECEIVED || tcpState == FIN_WAIT_1 || tcpState == CLOSING || tcpState == LAST_ACK) {
+							// Check if new ACK arrived
+							if (fsm_meta.meta.ackNumb == txSar.prevAck && txSar.prevAck != txSar.nextByte) {
+								txSar.count++; // Not new ACK has arrived increase counter
+							}
+							else {
+								// Notify probeTimer about new ACK
+								rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
+								// Check for SlowStart & Increase Congestion Window
+								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
+									txSar.cong_window += MSS;
+								}
+								else if (txSar.cong_window <= 0xF7FF) {
+									txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
+								}
+								txSar.count = 0;
+							}
+							// TX SAR
+							if ((txSar.prevAck <= fsm_meta.meta.ackNumb && fsm_meta.meta.ackNumb <= txSar.nextByte)
+									|| ((txSar.prevAck <= fsm_meta.meta.ackNumb || fsm_meta.meta.ackNumb <= txSar.nextByte) && txSar.nextByte < txSar.prevAck)) {
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count)));
+							}
+
+							// Check if packet contains payload
+							if (fsm_meta.meta.length != 0){
+								ap_uint<32> newRecvd = fsm_meta.meta.seqNumb+fsm_meta.meta.length;
+								// Second part makes sure that app pointer is not overtaken
+								ap_uint<16> free_space = ((rxSar.appd - rxSar.recvd(15, 0)) - 1);
+								// Check if segment is in order and if enough free space is available
+								if ((fsm_meta.meta.seqNumb == rxSar.recvd) && (free_space > fsm_meta.meta.length)) {
+									rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, newRecvd, 1));
+									// Build memory address
+									ap_uint<32> pkgAddr;
+									pkgAddr(31, 30) = 0x0;
+									pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
+									pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
+#if (!RX_DDR_BYPASS)
+									rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
 #endif
-							// Only notify about  new data available
-							rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.meta.length, fsm_meta.srcIpAddress, fsm_meta.dstIpPort));
-							dropDataFifoOut.write(false);
-						}
-						else
-						{
-							dropDataFifoOut.write(true);
-						}
+									// Only notify about  new data available
+									rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.meta.length, fsm_meta.srcIpAddress, fsm_meta.dstIpPort));
+									dropDataFifoOut.write(false);
+								}
+								else {
+									dropDataFifoOut.write(true);
+								}
+							}
+							if (txSar.count == 3) {
+								rxEng2eventEng_setEvent.write(event(RT, fsm_meta.sessionID));
+							}
+							else if (fsm_meta.meta.length != 0) { // Send ACK
+								rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
+							}
+							
 
-						// Sent ACK
-						//rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
-					}
-					if (txSar.count == 3)
-					{
-						rxEng2eventEng_setEvent.write(event(RT, fsm_meta.sessionID));
-					}
-					else if (fsm_meta.meta.length != 0)
-					{
-						rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
-					}
-
-
-					// Reset Retransmit Timer
-					//rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (mh_meta.ackNumb == txSarNextByte)));
-					if (fsm_meta.meta.ackNumb == txSar.nextByte)
-					{
-						switch (tcpState)
-						{
-						case SYN_RECEIVED:
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); //TODO MAYBE REARRANGE
-							break;
-						case CLOSING:
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
-							rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
-							break;
-						case LAST_ACK:
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
-							break;
-						default:
+							if (fsm_meta.meta.ackNumb == txSar.nextByte) {
+								switch (tcpState) {
+									case SYN_RECEIVED:
+										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); //TODO MAYBE REARRANGE
+										break;
+									case CLOSING:
+										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
+										rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
+										break;
+									case LAST_ACK:
+										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
+										break;
+									default:
+										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));	// TODO I think this is not necessary
+										break;
+								}
+							}
+							else { //we have to release the lock
+								//reset rtTimer
+								//rtTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID));
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1)); // or ESTABLISHED
+							}
+						} //end state if
+						// TODO if timewait just send ACK, can it be time wait??
+						else {// state == (CLOSED || SYN_SENT || CLOSE_WAIT || FIN_WAIT_2 || TIME_WAIT)
+							// SENT RST, RFC 793: fig.11
+							rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length)); // noACK ?
+							
+							if (fsm_meta.meta.length != 0) { // if data is in the pipe it needs to be dropped
+								dropDataFifoOut.write(true);
+							}
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-							break;
 						}
 					}
-					else //we have to release the lock
-					{
-						//reset rtTimer
-						//rtTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID));
-						rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1)); // or ESTABLISHED
+					break;
+				case 2: //SYN
+					//if (!stateTable2rxEng_upd_rsp.empty())
+					if (fsm_state == LOAD) {
+						if (tcpState == CLOSED || tcpState == SYN_SENT) {// Actually this is LISTEN || SYN_SENT
+							// Simultaneous open is supported due to (tcpState == SYN_SENT)
+							// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized
+							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
+							// Initialize receive window
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0))); //TODO maybe include count check
+							// Set SYN_ACK event
+							rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID));
+							// Change State to SYN_RECEIVED
+							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, SYN_RECEIVED, 1));
+						}
+						else if (tcpState == SYN_RECEIVED) {// && mh_meta.seqNumb+1 == rxSar.recvd) // Maybe Check for seq
+							// If it is the same SYN, we resent SYN-ACK, almost like quick RT, we could also wait for RT timer
+							if (fsm_meta.meta.seqNumb+1 == rxSar.recvd) {
+								// Retransmit SYN_ACK
+								rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID, 1));
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+							}
+							else { // Sent RST, RFC 793: fig.9 (old) duplicate SYN(+ACK)
+								rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1)); //length == 0
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
+							}
+						}
+						else {// Any synchronized state
+							// Unexpected SYN arrived, reply with normal ACK, RFC 793: fig.10
+							rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
+							// TODo send RST, has no ACK??
+							// Respond with RST, no ACK, seq ==
+							//eventEngine.write(rstEvent(mh_meta.seqNumb, mh_meta.length, true));
+							//rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1)); // FIXME is that correct? MR
+							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+						}
 					}
-				} //end state if
-				// TODO if timewait just send ACK, can it be time wait??
-				else // state == (CLOSED || SYN_SENT || CLOSE_WAIT || FIN_WAIT_2 || TIME_WAIT)
-				{
-					// SENT RST, RFC 793: fig.11
-					rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length)); // noACK ?
-					// if data is in the pipe it needs to be droppped
-					if (fsm_meta.meta.length != 0)
-					{
-						dropDataFifoOut.write(true);
+					break;
+				case 3: //SYN_ACK
+					if (fsm_state == LOAD) {
+						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte))); // Clear SYN retransmission time if ack number is correct
+						
+						if (tcpState == SYN_SENT) { // A SYN was already send, ack number has to be check, if is correct send ACK is not send a RST
+							if (fsm_meta.meta.ackNumb == txSar.nextByte) { // SYN-ACK is correct
+								
+								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1)); //initialize rx_sar, SEQ + phantom byte, last '1' for appd init
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0))); //CHANGE this was added //TODO maybe include count check
+								rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID)); 				// set ACK event
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); 	// Update TCP FSM to ESTABLISHED now data can be transfer 
+
+								openConStatusOut.write(openStatus(fsm_meta.sessionID, true));
+							}
+							else{ //TODO is this the correct procedure?
+								// Sent RST, RFC 793: fig.9 (old) duplicate SYN(+ACK)
+								rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1)); 
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
+							}
+						}
+						else {
+							// Unexpected SYN arrived, reply with normal ACK, RFC 793: fig.10
+							rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
+							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+						}
 					}
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-				}
-				//fsm_state = LOAD;
-			}
-			break;
-		case 2: //SYN
-			//if (!stateTable2rxEng_upd_rsp.empty())
-			if (fsm_state == LOAD)
-			{
-				stateTable2rxEng_upd_rsp.read(tcpState);
-				rxSar2rxEng_upd_rsp.read(rxSar);
-				if (tcpState == CLOSED || tcpState == SYN_SENT) // Actually this is LISTEN || SYN_SENT
-				{
-					// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized
-					rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
-					// Initialize receive window
-					rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0))); //TODO maybe include count check
-					// Set SYN_ACK event
-					rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID));
-					// Change State to SYN_RECEIVED
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, SYN_RECEIVED, 1));
-				}
-				else if (tcpState == SYN_RECEIVED)// && mh_meta.seqNumb+1 == rxSar.recvd) // Maybe Check for seq
-				{
-					// If it is the same SYN, we resent SYN-ACK, almost like quick RT, we could also wait for RT timer
-					if (fsm_meta.meta.seqNumb+1 == rxSar.recvd)
-					{
-						// Retransmit SYN_ACK
-						rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID, 1));
-						rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-					}
-					else // Sent RST, RFC 793: fig.9 (old) duplicate SYN(+ACK)
-					{
-						rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1)); //length == 0
-						rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
-					}
-				}
-				else // Any synchronized state
-				{
-					// Unexpected SYN arrived, reply with normal ACK, RFC 793: fig.10
-					rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
-					// TODo send RST, has no ACK??
-					// Respond with RST, no ACK, seq ==
-					//eventEngine.write(rstEvent(mh_meta.seqNumb, mh_meta.length, true));
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-				}
-			}
-			break;
-		case 3: //SYN_ACK
-			//if (!stateTable2rxEng_upd_rsp.empty() && !txSar2rxEng_upd_rsp.empty())
-			if (fsm_state == LOAD)
-			{
-				stateTable2rxEng_upd_rsp.read(tcpState);
-				rxSar2rxEng_upd_rsp.read(rxSar);
-				txSar2rxEng_upd_rsp.read(txSar);
-				rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
-				if ((tcpState == SYN_SENT) && (fsm_meta.meta.ackNumb == txSar.nextByte))// && !mh_lup.created)
-				{
-					//initialize rx_sar, SEQ + phantom byte, last '1' for appd init
-					rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
+					break;
+				case 5: //FIN (_ACK)
 
-					rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0))); //CHANGE this was added //TODO maybe include count check
+					if (fsm_state == LOAD) {
+						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
+						// Check state and if FIN in order, Current out of order FINs are not accepted
+						if ((tcpState == ESTABLISHED || tcpState == FIN_WAIT_1 || tcpState == FIN_WAIT_2) && (rxSar.recvd == fsm_meta.meta.seqNumb)) {
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count))); //TODO include count check
 
-					// set ACK event
-					rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
+							// +1 for phantom byte, there might be data too
+							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1, 1)); //diff to ACK
 
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1));
-					openConStatusOut.write(openStatus(fsm_meta.sessionID, true));
-				}
-				else if (tcpState == SYN_SENT) //TODO correct answer?
-				{
-					// Sent RST, RFC 793: fig.9 (old) duplicate SYN(+ACK)
-					rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1));
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
-				}
-				else
-				{
-					// Unexpected SYN arrived, reply with normal ACK, RFC 793: fig.10
-					rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-				}
-			}
-			break;
-		case 5: //FIN (_ACK)
-			//if (!rxSar2rxEng_upd_rsp.empty() && !stateTable2rxEng_upd_rsp.empty() && !txSar2rxEng_upd_rsp.empty())
-			if (fsm_state == LOAD)
-			{
-				stateTable2rxEng_upd_rsp.read(tcpState);
-				rxSar2rxEng_upd_rsp.read(rxSar);
-				txSar2rxEng_upd_rsp.read(txSar);
-				rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
-				// Check state and if FIN in order, Current out of order FINs are not accepted
-				if ((tcpState == ESTABLISHED || tcpState == FIN_WAIT_1 || tcpState == FIN_WAIT_2) && (rxSar.recvd == fsm_meta.meta.seqNumb))
-				{
-					rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count))); //TODO include count check
+							// Clear the probe timer
+							rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
 
-					// +1 for phantom byte, there might be data too
-					rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1, 1)); //diff to ACK
-
-					// Clear the probe timer
-					rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
-
-					// Check if there is payload
-					if (fsm_meta.meta.length != 0)
-					{
-						ap_uint<32> pkgAddr;
-						pkgAddr(31, 30) = 0x0;
-						pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
-						pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
-#if !(RX_DDR_BYPASS)
-						rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
+							// Check if there is payload
+							if (fsm_meta.meta.length != 0) {
+								ap_uint<32> pkgAddr;
+								pkgAddr(31, 30) = 0x0;
+								pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
+								pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
+#if (!RX_DDR_BYPASS)
+								rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
 #endif
-						// Tell Application new data is available and connection got closed
-						rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.meta.length, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true));
-						dropDataFifoOut.write(false);
-					}
-					else if (tcpState == ESTABLISHED)
-					{
-						// Tell Application connection got closed
-						rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true)); //CLOSE
-					}
-
-					// Update state
-					if (tcpState == ESTABLISHED)
-					{
-						rxEng2eventEng_setEvent.write(event(FIN, fsm_meta.sessionID));
-						rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, LAST_ACK, 1));
-					}
-					else //FIN_WAIT_1 || FIN_WAIT_2
-					{
-						if (fsm_meta.meta.ackNumb == txSar.nextByte) //check if final FIN is ACK'd -> LAST_ACK
-						{
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
-							rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
+								// Tell Application new data is available and connection got closed
+								rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.meta.length, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true));
+								dropDataFifoOut.write(false);
+							}
+							else if (tcpState == ESTABLISHED) {
+								// Tell Application connection got closed
+								rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true)); //CLOSE
+							}
+							// Update state
+							if (tcpState == ESTABLISHED) {
+								rxEng2eventEng_setEvent.write(event(FIN, fsm_meta.sessionID));
+								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, LAST_ACK, 1));
+							}
+							else {//FIN_WAIT_1 || FIN_WAIT_2
+								if (fsm_meta.meta.ackNumb == txSar.nextByte) {//check if final FIN is ACK'd -> LAST_ACK
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
+									rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
+								}
+								else {
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSING, 1));
+								}
+								rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
+							}
 						}
-						else
-						{
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSING, 1));
+						else {// NOT (ESTABLISHED || FIN_WAIT_1 || FIN_WAIT_2)
+							rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
+							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+							// If there is payload we need to drop it
+							if (fsm_meta.meta.length != 0) {
+								dropDataFifoOut.write(true);
+							}
 						}
-						rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
 					}
-				}
-				else // NOT (ESTABLISHED || FIN_WAIT_1 || FIN_WAIT_2)
-				{
-					rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-					// If there is payload we need to drop it
-					if (fsm_meta.meta.length != 0)
-					{
-						dropDataFifoOut.write(true);
-					}
-				}
-			}
-			break;
-		default: //TODO MAYBE load everthing all the time
-			// stateTable is locked, make sure it is released in at the end
-			// If there is an ACK we read txSar
-			// We always read rxSar
-			if (fsm_state == LOAD)
-			{
-				stateTable2rxEng_upd_rsp.read(tcpState);
-				rxSar2rxEng_upd_rsp.read(rxSar); //TODO not sure nb works
-				txSar2rxEng_upd_rsp.read_nb(txSar);
-			}
-			if (fsm_state == LOAD)
-			{
-				// Handle if RST
-				if (fsm_meta.meta.rst)
-				{
-					if (tcpState == SYN_SENT) //TODO this would be a RST,ACK i think
-					{
-						if (fsm_meta.meta.ackNumb == txSar.nextByte) // Check if matching SYN
-						{
-							//tell application, could not open connection
-							openConStatusOut.write(openStatus(fsm_meta.sessionID, false));
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
-							rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, true));
+					break;
+				default: //TODO MAYBE load everything all the time
+					// stateTable is locked, make sure it is released in at the end
+					if (fsm_state == LOAD) {
+						// Handle if RST
+						if (fsm_meta.meta.rst) {
+							if (tcpState == SYN_SENT) {//TODO this would be a RST,ACK i think
+								if (fsm_meta.meta.ackNumb == txSar.nextByte) {// Check if matching SYN
+									//tell application, could not open connection
+									openConStatusOut.write(openStatus(fsm_meta.sessionID, false));
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
+									rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, true));
+								}
+								else {
+									// Ignore since not matching
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+								}
+							}
+							else {
+								// Check if in window
+								if (fsm_meta.meta.seqNumb == rxSar.recvd) {
+									//tell application, RST occurred, abort
+									rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true)); //RESET
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1)); //TODO maybe some TIME_WAIT state
+									rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, true));
+								}
+								else {
+									// Ingore since not matching window
+									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
+								}
+							}
 						}
-						else
-						{
-							// Ignore since not matching
+						else {// Handle non RST bogus packages
+						
+							//TODO maybe sent RST ourselves, or simply ignore
+							// For now ignore, sent ACK??
+							//eventsOut.write(rstEvent(mh_meta.seqNumb, 0, true));
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
 						}
-					}
-					else
-					{
-						// Check if in window
-						if (fsm_meta.meta.seqNumb == rxSar.recvd)
-						{
-							//tell application, RST occurred, abort
-							rxEng2rxApp_notification.write(appNotification(fsm_meta.sessionID, fsm_meta.srcIpAddress, fsm_meta.dstIpPort, true)); //RESET
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1)); //TODO maybe some TIME_WAIT state
-							rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, true));
-						}
-						else
-						{
-							// Ingore since not matching window
-							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-						}
-					}
-				}
-				else // Handle non RST bogus packages
-				{
-					//TODO maybe sent RST ourselves, or simply ignore
-					// For now ignore, sent ACK??
-					//eventsOut.write(rstEvent(mh_meta.seqNumb, 0, true));
-					rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
-				} // if rst
-			} // if fsm_stat
-			break;
-		} //switch control_bits
+					} 
+					break;
+			} //switch control_bits
 		break;
 	} //switch state
 }
@@ -1110,15 +1046,19 @@ void rxPacketDropper(stream<axiWord>&		dataIn,
 }
 
 /** @ingroup rx_engine
- *  Delays the notifications to the application until the data is actually is written to memory
+ *  Delays the notifications to the application until the data is actually written to memory
  *  @param[in]		rxWriteStatusIn, the status which we get back from the DATA MOVER it indicates if the write was successful
  *  @param[in]		internalNotificationFifoIn, incoming notifications
  *  @param[out]		notificationOut, outgoing notifications
  *  @TODO Handle unsuccessful write to memory
  */
 
-void rxAppNotificationDelayer(	stream<mmStatus>&				rxWriteStatusIn, stream<appNotification>&		internalNotificationFifoIn,
-								stream<appNotification>&		notificationOut, stream<ap_uint<1> > &doubleAccess) {
+void rxAppNotificationDelayer(	
+								stream<mmStatus>&				rxWriteStatusIn, 
+								stream<appNotification>&		internalNotificationFifoIn,
+								stream<appNotification>&		notificationOut, 
+								stream<ap_uint<1> > &doubleAccess) 
+{
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
@@ -1181,7 +1121,7 @@ void rxEventMerger(
 	}
 }
 
-/*
+
 void rxEngMemWrite(	
 					stream<axiWord>& 				rxMemWrDataIn, 
 					stream<mmCmd>&					rxMemWrCmdIn,
@@ -1313,7 +1253,7 @@ void rxEngMemWrite(
 		break;
 	} //switch
 }
-*/
+
 /** @ingroup rx_engine
  *  The @ref rx_engine is processing the data packets on the receiving path.
  *  When a new packet enters the engine its TCP checksum is tested, afterwards the header is parsed
@@ -1474,7 +1414,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 #if !(RX_DDR_BYPASS)
 	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxPkgDrop2rxMemWriter);
 
-//	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
+	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
 
 	rxAppNotificationDelayer(rxBufferWriteStatus, rx_internalNotificationFifo, rxEng2rxApp_notification, rxEngDoubleAccess);
 #else

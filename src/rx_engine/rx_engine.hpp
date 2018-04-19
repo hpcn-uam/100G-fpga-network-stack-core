@@ -26,6 +26,8 @@ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABI
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
 ************************************************/
+#ifndef _RX_ENGINE_H_
+#define _RX_ENGINE_H_
 
 #include "../toe.hpp"
 
@@ -106,3 +108,5 @@ void rxCheckTCPchecksum(
 							stream<rxEngineMetaData>&		metaDataFifoOut,
 							stream<fourTuple>&				tupleFifoOut,
 							stream<ap_uint<16> >&			portTableOut);
+
+#endif
