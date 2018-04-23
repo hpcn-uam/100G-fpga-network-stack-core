@@ -1028,8 +1028,9 @@ void tx_compute_tcp_checksum(	stream<subSums>&			txEng_subChecksumsFifoIn,
 }
 
 /** @ingroup tx_engine
- *  Reads the IP header stream and the payload stream, it also inserts the 2 checksums. The complete
- *  packet is then streamed out of the TCP engine.
+ *  Reads the IP header stream and the payload stream. It also inserts TCP checksum
+ *  The complete packet is then streamed out of the TCP engine. 
+ *  The IP checksum must be computed and inserted after
  *  @param[in]		headerIn
  *  @param[in]		payloadIn
  *  @param[in]		ipChecksumFifoIn
@@ -1042,80 +1043,72 @@ void tx_ip_pkt_stitcher(
 					stream<ap_uint<16> >& 	txEng_tcpChecksumFifoIn,
 					stream<axiWord>& 		ipTxDataOut)
 {
-//#pragma HLS INLINE off
+#pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static ap_uint<3> ps_wordCount = 0;
-	axiWord headWord, dataWord, sendWord;
-	ap_uint<16> checksum;
+	axiWord ip_word;
+	axiWord payload;
+	axiWord sendWord= axiWord(0,0,0);
+	static axiWord prevWord;
+	
+	ap_uint<16> tcp_checksum;
 
-	switch (ps_wordCount)
-	{
-	case WORD_0:
-	case WORD_1:
-		if (!txEng_ipHeaderBufferIn.empty())
-		{
-			txEng_ipHeaderBufferIn.read(headWord);
-			sendWord = headWord;
-			ipTxDataOut.write(sendWord);
-			ps_wordCount++;
-		}
-		break;
-	case WORD_2: //concatenate here
-		if (!txEng_ipHeaderBufferIn.empty() && !payloadIn.empty())
-		{
-			txEng_ipHeaderBufferIn.read(headWord);
-			payloadIn.read(dataWord);
-			sendWord.data(31, 0) = headWord.data(31, 0);
-			sendWord.data(63, 32) = dataWord.data(63, 32);
-			sendWord.keep = 0xFF;
-			sendWord.last = 0;
-			ipTxDataOut.write(sendWord);
-			ps_wordCount++;
-		}
-		break;
-	case WORD_3:
-		if (!payloadIn.empty())
-		{
-			payloadIn.read(dataWord);
-			sendWord = dataWord;
-			ipTxDataOut.write(sendWord);
-			ps_wordCount++;
-		}
-		break;
-	case WORD_4:
-		if (!payloadIn.empty() && !txEng_tcpChecksumFifoIn.empty())
-		{
-			payloadIn.read(dataWord);
-			txEng_tcpChecksumFifoIn.read(checksum);
-			sendWord = dataWord;
-			// Insert TCP checksum
-			sendWord.data(39, 32) = checksum(15, 8);
-			sendWord.data(47, 40) = checksum(7, 0);
-			ipTxDataOut.write(sendWord);
-			ps_wordCount++;
-			if (dataWord.last) // is required, might be last word (when no data)
-			{
-				ps_wordCount = 0;
-			}
-		}
-		break;
-	default:
-		if (!payloadIn.empty())
-		{
-			payloadIn.read(dataWord);
-			sendWord = dataWord;
-			ipTxDataOut.write(sendWord);
-			if (dataWord.last)
-			{
-				ps_wordCount = 0;
-			}
-		}
-		break;
+	static bool writing_payload=false;
+	static bool writing_extra=false;
 
+	if (writing_extra){
+		sendWord.data(159,  0) = prevWord.data(159,  0);
+		sendWord.keep( 19,  0) = prevWord.data( 19,  0);
+		sendWord.last 	= 1;
+		writing_extra   = false;
+		ipTxDataOut.write(sendWord);
 	}
+	else if (writing_payload){
+		payloadIn.read(payload);
+		sendWord.data(159,  0) = prevWord.data(159,  0);
+		sendWord.keep( 19,  0) = prevWord.data( 19,  0);
+		sendWord.data(511,160) = payload.data(351,  0);
+		sendWord.keep( 63, 20) = payload.keep( 43,  0);
+		sendWord.last 	= payload.last;
 
+		if (payload.last){
+			if (payload.keep.bit(44)){
+				sendWord.last 	= 0;
+				writing_extra 	= true;
+			}
+			writing_payload = false;
+		}
+		
+		prevWord = payload;
+		ipTxDataOut.write(sendWord);
+	}
+	else if (!txEng_ipHeaderBufferIn.empty() && !payloadIn.empty() && !txEng_tcpChecksumFifoIn.empty()) {
+		txEng_ipHeaderBufferIn.read(ip_word);
+		payloadIn.read(payload);
+		txEng_tcpChecksumFifoIn.read(tcp_checksum);
 
+		sendWord.data(159,  0) = ip_word.data(159,  0); 			// TODO: no IP options supported
+		sendWord.keep( 19,  0) = 0xFFFFF;
+		sendWord.data(511,160) = payload.data(351,  0);
+		sendWord.data(304,288) = (tcp_checksum(7,0),tcp_checksum(15,8)); 	// insert checksum
+		sendWord.keep( 63, 20) = payload.keep( 43,  0);
+
+		sendWord.last 	= 0;
+
+		if (payload.last){
+			if (payload.keep.bit(44))
+				writing_extra 	= true;
+			else
+				sendWord.last 	= 1;
+		}
+		else
+			writing_payload 	= true;
+
+		prevWord = payload;
+
+		ipTxDataOut.write(sendWord);
+	}
+	
 }
 
 void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outputMemAccess, stream<ap_uint<1> > &memAccessBreakdown2txPkgStitcher) {
