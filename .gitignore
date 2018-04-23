@@ -1,0 +1,6 @@
+*.jou
+*.log
+*.bak
+fsm_encoding.os
+synlog.tcl
+toe_hls/
