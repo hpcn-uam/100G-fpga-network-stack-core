@@ -90,529 +90,465 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 	static tx_engine_meta meta;
 	rstEvent resetEvent;
 
-	switch (ml_FsmState)
-	{
-	case 0:
-		if (!eventEng2txEng_event.empty())
-		{
-			eventEng2txEng_event.read(ml_curEvent);
-			readCountFifo.write(1);
-			ml_sarLoaded = false;
-			//NOT necessary for SYN/SYN_ACK only needs one
-			switch (ml_curEvent.type)
-			{
-			case RT:
-				txEng2rxSar_req.write(ml_curEvent.sessionID);
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				break;
-			case TX:
-				txEng2rxSar_req.write(ml_curEvent.sessionID);
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				break;
-			case SYN_ACK:
-				txEng2rxSar_req.write(ml_curEvent.sessionID);
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				break;
-			case FIN:
-				txEng2rxSar_req.write(ml_curEvent.sessionID);
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				break;
-			case RST:
-				// Get txSar for SEQ numb
-				resetEvent = ml_curEvent;
-				if (resetEvent.hasSessionID())
-				{
-					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+	switch (ml_FsmState) {
+		case 0:
+			if (!eventEng2txEng_event.empty()) {
+				eventEng2txEng_event.read(ml_curEvent);
+				readCountFifo.write(1);
+				ml_sarLoaded = false;
+				//NOT necessary for SYN/SYN_ACK only needs one
+				switch (ml_curEvent.type) {
+					case RT:
+						txEng2rxSar_req.write(ml_curEvent.sessionID);
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						break;
+					case TX:
+						txEng2rxSar_req.write(ml_curEvent.sessionID);
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						break;
+					case SYN_ACK:
+						txEng2rxSar_req.write(ml_curEvent.sessionID);
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						break;
+					case FIN:
+						txEng2rxSar_req.write(ml_curEvent.sessionID);
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						break;
+					case RST:
+						// Get txSar for SEQ numb
+						resetEvent = ml_curEvent;
+						if (resetEvent.hasSessionID()) {
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						}
+						break;
+					case ACK_NODELAY:
+					case ACK:
+						txEng2rxSar_req.write(ml_curEvent.sessionID);
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						break;
+					case SYN:
+						if (ml_curEvent.rt_count != 0) {
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
+						}
+						break;
+					default:
+						break;
 				}
-				break;
-			case ACK_NODELAY:
-			case ACK:
-				txEng2rxSar_req.write(ml_curEvent.sessionID);
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				break;
-			case SYN:
-				if (ml_curEvent.rt_count != 0)
-				{
-					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID));
-				}
-				break;
-			default:
-				break;
-			}
-			ml_FsmState = 1;
-			ml_randomValue++; //make sure it doesn't become zero TODO move this out of if, but breaks my testsuite
-		} //if not empty
-		ml_segmentCount = 0;
-		break;
-	case 1:
-		switch(ml_curEvent.type)
-		{
-		// When Nagle's algorithm disabled
-		// Can bypass DDR
-#if (TCP_NODELAY)
-		case TX:
-			if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded)
-			{
-				if (!ml_sarLoaded)
-				{
-					rxSar2txEng_rsp.read(rxSar);
-					txSar2txEng_upd_rsp.read(txSar);
-				}
-
-				//Compute our space, Advertise at least a quarter/half, otherwise 0
-
-				windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
-				meta.ackNumb = rxSar.recvd;
-				meta.seqNumb = txSar.not_ackd;
-				meta.window_size = windowSize;
-				meta.ack = 1; // ACK is always set when established
-				meta.rst = 0;
-				meta.syn = 0;
-				meta.fin = 0;
-				//meta.length = 0;
-
-				currLength = ml_curEvent.length;
-				ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
-				// min_window, is the min(txSar.recv_window, txSar.cong_window)
-				if (txSar.min_window > usedLength)
-				{
-					usableWindow = txSar.min_window - usedLength;
-				}
-				else
-				{
-					usableWindow = 0;
-				}
-				if (usableWindow < ml_curEvent.length)
-				{
-					txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
-				}
-
-				meta.length = ml_curEvent.length;
-
-				//TODO some checking
-				txSar.not_ackd += ml_curEvent.length;
-
-				txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
-				ml_FsmState = 0;
-
-
-				/*if (meta.length != 0)
-				{
-					//txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
-				}*/
-				// Send a packet only if there is data or we want to send an empty probing message
-				if (meta.length != 0)// || ml_curEvent.retransmit) //TODO retransmit boolean currently not set, should be removed
-				{
-					txEng_ipMetaFifoOut.write(meta.length);
-					txEng_tcpMetaFifoOut.write(meta);
-					txEng_isLookUpFifoOut.write(true);
-					txEng_isDDRbypass.write(true);
-					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-
-					// Only set RT timer if we actually send sth, TODO only set if we change state and sent sth
-					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
-				}//TODO if probe send msg length 1
-				ml_sarLoaded = true;
-			}
-
+				ml_FsmState = 1;
+				ml_randomValue++; //make sure it doesn't become zero TODO move this out of if, but breaks my testsuite
+			} //if not empty
+			ml_segmentCount = 0;
 			break;
-#else
-		case TX:
-			// Sends everyting between txSar.not_ackd and txSar.app
-			if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded)
+		case 1:
+			switch(ml_curEvent.type)
 			{
-				if (!ml_sarLoaded)
-				{
-					rxSar2txEng_rsp.read(rxSar);
-					txSar2txEng_upd_rsp.read(txSar);
-				}
+			// When Nagle's algorithm disabled
+			// Can bypass DDR
+#if (TCP_NODELAY)
+			case TX:
+				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
+					if (!ml_sarLoaded) {
+						rxSar2txEng_rsp.read(rxSar);
+						txSar2txEng_upd_rsp.read(txSar);
+					}
 
-				//Compute our space, Advertise at least a quarter/half, otherwise 0
-				windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
-				meta.ackNumb = rxSar.recvd;
-				meta.seqNumb = txSar.not_ackd;
-				meta.window_size = windowSize;
-				meta.ack = 1; // ACK is always set when established
-				meta.rst = 0;
-				meta.syn = 0;
-				meta.fin = 0;
-				meta.length = 0;
+					//Compute our space, Advertise at least a quarter/half, otherwise 0
 
-				currLength = (txSar.app - ((ap_uint<16>)txSar.not_ackd));
-				ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
-				// min_window, is the min(txSar.recv_window, txSar.cong_window)
-				if (txSar.min_window > usedLength)
-				{
-					usableWindow = txSar.min_window - usedLength;
-				}
-				else
-				{
-					usableWindow = 0;
-				}
-				// Construct address before modifying txSar.not_ackd
-				ap_uint<32> pkgAddr;
-				pkgAddr(31, 30) = 0x01;
-				pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
-				pkgAddr(15, 0) = txSar.not_ackd(15, 0); //ml_curEvent.address;
+					windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
+					meta.ackNumb = rxSar.recvd;
+					meta.seqNumb = txSar.not_ackd;
+					meta.window_size = windowSize;
+					meta.ack = 1; // ACK is always set when established
+					meta.rst = 0;
+					meta.syn = 0;
+					meta.fin = 0;
+					//meta.length = 0;
+
+					currLength = ml_curEvent.length;
+					ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					// min_window, is the min(txSar.recv_window, txSar.cong_window)
+					if (txSar.min_window > usedLength) {
+						usableWindow = txSar.min_window - usedLength;
+					}
+					else {
+						usableWindow = 0;
+					}
+					if (usableWindow < ml_curEvent.length) {
+						txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
+					}
+
+					meta.length = ml_curEvent.length;
+
+					//TODO some checking
+					txSar.not_ackd += ml_curEvent.length;
+
+					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
+					ml_FsmState = 0;
 
 
-				// Check length, if bigger than Usable Window or MMS
-				if (currLength <= usableWindow)
-				{
-					if (currLength >= MSS) //TODO change to >= MSS, use maxSegmentCount
+					/*if (meta.length != 0)
 					{
-						// We stay in this state and sent immediately another packet
-						txSar.not_ackd += MSS;
-						meta.length = MSS;
+						//txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
+					}*/
+					// Send a packet only if there is data or we want to send an empty probing message
+					if (meta.length != 0) {// || ml_curEvent.retransmit) //TODO retransmit boolean currently not set, should be removed
+					
+						txEng_ipMetaFifoOut.write(meta.length);
+						txEng_tcpMetaFifoOut.write(meta);
+						txEng_isLookUpFifoOut.write(true);
+						txEng_isDDRbypass.write(true);
+						txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+
+						// Only set RT timer if we actually send sth, TODO only set if we change state and sent sth
+						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+					}//TODO if probe send msg length 1
+					ml_sarLoaded = true;
+				}
+
+				break;
+#else
+			case TX:
+				// Sends everyting between txSar.not_ackd and txSar.app
+				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
+					if (!ml_sarLoaded) {
+						rxSar2txEng_rsp.read(rxSar);
+						txSar2txEng_upd_rsp.read(txSar);
+					}
+
+					//Compute our space, Advertise at least a quarter/half, otherwise 0
+					windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
+					meta.ackNumb = rxSar.recvd;
+					meta.seqNumb = txSar.not_ackd;
+					meta.window_size = windowSize;
+					meta.ack = 1; // ACK is always set when established
+					meta.rst = 0;
+					meta.syn = 0;
+					meta.fin = 0;
+					meta.length = 0;
+
+					currLength = (txSar.app - ((ap_uint<16>)txSar.not_ackd));
+					ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					// min_window, is the min(txSar.recv_window, txSar.cong_window)
+					if (txSar.min_window > usedLength)
+					{
+						usableWindow = txSar.min_window - usedLength;
 					}
 					else
 					{
-						// If we sent all data, there might be a fin we have to sent too
-						if (txSar.finReady && (txSar.ackd == txSar.not_ackd || currLength == 0))
-						{
-							ml_curEvent.type = FIN;
+						usableWindow = 0;
+					}
+					// Construct address before modifying txSar.not_ackd
+					ap_uint<32> pkgAddr;
+					pkgAddr(31, 30) = 0x01;
+					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
+					pkgAddr(15, 0) = txSar.not_ackd(15, 0); //ml_curEvent.address;
+
+					// Check length, if bigger than Usable Window or MMS
+					if (currLength <= usableWindow) {
+						if (currLength >= MSS) { //TODO change to >= MSS, use maxSegmentCount
+							// We stay in this state and sent immediately another packet
+							txSar.not_ackd += MSS;
+							meta.length = MSS;
 						}
-						else
-						{
+						else {
+							// If we sent all data, there might be a fin we have to sent too
+							if (txSar.finReady && (txSar.ackd == txSar.not_ackd || currLength == 0)) {
+								ml_curEvent.type = FIN;
+							}
+							else {
+								ml_FsmState = 0;
+							}
+							// Check if small segment and if unacknowledged data in pipe (Nagle)
+							if (txSar.ackd == txSar.not_ackd) {
+								txSar.not_ackd += currLength;
+								meta.length = currLength;
+							}
+							else {
+								txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
+							}
+							// Write back txSar not_ackd pointer
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
+						}
+					}
+					else {
+						// code duplication, but better timing..
+						if (usableWindow >= MSS) {
+							// We stay in this state and sent immediately another packet
+							txSar.not_ackd += MSS;
+							meta.length = MSS;
+						}
+						else {
+							// Check if we sent >= MSS data
+							if (txSar.ackd == txSar.not_ackd) {
+								txSar.not_ackd += usableWindow;
+								meta.length = usableWindow;
+							}
+							// Set probe Timer to try again later
+							txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
 							ml_FsmState = 0;
 						}
-						// Check if small segment and if unacknowledged data in pipe (Nagle)
-//#if !(TCP_NODELAY)
-						if (txSar.ackd == txSar.not_ackd)
-//#endif
-						{
-							txSar.not_ackd += currLength;
-							meta.length = currLength;
-						}
-//#if !(TCP_NODELAY)
-						else
-						{
-							txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
-						}
-//#endif
-						// Write back txSar not_ackd pointer
-						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
 					}
+
+					if (meta.length != 0) {
+						txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
+					}
+					// Send a packet only if there is data or we want to send an empty probing message
+					if (meta.length != 0) { // || ml_curEvent.retransmit) //TODO retransmit boolean currently not set, should be removed
+						txEng_ipMetaFifoOut.write(meta.length);
+						txEng_tcpMetaFifoOut.write(meta);
+						txEng_isLookUpFifoOut.write(true);
+						txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+						// Only set RT timer if we actually send sth, TODO only set if we change state and sent sth
+						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+					}//TODO if probe send msg length 1
+					ml_sarLoaded = true;
 				}
-				else
-				{
-					// code duplication, but better timing..
-					if (usableWindow >= MSS)
-					{
+				break;
+	#endif
+			case RT:
+				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
+					if (!ml_sarLoaded) {
+						rxSar2txEng_rsp.read(rxSar);
+						txSar2txEng_upd_rsp.read(txSar);
+					}
+
+					// Compute our window size
+					windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
+					if (!txSar.finSent) { //no FIN sent
+						currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					}
+					else {//FIN already sent
+						currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd)-1;
+					}
+
+					meta.ackNumb = rxSar.recvd;
+					meta.seqNumb = txSar.ackd;
+					meta.window_size = windowSize;
+					meta.ack = 1; // ACK is always set when session is established
+					meta.rst = 0;
+					meta.syn = 0;
+					meta.fin = 0;
+
+					// Construct address before modifying txSar.ackd
+					ap_uint<32> pkgAddr;
+					pkgAddr(31, 30) = 0x01;
+					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
+					pkgAddr(15, 0) = txSar.ackd(15, 0); //ml_curEvent.address;
+
+					// Decrease Slow Start Threshold, only on first RT from retransmitTimer
+					if (!ml_sarLoaded && (ml_curEvent.rt_count == 1)) {
+						if (currLength > (4*MSS)) {// max( FlightSize/2, 2*MSS) RFC:5681
+							slowstart_threshold = currLength/2;
+						}
+						else {
+							slowstart_threshold = (2 * MSS);
+						}
+						txEng2txSar_upd_req.write(txTxSarRtQuery(ml_curEvent.sessionID, slowstart_threshold));
+					}
+
+					// Since we are retransmitting from txSar.ackd to txSar.not_ackd, this data is already inside the usableWindow
+					// => no check is required
+					// Only check if length is bigger than MMS
+					if (currLength > MSS) {
 						// We stay in this state and sent immediately another packet
-						txSar.not_ackd += MSS;
 						meta.length = MSS;
-					}
-					else
-					{
-						// Check if we sent >= MSS data
-//#if !(TCP_NODELAY)
-						if (txSar.ackd == txSar.not_ackd)
-//#endif
-						{
-							txSar.not_ackd += usableWindow;
-							meta.length = usableWindow;
+						txSar.ackd += MSS;
+						// TODO replace with dynamic count, remove this
+						if (ml_segmentCount == 3) {
+							// Should set a probe or sth??
+							//txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
+							ml_FsmState = 0;
 						}
-						// Set probe Timer to try again later
-						txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
-						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
-						ml_FsmState = 0;
+						ml_segmentCount++;
 					}
-				}
-
-				if (meta.length != 0)
-				{
-					txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
-				}
-				// Send a packet only if there is data or we want to send an empty probing message
-				if (meta.length != 0)// || ml_curEvent.retransmit) //TODO retransmit boolean currently not set, should be removed
-				{
-					txEng_ipMetaFifoOut.write(meta.length);
-					txEng_tcpMetaFifoOut.write(meta);
-					txEng_isLookUpFifoOut.write(true);
-					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-
-					// Only set RT timer if we actually send sth, TODO only set if we change state and sent sth
-					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
-				}//TODO if probe send msg length 1
-				ml_sarLoaded = true;
-			}
-			break;
-#endif
-		case RT:
-			if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded)
-			{
-				if (!ml_sarLoaded)
-				{
-					rxSar2txEng_rsp.read(rxSar);
-					txSar2txEng_upd_rsp.read(txSar);
-				}
-
-				// Compute our window size
-				windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1; // This works even for wrap around
-				if (!txSar.finSent) //no FIN sent
-				{
-					currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
-				}
-				else //FIN already sent
-				{
-					currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd)-1;
-				}
-
-				meta.ackNumb = rxSar.recvd;
-				meta.seqNumb = txSar.ackd;
-				meta.window_size = windowSize;
-				meta.ack = 1; // ACK is always set when session is established
-				meta.rst = 0;
-				meta.syn = 0;
-				meta.fin = 0;
-
-				// Construct address before modifying txSar.ackd
-				ap_uint<32> pkgAddr;
-				pkgAddr(31, 30) = 0x01;
-				pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
-				pkgAddr(15, 0) = txSar.ackd(15, 0); //ml_curEvent.address;
-
-				// Decrease Slow Start Threshold, only on first RT from retransmitTimer
-				if (!ml_sarLoaded && (ml_curEvent.rt_count == 1))
-				{
-					if (currLength > (4*MSS)) // max( FlightSize/2, 2*MSS) RFC:5681
-					{
-						slowstart_threshold = currLength/2;
+					else {
+						meta.length = currLength;
+						if (txSar.finSent) {
+							ml_curEvent.type = FIN;
+						}
+						else {
+							// set RT here???
+							ml_FsmState = 0;
+						}
 					}
-					else
-					{
-						slowstart_threshold = (2 * MSS);
-					}
-					txEng2txSar_upd_req.write(txTxSarRtQuery(ml_curEvent.sessionID, slowstart_threshold));
-				}
 
-
-				// Since we are retransmitting from txSar.ackd to txSar.not_ackd, this data is already inside the usableWindow
-				// => no check is required
-				// Only check if length is bigger than MMS
-				if (currLength > MSS)
-				{
-					// We stay in this state and sent immediately another packet
-					meta.length = MSS;
-					txSar.ackd += MSS;
-					// TODO replace with dynamic count, remove this
-					if (ml_segmentCount == 3)
-					{
-						// Should set a probe or sth??
-						//txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
-						ml_FsmState = 0;
-					}
-					ml_segmentCount++;
-				}
-				else
-				{
-					meta.length = currLength;
-					if (txSar.finSent)
-					{
-						ml_curEvent.type = FIN;
-					}
-					else
-					{
-						// set RT here???
-						ml_FsmState = 0;
-					}
-				}
-
-				// Only send a packet if there is data
-				if (meta.length != 0)
-				{
-					txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
-					txEng_ipMetaFifoOut.write(meta.length);
-					txEng_tcpMetaFifoOut.write(meta);
-					txEng_isLookUpFifoOut.write(true);
+					// Only send a packet if there is data
+					if (meta.length != 0) {
+						txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
+						txEng_ipMetaFifoOut.write(meta.length);
+						txEng_tcpMetaFifoOut.write(meta);
+						txEng_isLookUpFifoOut.write(true);
 #if (TCP_NODELAY)
-					txEng_isDDRbypass.write(false);
+						txEng_isDDRbypass.write(false);
 #endif
-					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-
-					// Only set RT timer if we actually send sth
-					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+						txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+						// Only set RT timer if we actually send sth
+						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+					}
+					ml_sarLoaded = true;
 				}
-				ml_sarLoaded = true;
-			}
-			break;
-		case ACK:
-		case ACK_NODELAY:
-			if (!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty())
-			{
-				rxSar2txEng_rsp.read(rxSar);
-				txSar2txEng_upd_rsp.read(txSar);
-				windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1;
-				meta.ackNumb = rxSar.recvd;
-				meta.seqNumb = txSar.not_ackd; //Always send SEQ
-				meta.window_size = windowSize;
-				meta.length = 0;
-				meta.ack = 1;
-				meta.rst = 0;
-				meta.syn = 0;
-				meta.fin = 0;
-				txEng_ipMetaFifoOut.write(meta.length);
-				txEng_tcpMetaFifoOut.write(meta);
-				txEng_isLookUpFifoOut.write(true);
-				txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-				ml_FsmState = 0;
-			}
-			break;
-		case SYN:
-			if (((ml_curEvent.rt_count != 0) && !txSar2txEng_upd_rsp.empty()) || (ml_curEvent.rt_count == 0))
-			{
-				if (ml_curEvent.rt_count != 0)
-				{
-					txSar2txEng_upd_rsp.read(txSar);
-					meta.seqNumb = txSar.ackd;
-				}
-				else
-				{
-					txSar.not_ackd = ml_randomValue; // FIXME better rand()
-					ml_randomValue = (ml_randomValue* 8) xor ml_randomValue;
-					meta.seqNumb = txSar.not_ackd;
-					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 1));
-				}
-				meta.ackNumb = 0;
-				//meta.seqNumb = txSar.not_ackd;
-				meta.window_size = 0xFFFF;
-				meta.length = 4; // For MSS Option, 4 bytes
-				meta.ack = 0;
-				meta.rst = 0;
-				meta.syn = 1;
-				meta.fin = 0;
-
-				txEng_ipMetaFifoOut.write(4); //length
-				txEng_tcpMetaFifoOut.write(meta);
-				txEng_isLookUpFifoOut.write(true);
-				txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-				// set retransmit timer
-				txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN));
-				ml_FsmState = 0;
-			}
-			break;
-		case SYN_ACK:
-			if (!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty())
-			{
-				rxSar2txEng_rsp.read(rxSar);
-				txSar2txEng_upd_rsp.read(txSar);
-
-				// construct SYN_ACK message
-				meta.ackNumb = rxSar.recvd;
-				meta.window_size = 0xFFFF;
-				meta.length = 4; // For MSS Option, 4 bytes
-				meta.ack = 1;
-				meta.rst = 0;
-				meta.syn = 1;
-				meta.fin = 0;
-				if (ml_curEvent.rt_count != 0)
-				{
-					meta.seqNumb = txSar.ackd;
-				}
-				else
-				{
-					txSar.not_ackd = ml_randomValue; // FIXME better rand();
-					ml_randomValue = (ml_randomValue* 8) xor ml_randomValue;
-					meta.seqNumb = txSar.not_ackd;
-					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 1));
-				}
-
-				txEng_ipMetaFifoOut.write(4); // length
-				txEng_tcpMetaFifoOut.write(meta);
-				txEng_isLookUpFifoOut.write(true);
-				txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
-
-				// set retransmit timer
-				txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN_ACK));
-				ml_FsmState = 0;
-			}
-			break;
-		case FIN:
-			if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded)
-			{
-				if (!ml_sarLoaded)
-				{
+				break;
+			case ACK:
+			case ACK_NODELAY:
+				if (!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) {
 					rxSar2txEng_rsp.read(rxSar);
 					txSar2txEng_upd_rsp.read(txSar);
-				}
-
-				//construct FIN message
-				windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1;
-				meta.ackNumb = rxSar.recvd;
-				//meta.seqNumb = txSar.not_ackd;
-				meta.window_size = windowSize;
-				meta.length = 0;
-				meta.ack = 1; // has to be set for FIN message as well
-				meta.rst = 0;
-				meta.syn = 0;
-				meta.fin = 1;
-
-				// Check if retransmission, in case of RT, we have to reuse not_ackd number
-				if (ml_curEvent.rt_count != 0)
-				{
-					meta.seqNumb = txSar.not_ackd-1; //Special case, or use ackd?
-				}
-				else
-				{
-					meta.seqNumb = txSar.not_ackd;
-					// Check if all data is sent, otherwise we have to delay FIN message
-					// Set fin flag, such that probeTimer is informed
-					if (txSar.app == txSar.not_ackd(15, 0))
-					{
-						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 0, true, true));
-					}
-					else
-					{
-						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1, 0, true, false));
-					}
-				}
-
-				// Check if there is a FIN to be sent //TODO maybe restruce this
-				if (meta.seqNumb(15, 0) == txSar.app)
-				{
+					windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1;
+					meta.ackNumb = rxSar.recvd;
+					meta.seqNumb = txSar.not_ackd; //Always send SEQ
+					meta.window_size = windowSize;
+					meta.length = 0;
+					meta.ack = 1;
+					meta.rst = 0;
+					meta.syn = 0;
+					meta.fin = 0;
 					txEng_ipMetaFifoOut.write(meta.length);
+					txEng_tcpMetaFifoOut.write(meta);
+					txEng_isLookUpFifoOut.write(true);
+					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+					ml_FsmState = 0;
+				}
+				break;
+			case SYN:
+				if (((ml_curEvent.rt_count != 0) && !txSar2txEng_upd_rsp.empty()) || (ml_curEvent.rt_count == 0)) {
+					if (ml_curEvent.rt_count != 0) {
+						txSar2txEng_upd_rsp.read(txSar);
+						meta.seqNumb = txSar.ackd;
+					}
+					else {
+						txSar.not_ackd = ml_randomValue; // FIXME better rand()
+						ml_randomValue = (ml_randomValue* 8) xor ml_randomValue;
+						meta.seqNumb = txSar.not_ackd;
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 1));
+					}
+					meta.ackNumb = 0;
+					//meta.seqNumb = txSar.not_ackd;
+					meta.window_size = 0xFFFF;
+					meta.length = 4; // For MSS Option, 4 bytes
+					meta.ack = 0;
+					meta.rst = 0;
+					meta.syn = 1;
+					meta.fin = 0;
+
+					txEng_ipMetaFifoOut.write(4); //length
 					txEng_tcpMetaFifoOut.write(meta);
 					txEng_isLookUpFifoOut.write(true);
 					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
 					// set retransmit timer
-					//txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, FIN));
-					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
-				}
-
-				ml_FsmState = 0;
-			}
-			break;
-		case RST:
-			// Assumption RST length == 0
-			resetEvent = ml_curEvent;
-			if (!resetEvent.hasSessionID())
-			{
-				txEng_ipMetaFifoOut.write(0);
-				txEng_tcpMetaFifoOut.write(tx_engine_meta(0, resetEvent.getAckNumb(), 1, 1, 0, 0));
-				txEng_isLookUpFifoOut.write(false);
-				txEng_tupleShortCutFifoOut.write(ml_curEvent.tuple);
-				ml_FsmState = 0;
-			}
-			else if (!txSar2txEng_upd_rsp.empty())
-			{
-				txSar2txEng_upd_rsp.read(txSar);
-				txEng_ipMetaFifoOut.write(0);
-				txEng_isLookUpFifoOut.write(true);
-				txEng2sLookup_rev_req.write(resetEvent.sessionID); //there is no sessionID??
-				//if (resetEvent.getAckNumb() != 0)
-				//{
-					txEng_tcpMetaFifoOut.write(tx_engine_meta(txSar.not_ackd, resetEvent.getAckNumb(), 1, 1, 0, 0));
-				/*}
-				/else
-				{
-					metaDataFifoOut.write(tx_engine_meta(txSar.not_ackd, rxSar.recvd, 1, 1, 0, 0));
-				}*/
+					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN));
 					ml_FsmState = 0;
-			}
+				}
+				break;
+			case SYN_ACK:
+				if (!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) {
+					rxSar2txEng_rsp.read(rxSar);
+					txSar2txEng_upd_rsp.read(txSar);
+
+					// construct SYN_ACK message
+					meta.ackNumb = rxSar.recvd;
+					meta.window_size = 0xFFFF;
+					meta.length = 4; // For MSS Option, 4 bytes
+					meta.ack = 1;
+					meta.rst = 0;
+					meta.syn = 1;
+					meta.fin = 0;
+					if (ml_curEvent.rt_count != 0) {
+						meta.seqNumb = txSar.ackd;
+					}
+					else {
+						txSar.not_ackd = ml_randomValue; // FIXME better rand();
+						ml_randomValue = (ml_randomValue* 8) xor ml_randomValue;
+						meta.seqNumb = txSar.not_ackd;
+						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 1));
+					}
+
+					txEng_ipMetaFifoOut.write(4); // length
+					txEng_tcpMetaFifoOut.write(meta);
+					txEng_isLookUpFifoOut.write(true);
+					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+
+					// set retransmit timer
+					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN_ACK));
+					ml_FsmState = 0;
+				}
+				break;
+			case FIN:
+				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
+					if (!ml_sarLoaded) {
+						rxSar2txEng_rsp.read(rxSar);
+						txSar2txEng_upd_rsp.read(txSar);
+					}
+
+					//construct FIN message
+					windowSize = (rxSar.appd - ((ap_uint<16>)rxSar.recvd)) - 1;
+					meta.ackNumb = rxSar.recvd;
+					//meta.seqNumb = txSar.not_ackd;
+					meta.window_size = windowSize;
+					meta.length = 0;
+					meta.ack = 1; // has to be set for FIN message as well
+					meta.rst = 0;
+					meta.syn = 0;
+					meta.fin = 1;
+
+					// Check if retransmission, in case of RT, we have to reuse not_ackd number
+					if (ml_curEvent.rt_count != 0) {
+						meta.seqNumb = txSar.not_ackd-1; //Special case, or use ackd?
+					}
+					else {
+						meta.seqNumb = txSar.not_ackd;
+						// Check if all data is sent, otherwise we have to delay FIN message
+						// Set fin flag, such that probeTimer is informed
+						if (txSar.app == txSar.not_ackd(15, 0)) {
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 0, true, true));
+						}
+						else {
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1, 0, true, false));
+						}
+					}
+
+					// Check if there is a FIN to be sent //TODO maybe restruce this
+					if (meta.seqNumb(15, 0) == txSar.app) {
+						txEng_ipMetaFifoOut.write(meta.length);
+						txEng_tcpMetaFifoOut.write(meta);
+						txEng_isLookUpFifoOut.write(true);
+						txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+						// set retransmit timer
+						//txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, FIN));
+						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+					}
+
+					ml_FsmState = 0;
+				}
+				break;
+			case RST:
+				// Assumption RST length == 0
+				resetEvent = ml_curEvent;
+				if (!resetEvent.hasSessionID()) {
+					txEng_ipMetaFifoOut.write(0);
+					txEng_tcpMetaFifoOut.write(tx_engine_meta(0, resetEvent.getAckNumb(), 1, 1, 0, 0));
+					txEng_isLookUpFifoOut.write(false);
+					txEng_tupleShortCutFifoOut.write(ml_curEvent.tuple);
+					ml_FsmState = 0;
+				}
+				else if (!txSar2txEng_upd_rsp.empty()) {
+					txSar2txEng_upd_rsp.read(txSar);
+					txEng_ipMetaFifoOut.write(0);
+					txEng_isLookUpFifoOut.write(true);
+					txEng2sLookup_rev_req.write(resetEvent.sessionID); //there is no sessionID??
+					//if (resetEvent.getAckNumb() != 0)
+					//{
+						txEng_tcpMetaFifoOut.write(tx_engine_meta(txSar.not_ackd, resetEvent.getAckNumb(), 1, 1, 0, 0));
+					/*}
+					/else
+					{
+						metaDataFifoOut.write(tx_engine_meta(txSar.not_ackd, rxSar.recvd, 1, 1, 0, 0));
+					}*/
+						ml_FsmState = 0;
+				}
+				break;
+			} //switch
 			break;
-		} //switch
-		break;
 	} //switch
 }
 
@@ -637,25 +573,20 @@ void tupleSplitter(	stream<fourTuple>&		sLookup2txEng_rev_rsp,
 
 	fourTuple tuple;
 
-	if (ts_getMeta)
-	{
-		if (!txEng_isLookUpFifoIn.empty())
-		{
+	if (ts_getMeta) {
+		if (!txEng_isLookUpFifoIn.empty()) {
 			txEng_isLookUpFifoIn.read(ts_isLookUp);
 			ts_getMeta = false;
 		}
 	}
-	else
-	{
-		if (!sLookup2txEng_rev_rsp.empty() && ts_isLookUp)
-		{
+	else {
+		if (!sLookup2txEng_rev_rsp.empty() && ts_isLookUp) {
 			sLookup2txEng_rev_rsp.read(tuple);
 			txEng_ipTupleFifoOut.write(twoTuple(tuple.srcIp, tuple.dstIp));
 			txEng_tcpTupleFifoOut.write(tuple);
 			ts_getMeta = true;
 		}
-		else if(!txEng_tupleShortCutFifoIn.empty() && !ts_isLookUp)
-		{
+		else if(!txEng_tupleShortCutFifoIn.empty() && !ts_isLookUp) {
 			txEng_tupleShortCutFifoIn.read(tuple);
 			txEng_ipTupleFifoOut.write(twoTuple(tuple.srcIp, tuple.dstIp));
 			txEng_tcpTupleFifoOut.write(tuple);
@@ -670,61 +601,45 @@ void tupleSplitter(	stream<fourTuple>&		sLookup2txEng_rev_rsp,
  *  @param[in]		txEng_ipTupleFifoIn
  *  @param[out]		txEng_ipHeaderBufferOut
  */
-void ipHeaderConstruction(stream<ap_uint<16> >&				txEng_ipMetaDataFifoIn,
+void ipHeaderConstruction(
+							stream<ap_uint<16> >&			txEng_ipMetaDataFifoIn,
 							stream<twoTuple>&				txEng_ipTupleFifoIn,
 							stream<axiWord>&				txEng_ipHeaderBufferOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static ap_uint<2> ihc_currWord = 0;
 	static twoTuple ihc_tuple;
 
-	axiWord sendWord;
+	axiWord sendWord = axiWord(0,0,1);
 	ap_uint<16> length = 0;
 
-	switch(ihc_currWord)
-	{
-	case WORD_0:
-		if (!txEng_ipMetaDataFifoIn.empty())
-		{
-			txEng_ipMetaDataFifoIn.read(length);
-			sendWord.data.range(7, 0) = 0x45;
-			sendWord.data.range(15, 8) = 0;
-			length = length + 40;
-			sendWord.data.range(23, 16) = length(15, 8); //length
-			sendWord.data.range(31, 24) = length(7, 0);
-			sendWord.data.range(47, 32) = 0;
-			sendWord.data.range(50, 48) = 0; //Flags
-			sendWord.data.range(63, 51) = 0x0;//Fragment Offset //FIXME why is this here
-			sendWord.keep = 0xFF;
-			sendWord.last = 0;
-			txEng_ipHeaderBufferOut.write(sendWord);
-			ihc_currWord++;
-		}
-		break;
-	case WORD_1:
-		if (!txEng_ipTupleFifoIn.empty())
-		{
-			txEng_ipTupleFifoIn.read(ihc_tuple);
-			sendWord.data.range(7, 0) = 0x40;
-			sendWord.data.range(15, 8) = 0x06; // TCP
-			sendWord.data.range(31, 16) = 0; // CS
-			sendWord.data.range(63, 32) = ihc_tuple.srcIp; // srcIp
-			sendWord.keep = 0xFF;
-			sendWord.last = 0;
-			txEng_ipHeaderBufferOut.write(sendWord);
-			ihc_currWord++;
-		}
-		break;
-	case WORD_2:
-		sendWord.data.range(31, 0) = ihc_tuple.dstIp; // dstIp
-		sendWord.keep = 0x0F;
-		sendWord.last = 1;
+	if (!txEng_ipMetaDataFifoIn.empty() && !txEng_ipTupleFifoIn.empty()){
+		txEng_ipMetaDataFifoIn.read(length);
+		txEng_ipTupleFifoIn.read(ihc_tuple);
+		length = length + 40;						// TODO: it has to be change if TCP options are implemented
+
+		// Compose the IP header
+		sendWord.data(  7,  0) = 0x45;
+		sendWord.data( 15,  8) = 0;
+		sendWord.data( 23, 16) = length(15, 8); 	//length
+		sendWord.data( 31, 24) = length(7, 0);
+		sendWord.data( 47, 32) = 0;
+		sendWord.data( 50, 48) = 0; 				//Flags
+		sendWord.data( 63, 51) = 0x0;				//Fragment Offset
+		sendWord.data( 71, 64) = 0x40;
+		sendWord.data( 79, 72) = 0x06; 				// TCP
+		sendWord.data( 95, 80) = 0; 				// IP header checksum 	
+		sendWord.data(127, 96) = ihc_tuple.srcIp; 	// srcIp
+		sendWord.data(159,128) = ihc_tuple.dstIp; 	// dstIp
+		
+		sendWord.last 		   = 1;
+		sendWord.keep = 0xFFFFF;
+
 		txEng_ipHeaderBufferOut.write(sendWord);
-		ihc_currWord = 0;
-		break;
-	} //switch
+
+	}
+
 }
 
 /** @ingroup tx_engine
@@ -734,8 +649,9 @@ void ipHeaderConstruction(stream<ap_uint<16> >&				txEng_ipMetaDataFifoIn,
  *  @param[out]		dataOut
  *  @TODO this should be better, cleaner
  */
-//FIXME clean this up, code duplication
-void pseudoHeaderConstruction(stream<tx_engine_meta>&		tcpMetaDataFifoIn,
+
+void pseudoHeaderConstruction(
+								stream<tx_engine_meta>&		tcpMetaDataFifoIn,
 								stream<fourTuple>&			tcpTupleFifoIn,
 								stream<axiWord>&			dataOut)
 {
@@ -743,115 +659,74 @@ void pseudoHeaderConstruction(stream<tx_engine_meta>&		tcpMetaDataFifoIn,
 #pragma HLS pipeline II=1
 
 	static ap_uint<3> phc_currWord = 0;
-	axiWord sendWord;
+	axiWord sendWord = axiWord(0,0,0);
 	static tx_engine_meta phc_meta;
 	static fourTuple phc_tuple;
 	//static bool phc_done = true;
 	ap_uint<16> length = 0;
 
-	/*if (phc_done && !tcpMetaDataFifoIn.empty())
-	{
+	if (!tcpTupleFifoIn.empty() && !tcpMetaDataFifoIn.empty()){
+		tcpTupleFifoIn.read(phc_tuple);
 		tcpMetaDataFifoIn.read(phc_meta);
-		phc_done = false;
-		//Adapt window, if too small close completely
-		/*if(phc_meta.window_size < (MY_MSS/2))
-		{
-			phc_meta.window_size = 0;
-		}*//*
+		length = phc_meta.length + 0x14;  // 20 bytes for the header
+		
+		// Generate pseudoheader
+		sendWord.data( 31,  0) = phc_tuple.srcIp;
+		sendWord.data( 63, 32) = phc_tuple.dstIp;
+
+		sendWord.data( 79, 64) = 0x0600; // TCP
+
+		sendWord.data( 95, 80) = (length(7, 0),length(15, 8));
+		sendWord.data(111, 96) = phc_tuple.srcPort; // srcPort
+		sendWord.data(127,112) = phc_tuple.dstPort; // dstPort
+
+		// Insert SEQ number
+		sendWord.data(135,128) = phc_meta.seqNumb(31, 24);
+		sendWord.data(143,136) = phc_meta.seqNumb(23, 16);
+		sendWord.data(151,144) = phc_meta.seqNumb(15, 8);
+		sendWord.data(159,152) = phc_meta.seqNumb(7, 0);
+		// Insert ACK number
+		sendWord.data(167,160) = phc_meta.ackNumb(31, 24);
+		sendWord.data(175,168) = phc_meta.ackNumb(23, 16);
+		sendWord.data(183,176) = phc_meta.ackNumb(15, 8);
+		sendWord.data(191,184) = phc_meta.ackNumb(7, 0);
+
+
+		sendWord.data(195,193) = 0; // reserved
+		sendWord.data(199,196) = (0x5 + phc_meta.syn); //data offset
+		/* Control bits:
+		 * [8] == FIN
+		 * [9] == SYN
+		 * [10] == RST
+		 * [11] == PSH
+		 * [12] == ACK
+		 * [13] == URG
+		 */
+		sendWord.data.bit(192) = 0; //NS bit
+		sendWord.data.bit(200) = phc_meta.fin; //control bits
+		sendWord.data.bit(201) = phc_meta.syn;
+		sendWord.data.bit(202) = phc_meta.rst;
+		sendWord.data.bit(203) = 0;
+		sendWord.data.bit(204) = phc_meta.ack;
+		sendWord.data(207, 205) = 0; //some other bits
+		sendWord.data.range(223, 208) = (phc_meta.window_size(7, 0) , phc_meta.window_size(15, 8)); // TODO if window size is in option this must be verified
+		sendWord.data.range(255, 224) = 0; //urgPointer & checksum
+
+		if (phc_meta.syn) {
+			sendWord.data(263, 256) = 0x02; // Option Kind
+			sendWord.data(271, 264) = 0x04; // Option length
+			sendWord.data(287, 272) = 0xB405; // 0x05B4 = 1460
+			sendWord.data(319, 288) = 0;
+			sendWord.keep = 0xFFFFFFFFFF;
+		}
+		else {
+			sendWord.keep = 0xFFFFFFFF;
+		}
+
+		sendWord.last=1;
+
+		dataOut.write(sendWord);
 	}
-	else if (!phc_done)
-	{*/
-		switch(phc_currWord)
-		{
-		case WORD_0:
-			if (!tcpTupleFifoIn.empty() && !tcpMetaDataFifoIn.empty())
-			{
-				tcpTupleFifoIn.read(phc_tuple);
-				tcpMetaDataFifoIn.read(phc_meta);
-				sendWord.data.range(31, 0) = phc_tuple.srcIp;
-				sendWord.data.range(63, 32) = phc_tuple.dstIp;
-				sendWord.keep = 0xFF;
-				sendWord.last = 0;
-				dataOut.write(sendWord);
-				phc_currWord++;
-			}
-			break;
-		case WORD_1:
-			sendWord.data.range(7, 0) = 0x00;
-			sendWord.data.range(15, 8) = 0x06; // TCP
-			length = phc_meta.length + 0x14;  // 20 bytes for the header
-			sendWord.data.range(23, 16) = length(15, 8);
-			sendWord.data.range(31, 24) = length(7, 0);
-			sendWord.data.range(47, 32) = phc_tuple.srcPort; // srcPort
-			sendWord.data.range(63, 48) = phc_tuple.dstPort; // dstPort
-			sendWord.keep = 0xFF;
-			sendWord.last = 0;
-			dataOut.write(sendWord);
-			phc_currWord++;
-			break;
-		case WORD_2:
-			// Insert SEQ number
-			sendWord.data(7, 0)   = phc_meta.seqNumb(31, 24);
-			sendWord.data(15, 8)  = phc_meta.seqNumb(23, 16);
-			sendWord.data(23, 16) = phc_meta.seqNumb(15, 8);
-			sendWord.data(31, 24) = phc_meta.seqNumb(7, 0);
-			// Insert ACK number
-			sendWord.data(39, 32) = phc_meta.ackNumb(31, 24);
-			sendWord.data(47, 40) = phc_meta.ackNumb(23, 16);
-			sendWord.data(55, 48) = phc_meta.ackNumb(15, 8);
-			sendWord.data(63, 56) = phc_meta.ackNumb(7, 0);
-			sendWord.keep = 0xFF;
-			sendWord.last = 0;
-			dataOut.write(sendWord);
-			phc_currWord++;
-			break;
-		case WORD_3:
-			sendWord.data(3,1) = 0; // reserved
-			sendWord.data(7, 4) = (0x5 + phc_meta.syn); //data offset
-			/* Control bits:
-			 * [8] == FIN
-			 * [9] == SYN
-			 * [10] == RST
-			 * [11] == PSH
-			 * [12] == ACK
-			 * [13] == URG
-			 */
-			sendWord.data[0] = 0; //NS bit
-			sendWord.data[8] = phc_meta.fin; //control bits
-			sendWord.data[9] = phc_meta.syn;
-			sendWord.data[10] = phc_meta.rst;
-			sendWord.data[11] = 0;
-			sendWord.data[12] = phc_meta.ack;
-			sendWord.data(15, 13) = 0; //some other bits
-			//sendWord.data.range(31, 16) = phc_meta.window_size; //check if at least half the size FIXME
-			sendWord.data.range(23, 16) = phc_meta.window_size(15, 8);
-			sendWord.data.range(31, 24) = phc_meta.window_size(7, 0);
-			sendWord.data.range(63, 32) = 0; //urgPointer & checksum
-			sendWord.keep = 0xFF;
-			sendWord.last = (phc_meta.length == 0);
-			dataOut.write(sendWord);
-			if (!phc_meta.syn)
-			{
-				phc_currWord = 0;
-			}
-			else
-			{
-				phc_currWord++;
-			}
-			//phc_done = true;
-			break;
-		case WORD_4: // Only used for SYN and MSS negotiation
-			sendWord.data(7, 0) = 0x02; // Option Kind
-			sendWord.data(15, 8) = 0x04; // Option length
-			sendWord.data(31, 16) = 0xB405; // 0x05B4 = 1460
-			sendWord.data(63, 32) = 0;
-			sendWord.keep = 0x0F;
-			sendWord.last = 1;//(phc_meta.length == 0x04); //OR JUST SET TO 1
-			dataOut.write(sendWord);
-			phc_currWord = 0;
-			break;
-		} //switch
-	//} //else
 }
 
 /** @ingroup tx_engine
@@ -860,7 +735,8 @@ void pseudoHeaderConstruction(stream<tx_engine_meta>&		tcpMetaDataFifoIn,
  *	@param[in]		txBufferReadData, incoming payload stream
  *	@param[out]		dataOut, outgoing data stream
  */
-void tcpPkgStitcher(stream<axiWord>&		txEng_tcpHeaderBufferIn,
+void tx_pseudo_header_pkt_stitcher(
+					stream<axiWord>&		txEng_tcpHeaderBufferIn,
 					stream<axiWord>&		txBufferReadData,
 #if (TCP_NODELAY)
 					stream<bool>&			txEng_isDDRbypass,
@@ -1160,7 +1036,8 @@ void tx_compute_tcp_checksum(	stream<subSums>&			txEng_subChecksumsFifoIn,
  *  @param[in]		tcpChecksumFifoIn
  *  @param[out]		dataOut
  */
-void pkgStitcher(	stream<axiWord>& 		txEng_ipHeaderBufferIn,
+void tx_ip_pkt_stitcher(	
+					stream<axiWord>& 		txEng_ipHeaderBufferIn,
 					stream<axiWord>& 		payloadIn,
 					stream<ap_uint<16> >& 	txEng_tcpChecksumFifoIn,
 					stream<axiWord>& 		ipTxDataOut)
@@ -1391,7 +1268,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	pseudoHeaderConstruction(txEng_tcpMetaFifo, txEng_tcpTupleFifo, txEng_tcpHeaderBuffer);
 
-	tcpPkgStitcher(	txEng_tcpHeaderBuffer,
+	tx_pseudo_header_pkt_stitcher(	txEng_tcpHeaderBuffer,
 					txBufferReadData,
 #if (TCP_NODELAY)
 					txEng_isDDRbypass,
@@ -1403,5 +1280,5 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	tx_compute_tcp_subchecksums(txEng_tcpPkgBuffer1, txEng_tcpPkgBuffer2, txEng_subChecksumsFifo);
 	tx_compute_tcp_checksum(txEng_subChecksumsFifo, txEng_tcpChecksumFifo);
 
-	pkgStitcher(txEng_ipHeaderBuffer, txEng_tcpPkgBuffer2, txEng_tcpChecksumFifo, ipTxData);
+	tx_ip_pkt_stitcher(txEng_ipHeaderBuffer, txEng_tcpPkgBuffer2, txEng_tcpChecksumFifo, ipTxData);
 }
