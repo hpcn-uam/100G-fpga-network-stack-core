@@ -80,6 +80,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<rxTxSarReply>&				txSar2rxEng_upd_rsp,
 #if !(RX_DDR_BYPASS)
 				stream<mmStatus>&					rxBufferWriteStatus,
+				stream<mmCmd>&						rxBufferWriteCmd,
 #endif
 				stream<axiWord>&					rxBufferWriteData,
 				stream<sessionLookupQuery>&			rxEng2sLookup_req,
@@ -90,11 +91,8 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetransmitTimer,
 				stream<ap_uint<16> >&				rxEng2timer_clearProbeTimer,
 				stream<ap_uint<16> >&				rxEng2timer_setCloseTimer,
-				stream<openStatus>&					openConStatusOut, //TODO remove
+				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
-#if !(RX_DDR_BYPASS)
-				stream<mmCmd>&						rxBufferWriteCmd,
-#endif
 				stream<appNotification>&			rxEng2rxApp_notification);
 
 void rxTCP_pseudoheader_insert(

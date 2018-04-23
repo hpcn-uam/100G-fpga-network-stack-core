@@ -211,7 +211,8 @@ void rxTCP_pseudoheader_insert(
 				 	combine_words( currWord, prevWord, ip_headerlen, &sendWord);
 					
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-					sendWord.data( 79 ,0) 	= (0x0600,ip_dst,ip_src);
+					sendWord.data( 63 ,0) 	= (ip_dst,ip_src);
+					sendWord.data( 79 ,64)	= 0x0600;
 					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
 					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
 					sendWord.keep(11,0) 	= 0xFFF;
@@ -232,7 +233,8 @@ void rxTCP_pseudoheader_insert(
 				if (pseudo_header){
 					pseudo_header = 0;
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-					sendWord.data( 79 ,0) 	= (0x0600,ip_dst,ip_src);
+					sendWord.data( 63 ,0) 	= (ip_dst,ip_src);
+					sendWord.data( 79 ,64)	= 0x0600;
 					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
 					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
 					sendWord.keep(11,0) 	= 0xFFF;
@@ -667,7 +669,7 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 #endif
 						stream<appNotification>&				rxEng2rxApp_notification)
 {
-//#pragma HLS LATENCY max=2
+#pragma HLS LATENCY max=2
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
@@ -710,14 +712,15 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 			// Check if transition to LOAD occurs
 			if (!stateTable2rxEng_upd_rsp.empty() && !rxSar2rxEng_upd_rsp.empty()
 							&& !(fsm_txSarRequest && txSar2rxEng_upd_rsp.empty())) {
-				fsm_txSarRequest = false;
-
-				stateTable2rxEng_upd_rsp.read(tcpState);
-				rxSar2rxEng_upd_rsp.read(rxSar);
 
 				if (fsm_txSarRequest) {
 					txSar2rxEng_upd_rsp.read(txSar); // FIXME for default it was a non-block read. Why?
 				}
+
+				fsm_txSarRequest = false;
+
+				stateTable2rxEng_upd_rsp.read(tcpState);
+				rxSar2rxEng_upd_rsp.read(rxSar);
 				
 				fsm_state = LOAD;
 
@@ -1132,125 +1135,136 @@ void rxEngMemWrite(
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 
-	static enum rxmwrState{RXMEMWR_IDLE, RXMEMWR_WRFIRST, RXMEMWR_EVALSECOND, RXMEMWR_WRSECOND, RXMEMWR_WRSECONDSTR, RXMEMWR_ALIGNED, RXMEMWR_RESIDUE} rxMemWrState;
+	enum rxmwrState{RXMEMWR_IDLE, RXMEMWR_WRFIRST, RXMEMWR_EVALSECOND, /*RXMEMWR_WRSECOND, */RXMEMWR_WRSECONDSTR, RXMEMWR_ALIGNED, RXMEMWR_RESIDUE};
+	static rxmwrState rxMemWrState = RXMEMWR_IDLE;
+	
 	static mmCmd rxMemWriterCmd = mmCmd(0, 0);
 	static ap_uint<16> rxEngBreakTemp = 0;
 	static uint8_t lengthBuffer = 0;
+	static uint8_t lengthBuffer_8 = 0;
 	static ap_uint<3> rxEngAccessResidue = 0;
 	static bool txAppBreakdown = false;
 	static axiWord pushWord = axiWord(0, 0xFF, 0);
 
+	mmCmd tempCmd;
+	axiWord outputWord;
+	ap_uint<32>	saddr;
+
+	ap_uint<17> buffer_overflow;
 
 	switch (rxMemWrState) {
-	case RXMEMWR_IDLE:
-		if (!rxMemWrCmdIn.empty() && !rxMemWrCmdOut.full() && !doubleAccess.full()) {
-			rxMemWriterCmd = rxMemWrCmdIn.read();
-			mmCmd tempCmd = rxMemWriterCmd;
-			if ((rxMemWriterCmd.saddr.range(15, 0) + rxMemWriterCmd.bbt) > 65536) {
-				rxEngBreakTemp = 65536 - rxMemWriterCmd.saddr;
-				rxMemWriterCmd.bbt -= rxEngBreakTemp;
-				tempCmd = mmCmd(rxMemWriterCmd.saddr, rxEngBreakTemp);
-				txAppBreakdown = true;
-			}
-			else
-			{
-				rxEngBreakTemp = rxMemWriterCmd.bbt;
-			}
-			rxMemWrCmdOut.write(tempCmd);
-			doubleAccess.write(txAppBreakdown);
-			//txAppPktCounter++;
-			//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
-			rxMemWrState = RXMEMWR_WRFIRST;
-		}
-		break;
-	case RXMEMWR_WRFIRST:
-		if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
-			rxMemWrDataIn.read(pushWord);
-			axiWord outputWord = pushWord;
-			ap_uint<4> byteCount = keepToLen(pushWord.keep);
-			if (rxEngBreakTemp > 8)
-			{
-				rxEngBreakTemp -= 8;
-			}
-			else
-			{
-				if (txAppBreakdown == true)
-				{				/// Changes are to go in here
-					if (rxMemWriterCmd.saddr.range(15, 0) % 8 != 0) // If the word is not perfectly aligned then there is some magic to be worked.
-					{
-						outputWord.keep = lenToKeep(rxEngBreakTemp);
-					}
-					outputWord.last = 1;
-					rxMemWrState = RXMEMWR_EVALSECOND;
-					rxEngAccessResidue = byteCount - rxEngBreakTemp;
-					lengthBuffer = rxEngBreakTemp;	// Buffer the number of bits consumed.
-				}
-				else
-				{
-					rxMemWrState = RXMEMWR_IDLE;
-				}
-			}
-			//txAppWordCounter++;
-			//std::cerr <<  std::dec << cycleCounter << " - " << txAppWordCounter << " - " << std::hex << pushWord.data << std::endl;
-			rxMemWrDataOut.write(outputWord);
-		}
-		break;
-	case RXMEMWR_EVALSECOND:
-		if (!rxMemWrCmdOut.full()) {
-			if (rxMemWriterCmd.saddr.range(15, 0) % 8 == 0)
-				rxMemWrState = RXMEMWR_ALIGNED;
-			//else if (rxMemWriterCmd.bbt + rxEngAccessResidue > 8 || rxEngAccessResidue > 0)
-			else if (rxMemWriterCmd.bbt - rxEngAccessResidue > 0)
-				rxMemWrState = RXMEMWR_WRSECONDSTR;
-			else
-				rxMemWrState = RXMEMWR_RESIDUE;
-			rxMemWriterCmd.saddr.range(15, 0) = 0;
-			rxEngBreakTemp = rxMemWriterCmd.bbt;
-			rxMemWrCmdOut.write(mmCmd(rxMemWriterCmd.saddr, rxEngBreakTemp));
-			//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << txAppTempCmd.saddr << " - " << txAppTempCmd.bbt << std::endl;
-			txAppBreakdown = false;
-
-		}
-		break;
-	case RXMEMWR_ALIGNED:	// This is the non-realignment state
-		if (!rxMemWrDataIn.empty() & !rxMemWrDataOut.full()) {
-			rxMemWrDataIn.read(pushWord);
-			rxMemWrDataOut.write(pushWord);
-			if (pushWord.last == 1)
-				rxMemWrState = RXMEMWR_IDLE;
-		}
-		break;
-	case RXMEMWR_WRSECONDSTR: // We go into this state when we need to realign things
-		if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
-			axiWord outputWord = axiWord(0, 0xFF, 0);
-			outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-			pushWord = rxMemWrDataIn.read();
-			outputWord.data.range(63, (8-lengthBuffer)*8) = pushWord.data.range((lengthBuffer * 8), 0 );
-
-			if (pushWord.last == 1) {
-				if (rxEngBreakTemp - rxEngAccessResidue > lengthBuffer)	{ // In this case there's residue to be handled
-					rxEngBreakTemp -= 8;
-					rxMemWrState = RXMEMWR_RESIDUE;
+		case RXMEMWR_IDLE:
+			if (!rxMemWrCmdIn.empty() && !rxMemWrCmdOut.full() && !doubleAccess.full()) {
+				rxMemWrCmdIn.read(rxMemWriterCmd);
+				saddr = rxMemWriterCmd.saddr;
+				buffer_overflow = rxMemWriterCmd.saddr.range(15, 0) + rxMemWriterCmd.bbt;
+				
+				if (buffer_overflow.bit(16)) { 											// If this happen two write commands are needed
+					rxEngBreakTemp = 65536 - rxMemWriterCmd.saddr.range(15, 0);						// how much free space the buffer has?
+					//rxMemWriterCmd.bbt -= rxEngBreakTemp;								// Recompute Byte to transfer 
+					tempCmd = mmCmd(saddr, rxEngBreakTemp);				// Prepare command
+					txAppBreakdown = true;
 				}
 				else {
-					outputWord.keep = lenToKeep(rxEngBreakTemp);
-					outputWord.last = 1;
-					rxMemWrState = RXMEMWR_IDLE;
+					tempCmd = rxMemWriterCmd;
+					rxEngBreakTemp = rxMemWriterCmd.bbt;
 				}
+				rxMemWrCmdOut.write(tempCmd);
+				doubleAccess.write(txAppBreakdown);
+				//txAppPktCounter++;
+				//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
+				rxMemWrState = RXMEMWR_WRFIRST;
 			}
-			else
-				rxEngBreakTemp -= 8;
-			rxMemWrDataOut.write(outputWord);
-		}
-		break;
-	case RXMEMWR_RESIDUE:
-		if (!rxMemWrDataOut.full()) {
-			axiWord outputWord = axiWord(0, lenToKeep(rxEngBreakTemp), 1);
-			outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-			rxMemWrDataOut.write(outputWord);
+			break;
+		case RXMEMWR_WRFIRST:
+			if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
+				rxMemWrDataIn.read(pushWord);
+				outputWord = pushWord;
+				ap_uint<4> byteCount = keepToLen(pushWord.keep); // Size of the current word
+				if (rxEngBreakTemp > 8) {		// At least one full transaction has to be made
+					rxEngBreakTemp -= 8; 		// Consume a whole word
+				}
+				else {
+					if (txAppBreakdown == true) {
+						rxMemWriterCmd.bbt -= rxEngBreakTemp;					// Recompute Byte to transfer 
+						/// Changes are to go in here
+						if (rxMemWriterCmd.saddr.range(15, 0) % 8 != 0) { // If the word is not perfectly aligned then there is some magic to be worked.
+							outputWord.keep = lenToKeep(rxEngBreakTemp);
+						}
+						outputWord.last = 1;
+						rxEngAccessResidue = byteCount - rxEngBreakTemp;
+						lengthBuffer = rxEngBreakTemp;	// Buffer the number of bits consumed.
+						lengthBuffer_8 = 8 - rxEngBreakTemp;
+						rxMemWrState = RXMEMWR_EVALSECOND;
+					}
+					else {
+						rxMemWrState = RXMEMWR_IDLE;
+					}
+				}
+				//txAppWordCounter++;
+				//std::cerr <<  std::dec << cycleCounter << " - " << txAppWordCounter << " - " << std::hex << pushWord.data << std::endl;
+				rxMemWrDataOut.write(outputWord);
+			}
+			break;
+		case RXMEMWR_EVALSECOND:				// Some part of the data is sent to the end of the buffer and other part to the beginning of the buffer
+			if (!rxMemWrCmdOut.full()) {
+				if (rxMemWriterCmd.saddr.range(15, 0) % 8 == 0)
+					rxMemWrState = RXMEMWR_ALIGNED;
+				//else if (rxMemWriterCmd.bbt + rxEngAccessResidue > 8 || rxEngAccessResidue > 0)
+				else if (rxMemWriterCmd.bbt - rxEngAccessResidue > 0)
+					rxMemWrState = RXMEMWR_WRSECONDSTR;
+				else
+					rxMemWrState = RXMEMWR_RESIDUE;
+				rxMemWriterCmd.saddr.range(15, 0) = 0;			// point to the beginning of the buffer
+				rxEngBreakTemp = rxMemWriterCmd.bbt;
+				rxMemWrCmdOut.write(mmCmd(rxMemWriterCmd.saddr, rxEngBreakTemp));
+				//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << txAppTempCmd.saddr << " - " << txAppTempCmd.bbt << std::endl;
+				txAppBreakdown = false;
+
+			}
+			break;
+		case RXMEMWR_ALIGNED:	// This is the non-realignment state
+			if (!rxMemWrDataIn.empty() & !rxMemWrDataOut.full()) {
+				rxMemWrDataIn.read(pushWord);
+				rxMemWrDataOut.write(pushWord);
+				if (pushWord.last == 1)
+					rxMemWrState = RXMEMWR_IDLE;
+			}
+			break;
+		case RXMEMWR_WRSECONDSTR: // We go into this state when we need to realign things
+			if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
+				outputWord = axiWord(0, 0xFF, 0);
+				outputWord.data.range(((lengthBuffer_8)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
+				rxMemWrDataIn.read(pushWord);
+				outputWord.data.range(63, (lengthBuffer_8)*8) = pushWord.data.range((lengthBuffer * 8), 0 );
+
+				if (pushWord.last == 1) {
+					if (rxEngBreakTemp - rxEngAccessResidue > lengthBuffer)	{ // In this case there's residue to be handled
+						rxEngBreakTemp -= 8;
+						rxMemWrState = RXMEMWR_RESIDUE;
+					}
+					else {
+						outputWord.keep = lenToKeep(rxEngBreakTemp);
+						outputWord.last = 1;
+						rxMemWrState = RXMEMWR_IDLE;
+					}
+				}
+				else
+					rxEngBreakTemp -= 8;
+				rxMemWrDataOut.write(outputWord);
+			}
+			break;
+		case RXMEMWR_RESIDUE:
+			if (!rxMemWrDataOut.full()) {
+				outputWord = axiWord(0, lenToKeep(rxEngBreakTemp), 1);
+				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
+				rxMemWrDataOut.write(outputWord);
+				rxMemWrState = RXMEMWR_IDLE;
+			}
+			break;
+		default:
 			rxMemWrState = RXMEMWR_IDLE;
-		}
-		break;
+			break;	
 	} //switch
 }
 
@@ -1290,6 +1304,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<rxTxSarReply>&				txSar2rxEng_upd_rsp,
 #if !(RX_DDR_BYPASS)
 				stream<mmStatus>&					rxBufferWriteStatus,
+				stream<mmCmd>&						rxBufferWriteCmd,
 #endif
 				stream<axiWord>&					rxBufferWriteData,
 				stream<sessionLookupQuery>&			rxEng2sLookup_req,
@@ -1302,9 +1317,6 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<ap_uint<16> >&				rxEng2timer_setCloseTimer,
 				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
-#if !(RX_DDR_BYPASS)
-				stream<mmCmd>&						rxBufferWriteCmd,
-#endif
 				stream<appNotification>&			rxEng2rxApp_notification)
 {
 #pragma HLS DATAFLOW

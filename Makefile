@@ -12,7 +12,7 @@ build: $(project)/solution1/impl/ip/component.xml
 
 
 clean:
-	rm -rf vivado*.log vivado*.jou file* *.bak synlog.tcl .Xil fsm_encoding.os
+	rm -rf *.log *.jou file* *.bak synlog.tcl .Xil fsm_encoding.os
 
 distclean: clean
 	rm -rf $(project)
