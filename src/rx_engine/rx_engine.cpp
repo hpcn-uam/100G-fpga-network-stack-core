@@ -342,7 +342,7 @@ void rxCheckTCPchecksum(
 			rxTupleInfo.srcIp	= currWord.data(31 ,  0);
 			rxTupleInfo.dstIp	= currWord.data(63 , 32);
 			rxTupleInfo.srcPort	= currWord.data(111, 96);
-			rxTupleInfo.dstPort	= currWord.data(239,231);
+			rxTupleInfo.dstPort	= currWord.data(127,112);
 			
 			tcp_offset 			= currWord.data(199 ,196);
 
@@ -405,11 +405,11 @@ void rxCheckTCPchecksum(
 
 		if (send_packet) {
 			send_packet=0;
-			if (rxMetaInfo.length>0){
+			if (rxMetaInfo.length>0){										// Packets without payload are not forwarded
 				sendWord.data = prevWord.data(511,tcp_offset*32 + 96);
 				sendWord.keep = prevWord.keep( 63, tcp_offset*4 + 12);
 				sendWord.last = 1;
-				dataOut.write(sendWord);
+				dataOut.write(sendWord);					
 			}
 		}
 
@@ -456,8 +456,9 @@ void rxCheckTCPchecksum(
 			tupleFifoOut.write(rxTupleInfo);
 			portTableOut.write(dstPort);
 		}
-
-		validFifoOut.write(correct_checksum);
+		if (rxMetaInfo.length>0) {
+			validFifoOut.write(correct_checksum);		// Packets without payload are not forwarded
+		}
 	}
 
 
@@ -487,34 +488,34 @@ void rxTcpInvalidDropper(
 	bool valid;
 
 	switch (rtid_state) {
-	case GET_VALID: 
-		if (!validFifoIn.empty()) {
-			validFifoIn.read(valid);
-			if (valid) {				
-				rtid_state = FWD;	// Checksum correct
+		case GET_VALID:
+			if (!validFifoIn.empty()) {
+				validFifoIn.read(valid);
+				if (valid) {
+					rtid_state = FWD;	// Checksum correct
+				}
+				else {
+					rtid_state = DROP;  // Checksum incorrect
+				}
 			}
-			else {
-				rtid_state = DROP;  // Checksum incorrect
+			break;
+		case FWD:
+			if(!dataIn.empty() && !dataOut.full()) {
+				dataIn.read(currWord);
+				dataOut.write(currWord);
+				if (currWord.last) {
+					rtid_state = GET_VALID;
+				}
 			}
-		}
-		break;
-	case FWD:
-		if(!dataIn.empty() && !dataOut.full()) {
-			dataIn.read(currWord);
-			dataOut.write(currWord);
-			if (currWord.last) {
-				rtid_state = GET_VALID;
+			break;
+		case DROP:
+			if(!dataIn.empty()) {
+				dataIn.read(currWord);
+				if (currWord.last) {
+					rtid_state = GET_VALID;
+				}
 			}
-		}
-		break;
-	case DROP:
-		if(!dataIn.empty()) {
-			dataIn.read(currWord);
-			if (currWord.last) {
-				rtid_state = GET_VALID;
-			}
-		}
-		break;
+			break;
 	}
 }
 
@@ -1329,7 +1330,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	static stream<axiWord>		rxEng_pkt_buffer("rxEng_pkt_buffer");
 	#pragma HLS stream variable=rxEng_pseudo_packet depth=8
 	#pragma HLS stream variable=rxEng_pkt_buffer_wait_checksum depth=256 //critical, tcp checksum computation
-	#pragma HLS stream variable=rxEng_pkt_buffer depth=8
+	#pragma HLS stream variable=rxEng_pkt_buffer depth=256
 	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet
 	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer_wait_checksum
 	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer
@@ -1416,14 +1417,14 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 							openConStatusOut,
 							rxEng_fsmEventFifo,
 							rxEng_fsmDropFifo,
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 							rxTcpFsm2wrAccessBreakdown,
 							rx_internalNotificationFifo);
 #else
 							rxEng2rxApp_notification);
 #endif
 
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxPkgDrop2rxMemWriter);
 
 	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
