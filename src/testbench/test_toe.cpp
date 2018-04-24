@@ -34,6 +34,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "pcap2stream.hpp"
 
 #define totalSimCycles 2500000
+#define totalSimCycles 100
 
 using namespace std;
 
@@ -84,7 +85,7 @@ void simulateRx(
 				stream<mmCmd>& 		ReadCmdFifo,
 				stream<axiWord>& 	BufferIn, 
 				stream<axiWord>& 	BufferOut) {
-	
+
 	mmCmd cmd;
 	mmStatus status;
 	axiWord inWord = axiWord(0, 0, 0);
@@ -206,11 +207,21 @@ void iperf(
 	appNotification notification;
 	ipTuple tuple;
 
+	enum consumeFsmStateType {WAIT_PKG, CONSUME, HEADER_2, HEADER_3};
+	static consumeFsmStateType  serverFsmState = WAIT_PKG;
+	ap_uint<16> sessionID;
+	axiWord currWord;
+	currWord.last = 0;
+	static bool dualTest = false;
+	static ap_uint<32> mAmount = 0;
+	
+	axiWord transmitWord;
+
 	// Open Port 5001
 	if (!listenDone) {
 		switch (listenFsm) {
 		case 0:
-			listenPort.write(0x57);
+			listenPort.write(5001);
 			listenFsm++;
 			break;
 		case 1:
@@ -222,7 +233,6 @@ void iperf(
 		}
 	}
 
-	axiWord transmitWord;
 	// In case we are connecting back
 	if (!openConStatus.empty()) {
 		openStatus tempStatus = openConStatus.read();
@@ -239,17 +249,11 @@ void iperf(
 			runningExperiment = false;
 	}
 
-	enum consumeFsmStateType {WAIT_PKG, CONSUME, HEADER_2, HEADER_3};
-	static consumeFsmStateType  serverFsmState = WAIT_PKG;
-	ap_uint<16> sessionID;
-	axiWord currWord;
-	currWord.last = 0;
-	static bool dualTest = false;
-	static ap_uint<32> mAmount = 0;
 
 	switch (serverFsmState)	{
 	case WAIT_PKG:
 		if (!rxMetaData.empty() && !rxData.empty())	{
+			cout << "WAIT_PKG time:" << dec << simCycleCounter << endl;
 			rxMetaData.read(sessionID);
 			rxData.read(currWord);
 			rxDataOut.write(currWord);
@@ -268,6 +272,7 @@ void iperf(
 		break;
 	case HEADER_2:
 		if (!rxData.empty()) {
+			cout << "HEADER_2 time:" << dec << simCycleCounter << endl;
 			rxData.read(currWord);
 			rxDataOut.write(currWord);
 			if (dualTest) {
@@ -280,6 +285,7 @@ void iperf(
 		break;
 	case HEADER_3:
 		if (!rxData.empty()) {
+			cout << "HEADER_3 time:" << dec << simCycleCounter << endl;
 			rxData.read(currWord);
 			rxDataOut.write(currWord);
 			mAmount = currWord.data(63, 32);
@@ -288,6 +294,7 @@ void iperf(
 		break;
 	case CONSUME:
 		if (!rxData.empty()) {
+			cout << "CONSUME time:" << dec << simCycleCounter << endl;
 			rxData.read(currWord);
 			rxDataOut.write(currWord);
 		}
@@ -669,12 +676,12 @@ int main(int argc, char **argv) {
 
 
 
-//	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
-//		for (uint8_t i=0;i<noOfTxSessions;++i) { 
-//			ipTuple newTuple = {150*(i+65355), 10*(i+65355)}; 		// IP address and port to open
-//			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
-//		}
-//	}
+	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
+		for (uint8_t i=0;i<noOfTxSessions;++i) {
+			ipTuple newTuple = {150*(i+65355), 10*(i+65355)}; 		// IP address and port to open
+			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
+		}
+	}
 
 	pcap2stream_no_eth(argv[1], ipRxData);
 
@@ -755,20 +762,20 @@ int main(int argc, char **argv) {
 	   		sessionUpdate_req, 
 	   		sessionUpdate_rsp);
 
+		while (!ipTxData.empty()){
+			ipTxData.read(currOutWord);
+			cout << "Output packet [" << dec << packet << "] [" << dec << transaction++ << "] time[" << simCycleCounter << "]";
+			cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
+			if (currOutWord.last){
+				packet ++;
+				transaction = 0;
+			}
+		}
 
 	} while (simCycleCounter++ < totalSimCycles);
 
 
 
-	while (!ipTxData.empty()){
-		ipTxData.read(currOutWord);
-		cout << "Output packet [" << dec << packet << "] [" << dec << transaction++ << "]";
-		cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
-		if (currOutWord.last){
-			packet ++;
-			transaction = 0;
-		}
-	}
 	
 	packet=0;
 	transaction=0;
