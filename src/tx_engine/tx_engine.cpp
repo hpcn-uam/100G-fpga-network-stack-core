@@ -1159,7 +1159,7 @@ void txDataBroadcast(
  *  @param[out]		ipTxData
  */
 void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
-				stream<rxSarEntry_rsp>&			rxSar2txEng_rsp,
+				stream<rxSarEntry>&			    rxSar2txEng_rsp,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
 				stream<axiWord>&				txBufferReadData,
 #if (TCP_NODELAY)
