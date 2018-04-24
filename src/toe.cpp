@@ -85,6 +85,9 @@ ap_uint<4> keepToLen(ap_uint<8> keepValue)
   case 0xFF:
     return 0x8;
     break;
+  default:
+	return 0;
+	break;
   }
 }
 
@@ -116,6 +119,9 @@ ap_uint<8> lenToKeep(ap_uint<4> length)
   case 8:
     return 0xFF;
     break;
+  default:
+	return 0;
+	break;
   }
 }
 
@@ -500,13 +506,15 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  */
 void toe(	// Data & Memory Interface
 			stream<axiWord>&						ipRxData,
+#if (!RX_DDR_BYPASS)
 			stream<mmStatus>&						rxBufferWriteStatus,
+			stream<mmCmd>&							rxBufferWriteCmd,
+			stream<mmCmd>&							rxBufferReadCmd,
+#endif
 			stream<mmStatus>&						txBufferWriteStatus,
 			stream<axiWord>&						rxBufferReadData,
 			stream<axiWord>&						txBufferReadData,
 			stream<axiWord>&						ipTxData,
-			stream<mmCmd>&							rxBufferWriteCmd,
-			stream<mmCmd>&							rxBufferReadCmd,
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
 			stream<axiWord>&						rxBufferWriteData,
@@ -527,7 +535,7 @@ void toe(	// Data & Memory Interface
 			stream<appReadRequest>&					rxDataReq,
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
-			stream<appTxMeta>&					   txDataReqMeta,
+			stream<appTxMeta>&					   	txDataReqMeta,
 			stream<axiWord>&						txDataReq,
 
 			stream<bool>&							listenPortRsp,
@@ -535,7 +543,7 @@ void toe(	// Data & Memory Interface
 			stream<ap_uint<16> >&					rxDataRspMeta,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
-			stream<appTxRsp>&					txDataRsp,
+			stream<appTxRsp>&						txDataRsp,
 
 			//IP Address Input
 			ap_uint<32>								myIpAddress,
@@ -547,75 +555,78 @@ void toe(	// Data & Memory Interface
 //#pragma HLS PIPELINE II=1
 //#pragma HLS INLINE off
 
-	/*
-	 * PRAGMAs
-	 */
-	// Data & Memory interface
-	#pragma HLS resource core=AXI4Stream variable=ipRxData metadata="-bus_bundle s_axis_tcp_data"
-	#pragma HLS resource core=AXI4Stream variable=ipTxData metadata="-bus_bundle m_axis_tcp_data"
+/*
+ * PRAGMAs
+ */
+// Data & Memory interface
+#pragma HLS INTERFACE axis off port=ipRxData name=s_axis_tcp_data
+#pragma HLS INTERFACE axis off port=ipTxData name=m_axis_tcp_data
 
-	#pragma HLS resource core=AXI4Stream variable=rxBufferWriteData metadata="-bus_bundle m_axis_rxwrite_data"
-	#pragma HLS resource core=AXI4Stream variable=rxBufferReadData metadata="-bus_bundle s_axis_rxread_data"
+#pragma HLS INTERFACE axis off port=rxBufferWriteData name=m_axis_rxwrite_data
+#pragma HLS INTERFACE axis off port=rxBufferReadData name=s_axis_rxread_data
 
-	#pragma HLS resource core=AXI4Stream variable=txBufferWriteData metadata="-bus_bundle m_axis_txwrite_data"
-	#pragma HLS resource core=AXI4Stream variable=txBufferReadData metadata="-bus_bundle s_axis_txread_data"
+#pragma HLS INTERFACE axis off port=txBufferWriteData name=m_axis_txwrite_data
+#pragma HLS INTERFACE axis off port=txBufferReadData name=s_axis_txread_data
 
-	#pragma HLS resource core=AXI4Stream variable=rxBufferWriteCmd metadata="-bus_bundle m_axis_rxwrite_cmd"
-	#pragma HLS resource core=AXI4Stream variable=rxBufferReadCmd metadata="-bus_bundle m_axis_rxread_cmd"
-	#pragma HLS DATA_PACK variable=rxBufferWriteCmd
-	#pragma HLS DATA_PACK variable=rxBufferReadCmd
-
-	#pragma HLS resource core=AXI4Stream variable=txBufferWriteCmd metadata="-bus_bundle m_axis_txwrite_cmd"
-	#pragma HLS resource core=AXI4Stream variable=txBufferReadCmd metadata="-bus_bundle m_axis_txread_cmd"
-	#pragma HLS DATA_PACK variable=txBufferWriteCmd
-	#pragma HLS DATA_PACK variable=txBufferReadCmd
-
+#if (!RX_DDR_BYPASS)
+#pragma HLS INTERFACE axis off port=rxBufferWriteStatus name=s_axis_rxwrite_sts
+#pragma HLS INTERFACE axis off port=rxBufferWriteCmd name=m_axis_rxwrite_cmd
+#pragma HLS DATA_PACK variable=rxBufferWriteStatus
+#pragma HLS DATA_PACK variable=rxBufferWriteCmd
+#pragma HLS INTERFACE axis off port=rxBufferReadCmd name=m_axis_rxread_cmd	
+#pragma HLS DATA_PACK variable=rxBufferReadCmd
+#endif
 
 
+#pragma HLS INTERFACE axis off port=txBufferWriteCmd name=m_axis_txwrite_cmd
+#pragma HLS INTERFACE axis off port=txBufferReadCmd name=m_axis_txread_cmd
+#pragma HLS DATA_PACK variable=txBufferWriteCmd
+#pragma HLS DATA_PACK variable=txBufferReadCmd
 
-	#pragma HLS resource core=AXI4Stream variable=rxBufferWriteStatus metadata="-bus_bundle s_axis_rxwrite_sts"
-	#pragma HLS resource core=AXI4Stream variable=txBufferWriteStatus metadata="-bus_bundle s_axis_txwrite_sts"
-	#pragma HLS DATA_PACK variable=rxBufferWriteStatus
-	#pragma HLS DATA_PACK variable=txBufferWriteStatus
+// Data mover interface
 
-	// SmartCam Interface
-	#pragma HLS resource core=AXI4Stream variable=sessionLookup_req metadata="-bus_bundle m_axis_session_lup_req"
-	#pragma HLS resource core=AXI4Stream variable=sessionLookup_rsp metadata="-bus_bundle s_axis_session_lup_rsp"
-	#pragma HLS resource core=AXI4Stream variable=sessionUpdate_req metadata="-bus_bundle m_axis_session_upd_req"
-	//#pragma HLS resource core=AXI4Stream variable=sessionInsert_req metadata="-bus_bundle m_axis_session_ins_req"
-	//#pragma HLS resource core=AXI4Stream variable=sessionDelete_req metadata="-bus_bundle m_axis_session_del_req"
-	#pragma HLS resource core=AXI4Stream variable=sessionUpdate_rsp metadata="-bus_bundle s_axis_session_upd_rsp"
-	#pragma HLS DATA_PACK variable=sessionLookup_req
-	#pragma HLS DATA_PACK variable=sessionLookup_rsp
-	#pragma HLS DATA_PACK variable=sessionUpdate_req
-	//#pragma HLS DATA_PACK variable=sessionInsert_req
-	//#pragma HLS DATA_PACK variable=sessionDelete_req
-	#pragma HLS DATA_PACK variable=sessionUpdate_rsp
 
-	// Application Interface
-	#pragma HLS resource core=AXI4Stream variable=listenPortRsp metadata="-bus_bundle m_axis_listen_port_rsp"
-	#pragma HLS resource core=AXI4Stream variable=listenPortReq metadata="-bus_bundle s_axis_listen_port_req"
-	//#pragma HLS resource core=AXI4Stream variable=appClosePortIn metadata="-bus_bundle s_axis_close_port"
+#pragma HLS INTERFACE axis off port=txBufferWriteStatus name=s_axis_txwrite_sts
+#pragma HLS DATA_PACK variable=txBufferWriteStatus
 
-	#pragma HLS resource core=AXI4Stream variable=notification metadata="-bus_bundle m_axis_notification"
-	#pragma HLS resource core=AXI4Stream variable=rxDataReq metadata="-bus_bundle s_axis_rx_data_req"
+// SmartCam Interface
+#pragma HLS INTERFACE axis off port=sessionLookup_req name=m_axis_session_lup_req
+#pragma HLS INTERFACE axis off port=sessionLookup_rsp name=s_axis_session_lup_rsp 
+#pragma HLS INTERFACE axis off port=sessionUpdate_req name=m_axis_session_upd_req 
+//#pragma HLS resource core=AXI4Stream variable=sessionInsert_req metadata="-bus_bundle m_axis_session_ins_req"
+//#pragma HLS resource core=AXI4Stream variable=sessionDelete_req metadata="-bus_bundle m_axis_session_del_req"
+#pragma HLS INTERFACE axis off port=sessionUpdate_rsp name=s_axis_session_upd_rsp
+#pragma HLS DATA_PACK variable=sessionLookup_req
+#pragma HLS DATA_PACK variable=sessionLookup_rsp
+#pragma HLS DATA_PACK variable=sessionUpdate_req
+//#pragma HLS DATA_PACK variable=sessionInsert_req
+//#pragma HLS DATA_PACK variable=sessionDelete_req
+#pragma HLS DATA_PACK variable=sessionUpdate_rsp
 
-	#pragma HLS resource core=AXI4Stream variable=rxDataRspMeta metadata="-bus_bundle m_axis_rx_data_rsp_metadata"
-	#pragma HLS resource core=AXI4Stream variable=rxDataRsp metadata="-bus_bundle m_axis_rx_data_rsp"
+// Application Interface
+#pragma HLS INTERFACE axis off port=listenPortRsp name=m_axis_listen_port_rsp
+#pragma HLS INTERFACE axis off port=listenPortReq name=s_axis_listen_port_req 
+//#pragma HLS resource core=AXI4Stream variable=appClosePortIn metadata="-bus_bundle s_axis_close_port"
 
-	#pragma HLS resource core=AXI4Stream variable=openConnReq metadata="-bus_bundle s_axis_open_conn_req"
-	#pragma HLS resource core=AXI4Stream variable=openConnRsp metadata="-bus_bundle m_axis_open_conn_rsp"
-	#pragma HLS resource core=AXI4Stream variable=closeConnReq metadata="-bus_bundle s_axis_close_conn_req"
+#pragma HLS INTERFACE axis off port=notification name=m_axis_notification
+#pragma HLS INTERFACE axis off port=rxDataReq name=s_axis_rx_data_req 
 
-	#pragma HLS resource core=AXI4Stream variable=txDataReqMeta metadata="-bus_bundle s_axis_tx_data_req_metadata"
-	#pragma HLS resource core=AXI4Stream variable=txDataReq metadata="-bus_bundle s_axis_tx_data_req"
-	#pragma HLS resource core=AXI4Stream variable=txDataRsp metadata="-bus_bundle m_axis_tx_data_rsp"
-	#pragma HLS DATA_PACK variable=notification
-	#pragma HLS DATA_PACK variable=rxDataReq
-	#pragma HLS DATA_PACK variable=openConnReq
-	#pragma HLS DATA_PACK variable=openConnRsp
-	#pragma HLS DATA_PACK variable=txDataReqMeta
-	#pragma HLS DATA_PACK variable=txDataRsp
+#pragma HLS INTERFACE axis off port=rxDataRspMeta name=m_axis_rx_data_rsp_metadata
+#pragma HLS INTERFACE axis off port=rxDataRsp name=m_axis_rx_data_rsp 
+
+#pragma HLS INTERFACE axis off port=openConnReq name=s_axis_open_conn_req
+#pragma HLS INTERFACE axis off port=openConnRsp name=m_axis_open_conn_rsp 
+#pragma HLS INTERFACE axis off port=closeConnReq name=s_axis_close_conn_req 
+
+#pragma HLS INTERFACE axis off port=txDataReqMeta name=s_axis_tx_data_req_metadata
+#pragma HLS INTERFACE axis off port=txDataReq name=s_axis_tx_data_req 
+#pragma HLS INTERFACE axis off port=txDataRsp name=m_axis_tx_data_rsp 
+#pragma HLS DATA_PACK variable=notification
+#pragma HLS DATA_PACK variable=rxDataReq
+#pragma HLS DATA_PACK variable=openConnReq
+#pragma HLS DATA_PACK variable=openConnRsp
+#pragma HLS DATA_PACK variable=txDataReqMeta
+#pragma HLS DATA_PACK variable=txDataRsp
 
 #pragma HLS INTERFACE ap_none register port=myIpAddress
 #pragma HLS INTERFACE ap_vld port=regSessionCount
@@ -667,7 +678,7 @@ void toe(	// Data & Memory Interface
 	static stream<rxSarAppd>			rxApp2rxSar_upd_req("rxApp2rxSar_upd_req");
 	static stream<rxSarAppd>			rxSar2rxApp_upd_rsp("rxSar2rxApp_upd_rsp");
 	static stream<ap_uint<16> >			txEng2rxSar_req("txEng2rxSar_req");
-	static stream<rxSarEntry>			rxSar2txEng_rsp("rxSar2txEng_rsp");
+	static stream<rxSarEntry_rsp>			rxSar2txEng_rsp("rxSar2txEng_rsp");
 	#pragma HLS stream variable=rxEng2rxSar_upd_req		depth=2
 	#pragma HLS stream variable=rxSar2rxEng_upd_rsp		depth=2
 	#pragma HLS stream variable=rxApp2rxSar_upd_req		depth=2
@@ -774,8 +785,15 @@ void toe(	// Data & Memory Interface
 	#pragma HLS stream variable=portTable2txApp_port_rsp			depth=4
 	#pragma HLS stream variable=sLookup2portTable_releasePort		depth=4
 
-   static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
-   #pragma HLS stream variable=txApp2txEng_data_stream   depth=2048
+   	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
+   	#pragma HLS stream variable=txApp2txEng_data_stream   depth=2048
+
+	static stream<ap_uint<1> > ackDelayFifoReadCount("ackDelayFifoReadCount");
+	#pragma HLS stream variable=ackDelayFifoReadCount		depth=2
+	static stream<ap_uint<1> > ackDelayFifoWriteCount("ackDelayFifoWriteCount");
+	#pragma HLS stream variable=ackDelayFifoWriteCount		depth=2
+	static stream<ap_uint<1> > txEngFifoReadCount("txEngFifoReadCount");
+	#pragma HLS stream variable=txEngFifoReadCount		depth=2
 	/*
 	 * Data Structures
 	 */
@@ -811,6 +829,7 @@ void toe(	// Data & Memory Interface
 					rxSar2rxEng_upd_rsp,
 					rxSar2rxApp_upd_rsp,
 					rxSar2txEng_rsp);
+
 	// TX Sar Table
 	tx_sar_table(	rxEng2txSar_upd_req,
 					//txApp2txSar_upd_req,
@@ -828,6 +847,7 @@ void toe(	// Data & Memory Interface
 					portTable2rxEng_check_rsp,
 					portTable2rxApp_listen_rsp,
 					portTable2txApp_port_rsp);
+
 	// Timers
 	timerWrapper(	rxEng2timer_clearRetransmitTimer,
 					txEng2timer_setRetransmitTimer,
@@ -839,12 +859,6 @@ void toe(	// Data & Memory Interface
 					timer2rxApp_notification,
 					timer2txApp_notification);
 
-	static stream<ap_uint<1> > ackDelayFifoReadCount("ackDelayFifoReadCount");
-	#pragma HLS stream variable=ackDelayFifoReadCount		depth=2
-	static stream<ap_uint<1> > ackDelayFifoWriteCount("ackDelayFifoWriteCount");
-	#pragma HLS stream variable=ackDelayFifoWriteCount		depth=2
-	static stream<ap_uint<1> > txEngFifoReadCount("txEngFifoReadCount");
-	#pragma HLS stream variable=txEngFifoReadCount		depth=2
 	event_engine(txApp2eventEng_setEvent, rxEng2eventEng_setEvent, timer2eventEng_setEvent, eventEng2ackDelay_event,
 					ackDelayFifoReadCount, ackDelayFifoWriteCount, txEngFifoReadCount);
 	ack_delay(eventEng2ackDelay_event, eventEng2txEng_event, ackDelayFifoReadCount, ackDelayFifoWriteCount);
@@ -861,6 +875,7 @@ void toe(	// Data & Memory Interface
 				txSar2rxEng_upd_rsp,
 #if !(RX_DDR_BYPASS)
 				rxBufferWriteStatus,
+				rxBufferWriteCmd,
 #endif
 				rxBufferWriteData,
 				rxEng2sLookup_req,
@@ -873,9 +888,6 @@ void toe(	// Data & Memory Interface
 				rxEng2timer_setCloseTimer,
 				conEstablishedFifo, //remove this
 				rxEng2eventEng_setEvent,
-#if !(RX_DDR_BYPASS)
-				rxBufferWriteCmd,
-#endif
 				rxEng2rxApp_notification
 				);
 	// TX Engine

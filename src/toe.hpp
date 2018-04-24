@@ -50,7 +50,7 @@ static const uint16_t MAX_SESSIONS = 10000;
 #define TCP_NODELAY 0
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
-#define RX_DDR_BYPASS 0
+#define RX_DDR_BYPASS 1
 
 
 
@@ -195,6 +195,13 @@ struct rxSarEntry
 	ap_uint<16> appd;
 };
 
+struct rxSarEntry_rsp
+{
+	ap_uint<32> recvd;
+//	ap_uint<16> appd;
+	ap_uint<16> windowSize;
+};
+
 struct rxSarRecvd
 {
 	ap_uint<16> sessionID;
@@ -233,6 +240,7 @@ struct txSarEntry
 	ap_uint<2>	count;
 	bool		finReady;
 	bool		finSent;
+	bool 		use_cong_window;
 };
 
 struct rxTxSarQuery
@@ -349,6 +357,9 @@ struct txTxSarReply
 	ap_uint<16> app;
 	bool		finReady;
 	bool		finSent;
+	ap_uint<16> currLength; 
+	ap_uint<16> Send_Window;
+	ap_uint<16> UsableWindow;
 	txTxSarReply() {}
 	txTxSarReply(ap_uint<32> ack, ap_uint<32> nack, ap_uint<16> min_window, ap_uint<16> app, bool finReady, bool finSent)
 		:ackd(ack), not_ackd(nack), min_window(min_window), app(app), finReady(finReady), finSent(finSent) {}
@@ -535,13 +546,15 @@ ap_uint<4> keepToLen(ap_uint<8> keepValue);		// This function counts the number 
 
 void toe(	// Data & Memory Interface
 			stream<axiWord>&						ipRxData,
+#if (!RX_DDR_BYPASS)
 			stream<mmStatus>&						rxBufferWriteStatus,
+			stream<mmCmd>&							rxBufferWriteCmd,
+			stream<mmCmd>&							rxBufferReadCmd,
+#endif
 			stream<mmStatus>&						txBufferWriteStatus,
 			stream<axiWord>&						rxBufferReadData,
 			stream<axiWord>&						txBufferReadData,
 			stream<axiWord>&						ipTxData,
-			stream<mmCmd>&							rxBufferWriteCmd,
-			stream<mmCmd>&							rxBufferReadCmd,
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
 			stream<axiWord>&						rxBufferWriteData,
@@ -562,14 +575,15 @@ void toe(	// Data & Memory Interface
 			stream<appReadRequest>&					rxDataReq,
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
-			stream<appTxMeta>&					   txDataReqMeta,
+			stream<appTxMeta>&					   	txDataReqMeta,
 			stream<axiWord>&						txDataReq,
+
 			stream<bool>&							listenPortRsp,
 			stream<appNotification>&				notification,
 			stream<ap_uint<16> >&					rxDataRspMeta,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
-			stream<appTxRsp>&					txDataRsp,
+			stream<appTxRsp>&						txDataRsp,
 
 			//IP Address Input
 			ap_uint<32>								myIpAddress,
