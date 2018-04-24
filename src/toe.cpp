@@ -678,7 +678,7 @@ void toe(	// Data & Memory Interface
 	static stream<rxSarAppd>			rxApp2rxSar_upd_req("rxApp2rxSar_upd_req");
 	static stream<rxSarAppd>			rxSar2rxApp_upd_rsp("rxSar2rxApp_upd_rsp");
 	static stream<ap_uint<16> >			txEng2rxSar_req("txEng2rxSar_req");
-	static stream<rxSarEntry_rsp>			rxSar2txEng_rsp("rxSar2txEng_rsp");
+	static stream<rxSarEntry>		    rxSar2txEng_rsp("rxSar2txEng_rsp");
 	#pragma HLS stream variable=rxEng2rxSar_upd_req		depth=2
 	#pragma HLS stream variable=rxSar2rxEng_upd_rsp		depth=2
 	#pragma HLS stream variable=rxApp2rxSar_upd_req		depth=2
