@@ -911,121 +911,104 @@ void tx_pseudo_header_pkt_stitcher(
 }
 
 /** @ingroup tx_engine
- *  Computes the TCP checksum and writes it into @param tcpChecksumFifoOut
+ *  Computes the TCP checksum and writes it into @param txEng_pseudo_tcp_checksum
  *	@param[in]		dataIn, incoming data stream
  *	@param[out]		dataOut, outgoing data stream
- *	@param[out]		txEng_subChecksumsFifoOut, the computed subchecksums are stored into this FIFO
+ *	@param[out]		txEng_pseudo_tcp_checksum, the computed checksum are stored into this FIFO
  */
-void tx_compute_tcp_subchecksums(	stream<axiWord>&			dataIn,
-									stream<axiWord>&			dataOut,
-									stream<subSums>&			txEng_subChecksumsFifoOut)
+void tx_compute_pseudo_tcp_checksum(	
+									stream<axiWord>&			dataIn,
+									stream<ap_uint<16> >&		txEng_pseudo_tcp_checksum)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static ap_uint<17> tcts_tcp_sums[4] = {0, 0, 0, 0};
-	static bool tcts_firstWord = true;
+	axiWord 				currWord;
+	static ap_uint<1> 		compute_checksum=0;
 
-	axiWord currWord;
+	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
-	if (!dataIn.empty())// && !tctc_checkChecksum)
-	{
+	ap_uint<16> tmp;
+	ap_uint<17> tmp1;
+	ap_uint<17> tmp2;
+
+	static ap_uint<17> ip_sums_L1[16];
+	static ap_uint<18> ip_sums_L2[8];
+	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
+	static ap_uint<20> ip_sums_L4[2];
+	static ap_uint<21> ip_sums_L5;
+	ap_uint<17> final_sum_r; // real add
+	ap_uint<17> final_sum_o; // overflowed add
+	ap_uint<16> res_checksum;
+
+	if (!dataIn.empty() && !compute_checksum){
 		dataIn.read(currWord);
-		if (!tcts_firstWord)
-		{
-			dataOut.write(currWord);
+
+		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
+#pragma HLS UNROLL
+
+			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
+			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+
+			tmp1 		= word_sum[i] + tmp;
+			tmp2 		= word_sum[i] + tmp + 1;
+
+			if (tmp1.bit(16)) 				// one's complement adder
+				word_sum[i] = tmp2(15,0);
+			else
+				word_sum[i] = tmp1(15,0);
+
+
 		}
-		for (int i = 0; i < 4; i++)
-		{
-#pragma HLS unroll
-			ap_uint<16> temp;
-			if (currWord.keep.range(i*2+1, i*2) == 0x3)
-			{
-				temp(7, 0) = currWord.data.range(i*16+15, i*16+8);
-				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-				tcts_tcp_sums[i] += temp;
-				tcts_tcp_sums[i] = (tcts_tcp_sums[i] + (tcts_tcp_sums[i] >> 16)) & 0xFFFF;
-			}
-			else if (currWord.keep[i*2] == 0x1)
-			{
-				temp(7, 0) = 0;
-				temp(15, 8) = currWord.data.range(i*16+7, i*16);
-				tcts_tcp_sums[i] += temp;
-				tcts_tcp_sums[i] = (tcts_tcp_sums[i] + (tcts_tcp_sums[i] >> 16)) & 0xFFFF;
-			}
+
+		if(currWord.last){
+			compute_checksum = 1;
 		}
-		tcts_firstWord = false;
-		if(currWord.last == 1)
-		{
-			tcts_firstWord = true;
-			txEng_subChecksumsFifoOut.write(tcts_tcp_sums);
-			tcts_tcp_sums[0] = 0;
-			tcts_tcp_sums[1] = 0;
-			tcts_tcp_sums[2] = 0;
-			tcts_tcp_sums[3] = 0;
-		}
+
 	}
+	else if(compute_checksum) {
+
+		//adder tree
+		second_level_sum : for (int i = 0; i < 16; i++) {
+		#pragma HLS unroll
+			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
+			word_sum[i*2]   = 0; // clear adder variable
+			word_sum[i*2+1] = 0;
+		}
+
+		//adder tree L2
+		third_level_sum : for (int i = 0; i < 8; i++) {
+		#pragma HLS unroll
+			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
+		}
+
+		//adder tree L3
+		fourth_level_sum : for (int i = 0; i < 4; i++) {
+		#pragma HLS unroll
+			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
+		}
+
+		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
+		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
+		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
+
+		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
+		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
+
+		if (final_sum_r.bit(16))
+			res_checksum = ~(final_sum_o.range(15,0));
+		else
+			res_checksum = ~(final_sum_r.range(15,0));
+
+		compute_checksum = 0;
+		
+		txEng_pseudo_tcp_checksum.write(res_checksum);
+
+	}
+
 }
 
-/** @ingroup tx_engine
- *  Computes the TCP checksum from the 4 accumulated subsums and writes it into @param tcpChecksumFifoOut
- *	@param[in]		txEng_subChecksumsFifoIn, input FIFO with the 4 subsum
- *	@param[out]		tcpChecksumFifoOut, the computed checksum is stored into this FIFO
- */
-void tx_compute_tcp_checksum(	stream<subSums>&			txEng_subChecksumsFifoIn,
-								stream<ap_uint<16> >&		txEng_tcpChecksumFifoOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
 
-	//static ap_uint<3> tctc_cc_state = 0;
-	static subSums tctc_tcp_sums;
-
-	if (!txEng_subChecksumsFifoIn.empty())
-	{
-		txEng_subChecksumsFifoIn.read(tctc_tcp_sums );
-		tctc_tcp_sums.sum0 += tctc_tcp_sums.sum2;
-		tctc_tcp_sums.sum1 += tctc_tcp_sums.sum3;
-		tctc_tcp_sums.sum0 = (tctc_tcp_sums.sum0 + (tctc_tcp_sums.sum0 >> 16)) & 0xFFFF;
-		tctc_tcp_sums.sum1 = (tctc_tcp_sums.sum1 + (tctc_tcp_sums.sum1 >> 16)) & 0xFFFF;
-		tctc_tcp_sums.sum0 += tctc_tcp_sums.sum1;
-		tctc_tcp_sums.sum0 = (tctc_tcp_sums.sum0 + (tctc_tcp_sums.sum0 >> 16)) & 0xFFFF;
-		tctc_tcp_sums.sum0 = ~tctc_tcp_sums.sum0;
-		txEng_tcpChecksumFifoOut.write(tctc_tcp_sums.sum0);
-	}
-
-	// MAYBE this gives btter timing?
-	/*switch (tctc_cc_state)
-	{
-	case 0:
-		if (!txEng_subChecksumsFifoIn.empty())
-		{
-			txEng_subChecksumsFifoIn.read(tctc_tcp_sums);
-			tctc_cc_state++;
-		}
-		break;
-	case 1:
-		tctc_tcp_sums.sum0 += tctc_tcp_sums.sum2;
-		tctc_tcp_sums.sum1 += tctc_tcp_sums.sum3;
-		tctc_tcp_sums.sum0 = (tctc_tcp_sums.sum0 + (tctc_tcp_sums.sum0 >> 16)) & 0xFFFF;
-		tctc_tcp_sums.sum1 = (tctc_tcp_sums.sum1 + (tctc_tcp_sums.sum1 >> 16)) & 0xFFFF;
-		tctc_cc_state++;
-		break;
-	case 2:
-		tctc_tcp_sums.sum0 += tctc_tcp_sums.sum1;
-		tctc_tcp_sums.sum0 = (tctc_tcp_sums.sum0 + (tctc_tcp_sums.sum0 >> 16)) & 0xFFFF;
-		tctc_cc_state++;
-		break;
-	case 3:
-		tctc_tcp_sums.sum0 = ~tctc_tcp_sums.sum0;
-		tctc_cc_state++;
-		break;
-	case 4: //TODO try to remove one state
-		txEng_tcpChecksumFifoOut.write(tctc_tcp_sums.sum0);
-		tctc_cc_state = 0;
-		break;
-	}*/
-}
 
 /** @ingroup tx_engine
  *  Reads the IP header stream and the payload stream. It also inserts TCP checksum
@@ -1108,7 +1091,7 @@ void tx_ip_pkt_stitcher(
 
 		ipTxDataOut.write(sendWord);
 	}
-	
+
 }
 
 void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outputMemAccess, stream<ap_uint<1> > &memAccessBreakdown2txPkgStitcher) {
@@ -1144,6 +1127,23 @@ void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outpu
 	}
 }
 
+void txDataBroadcast(
+					stream<axiWord>& in, 
+					stream<axiWord>& out1, 
+					stream<axiWord>& out2)
+{
+#pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
+	axiWord currWord;
+
+	if (!in.empty()) {
+		in.read(currWord);
+		out1.write(currWord);
+		out2.write(currWord);
+	}
+}
+
 /** @ingroup tx_engine
  *  @param[in]		eventEng2txEng_event
  *  @param[in]		rxSar2txEng_upd_rsp
@@ -1159,7 +1159,7 @@ void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outpu
  *  @param[out]		ipTxData
  */
 void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
-				stream<rxSarEntry>&				rxSar2txEng_rsp,
+				stream<rxSarEntry_rsp>&			rxSar2txEng_rsp,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
 				stream<axiWord>&				txBufferReadData,
 #if (TCP_NODELAY)
@@ -1178,7 +1178,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #pragma HLS DATAFLOW
 #pragma HLS INTERFACE ap_ctrl_none port=return
 //#pragma HLS PIPELINE II=1
-#pragma HLS INLINE //off
+//#pragma HLS INLINE //off
 
 	// Memory Read delay around 76 cycles, 10 cycles/packet, so keep meta of at least 8 packets
 	static stream<tx_engine_meta>		txEng_metaDataFifo("txEng_metaDataFifo");
@@ -1193,16 +1193,22 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	static stream<axiWord>		txEng_ipHeaderBuffer("txEng_ipHeaderBuffer");
 	static stream<axiWord>		txEng_tcpHeaderBuffer("txEng_tcpHeaderBuffer");
-	static stream<axiWord>		txEng_tcpPkgBuffer1("txEng_tcpPkgBuffer1");
+	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");
+
+	static stream<axiWord>		tx_Eng_pseudo_pkt_2_buff("tx_Eng_pseudo_pkt_2_buff");
 	static stream<axiWord>		txEng_tcpPkgBuffer2("txEng_tcpPkgBuffer2");
 	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=32 // Ip header is 3 words, keep at least 8 headers
 	#pragma HLS stream variable=txEng_tcpHeaderBuffer depth=32 // TCP pseudo header is 4 words, keep at least 8 headers
-	#pragma HLS stream variable=txEng_tcpPkgBuffer1 depth=16   // is forwarded immediately, size is not critical
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_buff depth=16   // is forwarded immediately, size is not critical
 	#pragma HLS stream variable=txEng_tcpPkgBuffer2 depth=256  // critical, has to keep complete packet for checksum computation
 	#pragma HLS DATA_PACK variable=txEng_ipHeaderBuffer
 	#pragma HLS DATA_PACK variable=txEng_tcpHeaderBuffer
-	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer1
+	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_buff
 	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer2
+	
+	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
+	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_checksum
 
 	static stream<subSums>				txEng_subChecksumsFifo("txEng_subChecksumsFifo");
 	static stream<ap_uint<16> >			txEng_tcpChecksumFifo("txEng_tcpChecksumFifo");
@@ -1267,11 +1273,13 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 					txEng_isDDRbypass,
 					txApp2txEng_data_stream,
 #endif
-					txEng_tcpPkgBuffer1,
+					tx_Eng_pseudo_pkt,
 					memAccessBreakdown2txPkgStitcher);
 
-	tx_compute_tcp_subchecksums(txEng_tcpPkgBuffer1, txEng_tcpPkgBuffer2, txEng_subChecksumsFifo);
-	tx_compute_tcp_checksum(txEng_subChecksumsFifo, txEng_tcpChecksumFifo);
 
-	tx_ip_pkt_stitcher(txEng_ipHeaderBuffer, txEng_tcpPkgBuffer2, txEng_tcpChecksumFifo, ipTxData);
+	txDataBroadcast(tx_Eng_pseudo_pkt,tx_Eng_pseudo_pkt_2_buff,tx_Eng_pseudo_pkt_2_checksum);
+
+	tx_compute_pseudo_tcp_checksum(tx_Eng_pseudo_pkt_2_checksum, txEng_tcpChecksumFifo);
+
+	tx_ip_pkt_stitcher(txEng_ipHeaderBuffer, tx_Eng_pseudo_pkt_2_buff, txEng_tcpChecksumFifo, ipTxData);
 }
