@@ -41,8 +41,11 @@ using namespace std;
 uint32_t cycleCounter;
 unsigned int	simCycleCounter		= 0;
 
-void sessionLookupStub(stream<rtlSessionLookupRequest>& lup_req, stream<rtlSessionLookupReply>& lup_rsp,
-						stream<rtlSessionUpdateRequest>& upd_req, stream<rtlSessionUpdateReply>& upd_rsp) {
+void sessionLookupStub(
+		stream<rtlSessionLookupRequest>& 	lup_req, 
+		stream<rtlSessionLookupReply>& 		lup_rsp,
+		stream<rtlSessionUpdateRequest>& 	upd_req, 
+		stream<rtlSessionUpdateReply>& 		upd_rsp) {
 						//stream<ap_uint<14> >& new_id, stream<ap_uint<14> >& fin_id)
 	static map<fourTupleInternal, ap_uint<14> > lookupTable;
 
@@ -676,17 +679,19 @@ int main(int argc, char **argv) {
 
 
 
-	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
-		for (uint8_t i=0;i<noOfTxSessions;++i) {
-			ipTuple newTuple = {150*(i+65355), 10*(i+65355)}; 		// IP address and port to open
-			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
-		}
-	}
-
-	pcap2stream_no_eth(argv[1], ipRxData);
+//	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
+//		for (uint8_t i=0;i<noOfTxSessions;++i) {
+//			ipTuple newTuple = {0x0800A8C0, 0x8913}; 				// IP address and port to open
+//			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
+//		}
+//	}
 
 
 	do  {
+
+		if (simCycleCounter == 10 || simCycleCounter == 20){
+			pcap2stream_step(argv[1], false ,ipRxData);
+		}
 
 		toe(
 			ipRxData,
@@ -764,7 +769,7 @@ int main(int argc, char **argv) {
 
 		while (!ipTxData.empty()){
 			ipTxData.read(currOutWord);
-			cout << "Output packet [" << dec << packet << "] [" << dec << transaction++ << "] time[" << simCycleCounter << "]";
+			cout << "Output packet [" << dec << packet << "][" << dec << transaction++ << "] time[" << simCycleCounter << "]";
 			cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
 			if (currOutWord.last){
 				packet ++;

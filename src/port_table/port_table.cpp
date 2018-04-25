@@ -55,25 +55,21 @@ void listening_port_table(	stream<ap_uint<16> >&	rxApp2portTable_listen_req,
 	#pragma HLS DEPENDENCE variable=listeningPortTable inter false
 
 	ap_uint<16> currPort;
+	ap_uint<15> checkPort15;
 
-	if (!rxApp2portTable_listen_req.empty()) //check range, TODO make sure currPort is not equal in 2 consecutive cycles
-	{
+	if (!rxApp2portTable_listen_req.empty()) {//check range, TODO make sure currPort is not equal in 2 consecutive cycles
 		rxApp2portTable_listen_req.read(currPort);
-		if (!listeningPortTable[currPort(14, 0)] && currPort < 32768)
-		{
+		if (!listeningPortTable[currPort(14, 0)] && currPort < 32768) {
 			listeningPortTable[currPort] = true;
 			portTable2rxApp_listen_rsp.write(true);
 		}
-		else
-		{
+		else {
 			portTable2rxApp_listen_rsp.write(false);
 		}
 	}
-	else if (!pt_portCheckListening_req_fifo.empty())
-	{
-		//pt_portCheckListening_req_fifo.read(checkPort15);
-		//pt_portCheckListening_rsp_fifo.write(listeningPortTable[checkPort15]);
-		pt_portCheckListening_rsp_fifo.write(listeningPortTable[pt_portCheckListening_req_fifo.read()]);
+	else if (!pt_portCheckListening_req_fifo.empty()) {
+		pt_portCheckListening_req_fifo.read(checkPort15);
+		pt_portCheckListening_rsp_fifo.write(listeningPortTable[checkPort15]);
 	}
 }
 /** @ingroup port_table
@@ -109,23 +105,20 @@ void free_port_table(	stream<ap_uint<16> >&	sLookup2portTable_releasePort,
 
 	ap_uint<16>			currPort;
 	ap_uint<16>			freePort;
+	ap_uint<15>			port_check_used;
 
-	if (!sLookup2portTable_releasePort.empty()) //check range, TODO make sure no acces to same location in 2 consecutive cycles
-	{
+	if (!sLookup2portTable_releasePort.empty()) { //check range, TODO make sure no acces to same location in 2 consecutive cycles
 		sLookup2portTable_releasePort.read(currPort);
-		if (currPort >= 32768)
-		{
+		if (currPort >= 32768) {
 			freePortTable[currPort(14, 0)] = false; //shift
 		}
 	}
-	else if (!pt_portCheckUsed_req_fifo.empty())
-	{
-		pt_portCheckUsed_rsp_fifo.write(freePortTable[pt_portCheckUsed_req_fifo.read()]);
+	else if (!pt_portCheckUsed_req_fifo.empty()) {
+		pt_portCheckUsed_req_fifo.read(port_check_used);
+		pt_portCheckUsed_rsp_fifo.write(freePortTable[port_check_used]);
 	}
-	else
-	{
-		if (!freePortTable[pt_cursor] && !portTable2txApp_port_rsp.full()) //This is not perfect, but yeah
-		{
+	else {
+		if (!freePortTable[pt_cursor] && !portTable2txApp_port_rsp.full()) {//This is not perfect, but yeah
 			freePort(14, 0) = pt_cursor;
 			freePort[15] = 1;
 			freePortTable[pt_cursor] = true;
@@ -156,18 +149,14 @@ void check_in_multiplexer(	stream<ap_uint<16> >&		rxEng2portTable_check_req,
 	ap_uint<16>			swappedCheckPort;
 
 	// Forward request according to port number, store table to keep order
-	if (!rxEng2portTable_check_req.empty())
-	{
+	if (!rxEng2portTable_check_req.empty()) {
 		rxEng2portTable_check_req.read(checkPort);
-		swappedCheckPort(7, 0) = checkPort(15, 8);
-		swappedCheckPort(15, 8) = checkPort(7, 0);
-		if (swappedCheckPort < 32768)
-		{
+		swappedCheckPort = (checkPort( 7, 0), checkPort(15, 8));
+		if (swappedCheckPort < 32768) {
 			pt_portCheckListening_req_fifo.write(swappedCheckPort);
 			pt_dstFifoOut.write(LT);
 		}
-		else
-		{
+		else {
 			pt_portCheckUsed_req_fifo.write(swappedCheckPort);
 			pt_dstFifoOut.write(FT);
 		}
@@ -192,41 +181,39 @@ void check_out_multiplexer(	stream<bool>&				pt_dstFifoIn,
 	//#pragma HLS STREAM variable=pt_dstFifo depth=4
 
 	static bool	dst = LT;
+	bool port_listening;
+	bool port_response;
 
 
 	// Read out responses from tables in order and merge them
 	enum cmFsmStateType {READ_DST, READ_LISTENING, READ_USED};
 	static cmFsmStateType cm_fsmState = READ_DST;
-	switch (cm_fsmState)
-	{
-	case 0:
-		if (!pt_dstFifoIn.empty())
-		{
-			pt_dstFifoIn.read(dst);
-			if (dst == LT)
-			{
-				cm_fsmState = READ_LISTENING;
+	switch (cm_fsmState) {
+		case READ_DST:
+			if (!pt_dstFifoIn.empty()) {
+				pt_dstFifoIn.read(dst);
+				if (dst == LT) {
+					cm_fsmState = READ_LISTENING;
+				}
+				else {
+					cm_fsmState = READ_USED;
+				}
 			}
-			else
-			{
-				cm_fsmState = READ_USED;
+			break;
+		case READ_LISTENING:
+			if (!pt_portCheckListening_rsp_fifo.empty()) {
+				pt_portCheckListening_rsp_fifo.read(port_listening);
+				portTable2rxEng_check_rsp.write(port_listening);
+				cm_fsmState = READ_DST;
 			}
-		}
-		break;
-	case 1:
-		if (!pt_portCheckListening_rsp_fifo.empty())
-		{
-			portTable2rxEng_check_rsp.write(pt_portCheckListening_rsp_fifo.read());
-			cm_fsmState = READ_DST;
-		}
-		break;
-	case 2:
-		if (!pt_portCheckUsed_rsp_fifo.empty())
-		{
-			portTable2rxEng_check_rsp.write(pt_portCheckUsed_rsp_fifo.read());
-			cm_fsmState = READ_DST;
-		}
-		break;
+			break;
+		case READ_USED:
+			if (!pt_portCheckUsed_rsp_fifo.empty()) {
+				pt_portCheckUsed_rsp_fifo.read(port_response);
+				portTable2rxEng_check_rsp.write(port_response);
+				cm_fsmState = READ_DST;
+			}
+			break;
 	}
 }
 
