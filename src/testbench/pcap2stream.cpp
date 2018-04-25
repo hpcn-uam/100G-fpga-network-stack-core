@@ -78,96 +78,55 @@ void remove_ethernet (
 					  	stream<axiWord>&			dataOut)
 {
 
-	enum mwState {WAIT_PKT, WRITE_TRANSACTION , WRITE_EXTRA_LAST_WORD};
-	static mwState mw_state = WAIT_PKT;
-
 	axiWord currWord;
-	static axiWord prevWord;
-	static axiWord sendWord;
+	axiWord prevWord = axiWord(0,0,0);
+	axiWord sendWord = axiWord(0,0,0);;
+
+	static int pkt_count = 0;
+	int wordCount = 0;
+
+	bool first_word = true;
+
+	do{
+		dataIn.read(currWord);
 
 
-	static int wordCount = 0;
-
-	if (!dataIn.empty()){
-		do {
-			switch (mw_state){
-				case WAIT_PKT:
-					wordCount = 0;
-					if (!dataIn.empty()){
-						dataIn.read(currWord);
-						prevWord = {0,0,0};									// initialize
-						prevWord.data(399,0) = currWord.data(511 , 112);
-						prevWord.keep(49 ,0) = currWord.keep( 63 ,  14);
-						prevWord.last = currWord.last;
-						if (currWord.last == 1){
-							sendWord = prevWord;
-							dataOut.write(sendWord);
-#ifdef DEBUG1
-		cout << "Test Data Transaction [" << dec << wordCount/(ETH_INTERFACE_WIDTH/8) << "]";
-		cout	<< "\tShaved off Data " << hex << sendWord.data << "\t\tkeep " << sendWord.keep << "\tlast " << sendWord.last << endl;
-#endif							
-						}
-						else{
-							mw_state = WRITE_TRANSACTION;
-						}
-	
-					}	
-				break;
-				case WRITE_TRANSACTION : 
-					if (!dataIn.empty()){
-						dataIn.read(currWord);
-						wordCount++;
-	
-	
-						sendWord.data(399,0) 	= prevWord.data(399,0);
-						sendWord.keep(49 ,0) 	= prevWord.keep(49 ,0);
-						sendWord.data(511,400) 	= currWord.data(111 ,  0);
-						sendWord.keep( 63 ,50) 	= currWord.keep( 13 ,  0);
-	
-						prevWord = {0,0,0};									// initialize
-						prevWord.data(399,0) 	= currWord.data(511 , 112);
-						prevWord.keep(49 ,0) 	= currWord.keep( 63 ,  14);
-						prevWord.last 		 	= currWord.last;
-
-						sendWord.last 			= 0;
-	
-						if (currWord.last == 1) {
-							if (currWord.keep.bit(14)){
-								mw_state = WRITE_EXTRA_LAST_WORD;
-							}
-							else{
-								wordCount = 0;
-								sendWord.last 	= 1;
-								mw_state = WAIT_PKT;
-							}
-						}
-	
-						dataOut.write(sendWord);
-#ifdef DEBUG1
-		cout << "Test Data Transaction [" << dec << wordCount/(ETH_INTERFACE_WIDTH/8) << "]";
-		cout	<< "\tShaved off Data " << hex << sendWord.data << "\t\tkeep " << sendWord.keep << "\tlast " << sendWord.last << endl;
-#endif
-					}
-				break;
-	
-				case WRITE_EXTRA_LAST_WORD : 
-					prevWord.last 		 	= 1;
-					sendWord = prevWord;
-					dataOut.write(sendWord);
-					mw_state = WAIT_PKT;
-#ifdef DEBUG1
-		cout << "Test Data Transaction [" << dec << wordCount/(ETH_INTERFACE_WIDTH/8) << "]";
-		cout	<< "\tShaved off Data " << hex << sendWord.data << "\t\tkeep " << sendWord.keep << "\tlast " << sendWord.last << endl;
-#endif
-				break;
-	
-				default :
-					mw_state = WAIT_PKT;
-				break;
+		if (first_word){
+			first_word = false;
+			if (currWord.last){
+				sendWord.data(399,0) 	= currWord.data(511 , 112);
+				sendWord.keep(49 ,0) 	= currWord.keep( 63 ,  14);
+				sendWord.last 			= 1;
+				dataOut.write(sendWord);
 			}
-		} while (sendWord.last == 0);
-	}
+		}
+		else{
+			sendWord.data(399,  0) 	= prevWord.data(511,112);
+			sendWord.keep( 49,  0) 	= prevWord.keep( 63, 14);
+			sendWord.data(511,400) 	= currWord.data(111,  0);
+			sendWord.keep( 63, 50) 	= currWord.keep( 13,  0);
+			sendWord.last=0;
+			if (currWord.last){
+				if (currWord.keep.bit(14)) {
+					prevWord = currWord;
+					dataOut.write(sendWord);
+					sendWord = axiWord(0,0,1);
+					sendWord.data(399,  0) 	= prevWord.data(511,112);
+					sendWord.keep( 49,  0) 	= prevWord.keep( 63, 14);
+					dataOut.write(sendWord);
 
+				}
+				else {
+					sendWord.last=1;
+					dataOut.write(sendWord);
+				}
+			}
+		}
+
+		prevWord = currWord;
+		
+
+	} while (!currWord.last);
 
 }
 
@@ -268,5 +227,22 @@ void pcap2stream_step(
 		}
 	}
 
+
+}
+
+
+unsigned keep_to_length(ap_uint<ETH_INTERFACE_WIDTH/8> keep){
+
+	unsigned ones_count = 0;
+
+	for (int i=0; i < ETH_INTERFACE_WIDTH/8 ; i++){
+		if (keep.bit(i)){
+			ones_count++;
+		}
+		else
+			break;
+	}
+
+	return ones_count;
 
 }

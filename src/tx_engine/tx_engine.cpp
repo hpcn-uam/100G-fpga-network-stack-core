@@ -1144,6 +1144,66 @@ void txDataBroadcast(
 	}
 }
 
+void txPseudo_header_Remover(
+		stream<axiWord>&	dataIn, 
+		stream<axiWord>&	dataOut 
+	){
+
+#pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
+	axiWord currWord;
+	axiWord sendWord=axiWord(0,0,0);
+	static axiWord prevWord;
+	static bool extra_word = false;
+	static bool first_word = true;
+
+	if (!dataIn.empty() && !extra_word){
+		dataIn.read(currWord);
+
+		if (first_word){
+			first_word = false;
+			if (currWord.last){										// Short packets such as ACK or SYN-ACK
+				sendWord.data(415,  0) 	= currWord.data(511, 96);
+				sendWord.keep( 51,  0) 	= currWord.keep( 63, 12);
+				sendWord.last 			= 1;
+				dataOut.write(sendWord);
+			}
+		}
+		else{
+			sendWord.data(415,  0) 	= prevWord.data(511, 96);
+			sendWord.data(511,416)	= currWord.data( 95,  0);
+			sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
+			sendWord.keep( 63, 52)	= currWord.keep( 11,  0);
+
+			if (currWord.last){
+				if (currWord.keep.bit(12)){
+					extra_word = true;
+					sendWord.last = 0;
+				}
+			}
+			else
+				sendWord.last = currWord.last;
+
+
+			dataOut.write(sendWord);
+		}
+
+		if (currWord.last)
+			first_word = true;
+
+		prevWord = currWord;
+	
+	}
+	else if(extra_word){
+		extra_word = false;
+		sendWord.data(415,  0) 	= prevWord.data(511, 96);
+		sendWord.data(511,416)	= currWord.data( 95,  0);
+		sendWord.last 			= 1;
+		dataOut.write(sendWord);
+	}
+}
+
 /** @ingroup tx_engine
  *  @param[in]		eventEng2txEng_event
  *  @param[in]		rxSar2txEng_upd_rsp
@@ -1175,62 +1235,68 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<axiWord>&				ipTxData,
 				stream<ap_uint<1> >&			readCountFifo)
 {
-#pragma HLS DATAFLOW
-#pragma HLS INTERFACE ap_ctrl_none port=return
+//#pragma HLS DATAFLOW
+//#pragma HLS INTERFACE ap_ctrl_none port=return
 //#pragma HLS PIPELINE II=1
-//#pragma HLS INLINE //off
+#pragma HLS INLINE //off
 
 	// Memory Read delay around 76 cycles, 10 cycles/packet, so keep meta of at least 8 packets
 	static stream<tx_engine_meta>		txEng_metaDataFifo("txEng_metaDataFifo");
-	static stream<ap_uint<16> >			txEng_ipMetaFifo("txEng_ipMetaFifo");
-	static stream<tx_engine_meta>		txEng_tcpMetaFifo("txEng_tcpMetaFifo");
 	#pragma HLS stream variable=txEng_metaDataFifo depth=16
-	#pragma HLS stream variable=txEng_ipMetaFifo depth=16
-	#pragma HLS stream variable=txEng_tcpMetaFifo depth=16
 	#pragma HLS DATA_PACK variable=txEng_metaDataFifo
+
+	static stream<ap_uint<16> >			txEng_ipMetaFifo("txEng_ipMetaFifo");
+	#pragma HLS stream variable=txEng_ipMetaFifo depth=16
 	//#pragma HLS DATA_PACK variable=txEng_ipMetaFifo
+
+	static stream<tx_engine_meta>		txEng_tcpMetaFifo("txEng_tcpMetaFifo");
+	#pragma HLS stream variable=txEng_tcpMetaFifo depth=16
 	#pragma HLS DATA_PACK variable=txEng_tcpMetaFifo
 
 	static stream<axiWord>		txEng_ipHeaderBuffer("txEng_ipHeaderBuffer");
-	static stream<axiWord>		txEng_tcpHeaderBuffer("txEng_tcpHeaderBuffer");
-	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");
-
-	static stream<axiWord>		tx_Eng_pseudo_pkt_2_buff("tx_Eng_pseudo_pkt_2_buff");
-	static stream<axiWord>		txEng_tcpPkgBuffer2("txEng_tcpPkgBuffer2");
-	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=32 // Ip header is 3 words, keep at least 8 headers
-	#pragma HLS stream variable=txEng_tcpHeaderBuffer depth=32 // TCP pseudo header is 4 words, keep at least 8 headers
-	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_buff depth=16   // is forwarded immediately, size is not critical
-	#pragma HLS stream variable=txEng_tcpPkgBuffer2 depth=256  // critical, has to keep complete packet for checksum computation
+	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=32 // Ip header is 1 words, keep at least 32 headers
 	#pragma HLS DATA_PACK variable=txEng_ipHeaderBuffer
+	
+	static stream<axiWord>		txEng_tcpHeaderBuffer("txEng_tcpHeaderBuffer");
+	#pragma HLS stream variable=txEng_tcpHeaderBuffer depth=32 // TCP pseudo header is 1 word, keep at least 32 headers
 	#pragma HLS DATA_PACK variable=txEng_tcpHeaderBuffer
-	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_buff
-	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer2
+	
+	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");	// It carries pseudo header plus TCP payload if applies
+
+	static stream<axiWord>		tx_Eng_pseudo_pkt_2_rm("tx_Eng_pseudo_pkt_2_rm");
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=16   // is forwarded immediately, size is not critical
+	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_rm
+	
+	static stream<axiWord>		txEng_tcpPkgBuffer("txEng_tcpPkgBuffer");
+	#pragma HLS stream variable=txEng_tcpPkgBuffer depth=256  // critical, has to keep complete packet for checksum computation
+	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer
 	
 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
 	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
 	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_checksum
 
-	static stream<subSums>				txEng_subChecksumsFifo("txEng_subChecksumsFifo");
 	static stream<ap_uint<16> >			txEng_tcpChecksumFifo("txEng_tcpChecksumFifo");
-	#pragma HLS stream variable=txEng_subChecksumsFifo depth=2
 	#pragma HLS stream variable=txEng_tcpChecksumFifo depth=4
-	#pragma HLS DATA_PACK variable=txEng_subChecksumsFifo
 
 	static stream<fourTuple> 		txEng_tupleShortCutFifo("txEng_tupleShortCutFifo");
-	static stream<bool>				txEng_isLookUpFifo("txEng_isLookUpFifo");
-	static stream<twoTuple>			txEng_ipTupleFifo("txEng_ipTupleFifo");
-	static stream<fourTuple>		txEng_tcpTupleFifo("txEng_tcpTupleFifo");
 	#pragma HLS stream variable=txEng_tupleShortCutFifo depth=2
-	#pragma HLS stream variable=txEng_isLookUpFifo depth=4
-	#pragma HLS stream variable=txEng_ipTupleFifo depth=4
-	#pragma HLS stream variable=txEng_tcpTupleFifo depth=4
 	#pragma HLS DATA_PACK variable=txEng_tupleShortCutFifo
+
+	static stream<bool>				txEng_isLookUpFifo("txEng_isLookUpFifo");
+	#pragma HLS stream variable=txEng_isLookUpFifo depth=4
+
+	static stream<twoTuple>			txEng_ipTupleFifo("txEng_ipTupleFifo");
+	#pragma HLS stream variable=txEng_ipTupleFifo depth=4
 	#pragma HLS DATA_PACK variable=txEng_ipTupleFifo
+
+	static stream<fourTuple>		txEng_tcpTupleFifo("txEng_tcpTupleFifo");
+	#pragma HLS stream variable=txEng_tcpTupleFifo depth=4
 	#pragma HLS DATA_PACK variable=txEng_tcpTupleFifo
 
 	static stream<mmCmd> txMetaloader2memAccessBreakdown("txMetaloader2memAccessBreakdown");
 	#pragma HLS stream variable=txMetaloader2memAccessBreakdown depth=32
 	#pragma HLS DATA_PACK variable=txMetaloader2memAccessBreakdown
+	
 	static stream<ap_uint<1> > memAccessBreakdown2txPkgStitcher("memAccessBreakdown2txPkgStitcher");
 	#pragma HLS stream variable=memAccessBreakdown2txPkgStitcher depth=32
 	
@@ -1263,23 +1329,42 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 					txEng_ipTupleFifo,
 					txEng_tcpTupleFifo);
 
-	ipHeaderConstruction(txEng_ipMetaFifo, txEng_ipTupleFifo, txEng_ipHeaderBuffer);
+	ipHeaderConstruction(
+				txEng_ipMetaFifo, 
+				txEng_ipTupleFifo, 
+				txEng_ipHeaderBuffer);
 
-	pseudoHeaderConstruction(txEng_tcpMetaFifo, txEng_tcpTupleFifo, txEng_tcpHeaderBuffer);
+	pseudoHeaderConstruction(
+				txEng_tcpMetaFifo, 
+				txEng_tcpTupleFifo, 
+				txEng_tcpHeaderBuffer);
 
-	tx_pseudo_header_pkt_stitcher(	txEng_tcpHeaderBuffer,
-					txBufferReadData,
+	tx_pseudo_header_pkt_stitcher(	
+				txEng_tcpHeaderBuffer,
+				txBufferReadData,
 #if (TCP_NODELAY)
-					txEng_isDDRbypass,
-					txApp2txEng_data_stream,
+				txEng_isDDRbypass,
+				txApp2txEng_data_stream,
 #endif
-					tx_Eng_pseudo_pkt,
-					memAccessBreakdown2txPkgStitcher);
+				tx_Eng_pseudo_pkt,
+				memAccessBreakdown2txPkgStitcher);
 
 
-	txDataBroadcast(tx_Eng_pseudo_pkt,tx_Eng_pseudo_pkt_2_buff,tx_Eng_pseudo_pkt_2_checksum);
+	txDataBroadcast(
+				tx_Eng_pseudo_pkt,
+				tx_Eng_pseudo_pkt_2_rm,
+				tx_Eng_pseudo_pkt_2_checksum);
 
-	tx_compute_pseudo_tcp_checksum(tx_Eng_pseudo_pkt_2_checksum, txEng_tcpChecksumFifo);
+	tx_compute_pseudo_tcp_checksum(
+				tx_Eng_pseudo_pkt_2_checksum, 
+				txEng_tcpChecksumFifo);
 
-	tx_ip_pkt_stitcher(txEng_ipHeaderBuffer, tx_Eng_pseudo_pkt_2_buff, txEng_tcpChecksumFifo, ipTxData);
+	txPseudo_header_Remover(
+				tx_Eng_pseudo_pkt_2_rm,
+				txEng_tcpPkgBuffer);
+
+	tx_ip_pkt_stitcher(
+				txEng_ipHeaderBuffer, 
+				txEng_tcpPkgBuffer, 
+				txEng_tcpChecksumFifo, ipTxData);
 }

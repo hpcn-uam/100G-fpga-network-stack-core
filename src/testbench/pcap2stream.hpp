@@ -21,3 +21,5 @@ void pcap2stream_step(
 	);
 
 #endif
+
+unsigned keep_to_length(ap_uint<ETH_INTERFACE_WIDTH/8> keep);

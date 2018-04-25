@@ -279,7 +279,7 @@ void iperf(
 			rxData.read(currWord);
 			rxDataOut.write(currWord);
 			if (dualTest) {
-				tuple.ip_address = 0x0a010101;
+				tuple.ip_address = 0x0800A8C0;
 				tuple.ip_port = currWord.data(31, 16);
 				openConnection.write(tuple);
 			}
@@ -770,7 +770,7 @@ int main(int argc, char **argv) {
 		while (!ipTxData.empty()){
 			ipTxData.read(currOutWord);
 			cout << "Output packet [" << dec << packet << "][" << dec << transaction++ << "] time[" << simCycleCounter << "]";
-			cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
+			cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << dec <<" (" << keep_to_length(currOutWord.keep) << ")\tlast " << currOutWord.last << endl;
 			if (currOutWord.last){
 				packet ++;
 				transaction = 0;
