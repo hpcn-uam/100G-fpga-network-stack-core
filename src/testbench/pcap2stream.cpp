@@ -7,7 +7,7 @@ HPCN research Group
 #include "pcap.h"
 #include "pcap2stream.hpp"
 
-stream<axiWord> input_data;
+stream<axiWord> input_data("Data_Read_from_pcap");
 axiWord transaction;
 
 using namespace std;
@@ -203,7 +203,8 @@ int open_file (
 
 void pcap2stream(
 				char 								*file2load, 		// pcapfilename
-				stream<axiWord>&					output_data		// output data
+				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				stream<axiWord>&					output_data			// output data
 ) {
 
 	axiWord 	currWord;
@@ -211,26 +212,61 @@ void pcap2stream(
 	if (open_file(file2load)==0){
 
 		while(!input_data.empty()){
-			input_data.read(currWord);
-			output_data.write(currWord);
+			if (ethernet){
+				input_data.read(currWord);
+				output_data.write(currWord);
+			}
+			else {
+				remove_ethernet(input_data , output_data);
+			}
 		}
+
 	}
 
 }
 
+/* It returns one complete packet each time is called
+*
+*/
 
-void pcap2stream_no_eth(
+void pcap2stream_step(
 				char 								*file2load, 		// pcapfilename
-				stream<axiWord>&					output_data		// output data
-) {
+				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				stream<axiWord>&					output_data			// output data
+	){
 
+	static bool error_opening_file = false;
+	static bool file_open = false;
 
+	stream<axiWord> currWord_Stream("data_to_remove_ethernet");
 
-	if (open_file(file2load)==0){
+	axiWord 	currWord;
 
-		while(!input_data.empty()){
-			remove_ethernet(input_data , output_data);
+	if (!file_open) {
+		file_open = true;
+		if (open_file(file2load)!=0){
+			error_opening_file = true;
 		}
 	}
+
+
+	if (!error_opening_file) {
+		if (!input_data.empty()){
+			do {
+				input_data.read(currWord);
+				if (ethernet){
+					output_data.write(currWord);
+				}
+				else {
+					currWord_Stream.write(currWord);
+				}
+			} while (!currWord.last);
+
+			if (!ethernet){
+				remove_ethernet(currWord_Stream , output_data);
+			}
+		}
+	}
+
 
 }

@@ -9,12 +9,15 @@
 
 
 void pcap2stream(
-        char                      *file2load,
-        stream<axiWord>&          output_data );
+				char 								*file2load, 		// pcapfilename
+				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				stream<axiWord>&					output_data			// output data
+);
 
-
-void pcap2stream_no_eth(
-        char                      *file2load,
-        stream<axiWord>&          output_data);
+void pcap2stream_step(
+				char 								*file2load, 		// pcapfilename
+				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				stream<axiWord>&					output_data			// output data
+	);
 
 #endif
