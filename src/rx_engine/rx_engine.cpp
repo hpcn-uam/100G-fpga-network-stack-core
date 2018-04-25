@@ -331,7 +331,7 @@ void rxCheckTCPchecksum(
 			packet_checksum 	= (currWord.data(231,224),currWord.data(239,232));
 
 			// Get four tuple info
-			dstPort 			= (currWord.data(119,112), currWord.data(127,120));
+			dstPort 			= currWord.data(127,112);
 
 //			rxTupleInfo.srcIp	= ((ap_uint<8>)currWord.data( 7 ,  0), (ap_uint<8>)currWord.data(15 ,  8), (ap_uint<8>)currWord.data(23 , 16), (ap_uint<8>)currWord.data(31 , 24));
 //			rxTupleInfo.dstIp	= ((ap_uint<8>)currWord.data(39 , 32), (ap_uint<8>)currWord.data(47 , 40), (ap_uint<8>)currWord.data(55 , 48), (ap_uint<8>)currWord.data(63 , 56));
@@ -1320,8 +1320,8 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
 				stream<appNotification>&			rxEng2rxApp_notification)
 {
-#pragma HLS DATAFLOW
-#pragma HLS INTERFACE ap_ctrl_none port=return
+//#pragma HLS DATAFLOW
+//#pragma HLS INTERFACE ap_ctrl_none port=return
 #pragma HLS INLINE
 
 	// Axi Streams
