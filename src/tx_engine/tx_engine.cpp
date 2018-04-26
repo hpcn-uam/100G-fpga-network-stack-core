@@ -30,6 +30,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "tx_engine.hpp"
 
 using namespace hls;
+using namespace std;
 
 /** @ingroup tx_engine
  *  @name metaLoader
@@ -731,12 +732,12 @@ void pseudoHeaderConstruction(
 
 /** @ingroup tx_engine
  *  It appends the pseudo TCP header with the corresponding payload stream.
- *	@param[in]		txEng_tcpHeaderBufferIn, incoming TCP pseudo header stream
+ *	@param[in]		txEng_pseudo_tcpHeader, incoming TCP pseudo header stream
  *	@param[in]		txBufferReadData, incoming payload stream
  *	@param[out]		dataOut, outgoing data stream
  */
 void tx_payload_stitcher(
-					stream<axiWord>&		txEng_tcpHeaderBufferIn,
+					stream<axiWord>&		txEng_pseudo_tcpHeader,
 					stream<axiWord>&		txBufferReadData,
 					stream<axiWord>&		txEng_tcpSegOut)
 {
@@ -763,20 +764,21 @@ void tx_payload_stitcher(
 	static bool extra_word=false;
 
 
-	if (!txEng_tcpHeaderBufferIn.empty() && read_pseudo_header && !extra_word){
-		txEng_tcpHeaderBufferIn.read(pseudo_word);
+	if (!txEng_pseudo_tcpHeader.empty() && read_pseudo_header && !extra_word){
+		txEng_pseudo_tcpHeader.read(pseudo_word);
+
+		//cout << "pseudo   : " << hex << pseudo_word.data << "\tkeep: " << pseudo_word.keep << "\tlast: " << dec << pseudo_word.last << endl;
 
 		if (pseudo_word.data.bit(201)){ 				// It is a SYN packet, send it immediately 
 			txEng_tcpSegOut.write(pseudo_word);
 		}
 		else {
-			
 
 			if (!txBufferReadData.empty()) {
 				txBufferReadData.read(payload_word);
-				sendWord.data(255,  0) = pseudo_word.data(255,  0);		// TODO this is only valid with no TCP options
+				sendWord.data(255,  0) = pseudo_word.data (255,  0);		// TODO this is only valid with no TCP options
 				sendWord.data(511,256) = payload_word.data(255,  0);
-				sendWord.keep( 31,  0) = pseudo_word.keep( 31,  0);
+				sendWord.keep( 31,  0) = pseudo_word.keep ( 31,  0);
 				sendWord.keep( 63, 32) = payload_word.keep( 31,  0);
 				sendWord.last 		   = payload_word.last;
 
@@ -793,18 +795,25 @@ void tx_payload_stitcher(
 				else {
 					read_pseudo_header = false;
 				}
-				prevWord 	= 	payload_word;
+				prevWord.data(255,  0) 	= 	payload_word.data(511,256);
+				prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
+				prevWord.last       	= 	payload_word.last;
+
 				txEng_tcpSegOut.write(sendWord);
 			}
 			else {
 				read_pseudo_header = false;
-				prevWord 	= 	pseudo_word;
+				prevWord.data(255,  0) 	= 	pseudo_word.data(255,  0);
+				prevWord.keep( 31,  0) 	= 	pseudo_word.keep( 31,  0);
+				prevWord.last       	= 	pseudo_word.last;
 			}
 
 		}
 	}
 	else if (!txBufferReadData.empty() && !read_pseudo_header &&  !extra_word){ 									// 
 		txBufferReadData.read(payload_word);
+		//cout << "Prev   : " << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
+		//cout << "Payload: " << hex << payload_word.data << "\tkeep: " << payload_word.keep << "\tlast: " << dec << payload_word.last << endl;
 		sendWord.data(255,  0) = prevWord.data(255,  0);			// TODO this is only valid with no TCP options
 		sendWord.data(511,256) = payload_word.data(255,  0);
 		sendWord.keep( 31,  0) = prevWord.keep( 31,  0);
@@ -820,16 +829,24 @@ void tx_payload_stitcher(
 				read_pseudo_header = true;
 			}
 		}
-		prevWord 			= payload_word;
+
+		prevWord.data(255,  0) 	= 	payload_word.data(511,256);
+		prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
+		prevWord.last       	= 	payload_word.last;
+
+		//cout << "sendWord   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 
 		txEng_tcpSegOut.write(sendWord);
 
 	}
 	else if (extra_word){
 		extra_word 				= false;
+		read_pseudo_header 		= true;
 		sendWord.data(255,  0) 	= prevWord.data(255,  0);			// TODO this is only valid with no TCP options
 		sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
 		sendWord.last 		   	= 1;
+
+		//cout << "sendWord   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 
 		txEng_tcpSegOut.write(sendWord);
 	}
@@ -966,33 +983,7 @@ void tx_ip_pkt_stitcher(
 	static bool writing_payload=false;
 	static bool writing_extra=false;
 
-	if (writing_extra){
-		sendWord.data(159,  0) = prevWord.data(159,  0);
-		sendWord.keep( 19,  0) = prevWord.data( 19,  0);
-		sendWord.last 	= 1;
-		writing_extra   = false;
-		ipTxDataOut.write(sendWord);
-	}
-	else if (writing_payload){
-		payloadIn.read(payload);
-		sendWord.data(159,  0) = prevWord.data(159,  0);
-		sendWord.keep( 19,  0) = prevWord.data( 19,  0);
-		sendWord.data(511,160) = payload.data(351,  0);
-		sendWord.keep( 63, 20) = payload.keep( 43,  0);
-		sendWord.last 	= payload.last;
-
-		if (payload.last){
-			if (payload.keep.bit(44)){
-				sendWord.last 	= 0;
-				writing_extra 	= true;
-			}
-			writing_payload = false;
-		}
-		
-		prevWord = payload;
-		ipTxDataOut.write(sendWord);
-	}
-	else if (!txEng_ipHeaderBufferIn.empty() && !payloadIn.empty() && !txEng_tcpChecksumFifoIn.empty()) {
+ 	if (!txEng_ipHeaderBufferIn.empty() && !payloadIn.empty() && !txEng_tcpChecksumFifoIn.empty()) {
 		txEng_ipHeaderBufferIn.read(ip_word);
 		payloadIn.read(payload);
 		txEng_tcpChecksumFifoIn.read(tcp_checksum);
@@ -1015,7 +1006,36 @@ void tx_ip_pkt_stitcher(
 			writing_payload 	= true;
 
 		prevWord = payload;
+		//cout << "IP Stitcher   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		ipTxDataOut.write(sendWord);
+	}
+	else if (writing_payload){
+		payloadIn.read(payload);
+		
+		sendWord.data(159,  0) = prevWord.data(511,352);
+		sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
+		sendWord.data(511,160) = payload.data(351,  0);
+		sendWord.keep( 63, 20) = payload.keep( 43,  0);
+		sendWord.last 	= payload.last;
 
+		if (payload.last){
+			if (payload.keep.bit(44)){
+				sendWord.last 	= 0;
+				writing_extra 	= true;
+			}
+			writing_payload = false;
+		}
+		
+		prevWord = payload;
+		//cout << "IP Stitcher   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		ipTxDataOut.write(sendWord);
+	}
+	else if (writing_extra){
+		sendWord.data(159,  0) = prevWord.data(511,352);
+		sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
+		sendWord.last 	= 1;
+		writing_extra   = false;
+		//cout << "IP Stitcher Extra  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		ipTxDataOut.write(sendWord);
 	}
 
@@ -1109,6 +1129,7 @@ void tx_payload_aligner(
 			}
 			else{
 				align_words	= false;
+				tx_payload_aligned.write(currWord);
 			}
 			reading_payload = false;
 		}
@@ -1128,6 +1149,7 @@ void tx_payload_aligner(
 			}
 			else{
 				align_words	= false;
+				tx_payload_aligned.write(currWord);
 			}
 			reading_payload = false;
 		}
@@ -1194,7 +1216,7 @@ void txPseudo_header_Remover(
 
 	if (!dataIn.empty() && !extra_word){
 		dataIn.read(currWord);
-
+		//cout << "HR In   : " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 		if (first_word){
 			first_word = false;
 			if (currWord.last){										// Short packets such as ACK or SYN-ACK
@@ -1202,6 +1224,7 @@ void txPseudo_header_Remover(
 				sendWord.keep( 51,  0) 	= currWord.keep( 63, 12);
 				sendWord.last 			= 1;
 				dataOut.write(sendWord);
+				//cout << "HR Out   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			}
 		}
 		else{
@@ -1219,7 +1242,7 @@ void txPseudo_header_Remover(
 			else
 				sendWord.last = currWord.last;
 
-
+			//cout << "HR Out   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			dataOut.write(sendWord);
 		}
 
@@ -1232,8 +1255,10 @@ void txPseudo_header_Remover(
 	else if(extra_word){
 		extra_word = false;
 		sendWord.data(415,  0) 	= prevWord.data(511, 96);
-		sendWord.data(511,416)	= currWord.data( 95,  0);
+		sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
+
 		sendWord.last 			= 1;
+		//cout << "HR Out Extra   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		dataOut.write(sendWord);
 	}
 }
@@ -1291,9 +1316,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=32 // Ip header is 1 words, keep at least 32 headers
 	#pragma HLS DATA_PACK variable=txEng_ipHeaderBuffer
 	
-	static stream<axiWord>		txEng_tcpHeaderBuffer("txEng_tcpHeaderBuffer");
-	#pragma HLS stream variable=txEng_tcpHeaderBuffer depth=32 // TCP pseudo header is 1 word, keep at least 32 headers
-	#pragma HLS DATA_PACK variable=txEng_tcpHeaderBuffer
+	static stream<axiWord>		txEng_pseudo_tcpHeader("txEng_pseudo_tcpHeader");
+	#pragma HLS stream variable=txEng_pseudo_tcpHeader depth=32 // TCP pseudo header is 1 word, keep at least 32 headers
+	#pragma HLS DATA_PACK variable=txEng_pseudo_tcpHeader
 	
 	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");	// It carries pseudo header plus TCP payload if applies
 
@@ -1379,7 +1404,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	pseudoHeaderConstruction(
 				txEng_tcpMetaFifo, 
 				txEng_tcpTupleFifo, 
-				txEng_tcpHeaderBuffer);
+				txEng_pseudo_tcpHeader);
 
 	tx_payload_aligner(
 				txBufferReadData_unaligned,
@@ -1391,7 +1416,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				txBufferReadData_aligned);
 
 	tx_payload_stitcher(	
-				txEng_tcpHeaderBuffer,
+				txEng_pseudo_tcpHeader,
 				txBufferReadData_aligned,
 				tx_Eng_pseudo_pkt);
 
@@ -1412,5 +1437,6 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	tx_ip_pkt_stitcher(
 				txEng_ipHeaderBuffer, 
 				txEng_tcpPkgBuffer, 
-				txEng_tcpChecksumFifo, ipTxData);
+				txEng_tcpChecksumFifo, 
+				ipTxData);
 }

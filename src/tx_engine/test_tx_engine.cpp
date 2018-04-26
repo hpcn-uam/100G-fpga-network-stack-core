@@ -29,9 +29,10 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "tx_engine.hpp"
 
 using namespace hls;
+using namespace std;
 
 void simulateSARtables(	stream<rxSarEntry>&				rxSar2txEng_upd_rsp,
-						stream<txSarEntry>&				txSar2txEng_upd_rsp,
+						stream<txTxSarReply>&			txSar2txEng_upd_rsp,
 						stream<ap_uint<16> >&			txEng2rxSar_upd_req,
 						stream<txTxSarQuery>&			txEng2txSar_upd_req)
 {
@@ -48,7 +49,7 @@ void simulateSARtables(	stream<rxSarEntry>&				rxSar2txEng_upd_rsp,
 		txEng2txSar_upd_req.read(in_txaccess);
 		if (in_txaccess.write == 0)
 		{
-			txSar2txEng_upd_rsp.write(((txSarEntry) {3, 5, 0xffff, 5, 1}));
+			txSar2txEng_upd_rsp.write(((txTxSarReply) {3, 5, 0xffff, 1500, false,false}));
 		}
 		//omit write
 	}
@@ -61,30 +62,48 @@ void simulateTxBuffer(stream<mmCmd>&	command,
 	static ap_uint<1> fsmState = 0;
 	static ap_uint<16> wordCount = 0;
 
+	static ap_uint<4> 	bcd_l=0;
+	static ap_uint<4> 	bcd_h=0;
+
 	axiWord memWord;
 
-	switch (fsmState)
-	{
-	case 0:
-		if (!command.empty())
-		{
-			command.read(cmd);
-			fsmState = 1;
-		}
-		break;
-	case 1:
-		memWord.data = 0x3031323334353637;
-		memWord.keep = 0xff;
-		memWord.last = 0x0;
-		wordCount += 8;
-		if (wordCount >= cmd.bbt)
-		{
-			memWord.last = 0x1;
-			fsmState = 0;
-			wordCount = 0;
-		}
-		dataOut.write(memWord);
-		break;
+	switch (fsmState) {
+		case 0:
+			if (!command.empty()) {
+				command.read(cmd);
+				fsmState = 1;
+			}
+			break;
+		case 1:
+
+			memWord.last = 0x0;
+			for (int i=0 ; i < 64 ; i++){
+				if (wordCount <= cmd.bbt){
+					memWord.data(i*8+7,i*8) = (bcd_h,bcd_l);
+					memWord.keep.bit(i) = 1;
+
+					bcd_l++;
+					if (bcd_l==10){
+						bcd_h++;
+						bcd_l=0;
+						if (bcd_h==10){
+							bcd_h=0;
+						}
+					}
+				}
+				wordCount++;
+			}
+
+			if (wordCount >= cmd.bbt) {
+				memWord.last = 0x1;
+				fsmState = 0;
+				wordCount = 0;
+			}
+
+			//cout << "Payload: " << hex << memWord.data << "\tkeep: " << memWord.keep << "\tlast: " << dec << memWord.last << endl;
+
+			dataOut.write(memWord);
+			break;
 	}
 }
 
@@ -108,7 +127,7 @@ int main()
 	ap_uint<16> sessionID;
 	stream<extendedEvent>			eventEng2txEng_event("eventEng2txEng_event");
 	stream<rxSarEntry>				rxSar2txEng_upd_rsp("rxSar2txEng_upd_rsp");
-	stream<txSarEntry>				txSar2txEng_upd_rsp("txSar2txEng_upd_rsp");
+	stream<txTxSarReply>			txSar2txEng_upd_rsp("txSar2txEng_upd_rsp");
 	stream<axiWord>					txBufferReadData("txBufferReadData");
 	stream<fourTuple>				sLookup2txEng_rev_rsp("sLookup2txEng_rev_rsp");
 	stream<ap_uint<16> >			txEng2rxSar_upd_req("txEng2rxSar_upd_req");
@@ -118,26 +137,18 @@ int main()
 	stream<mmCmd>					txBufferReadCmd("txBufferReadCmd");
 	stream<ap_uint<16> >			txEng2sLookup_rev_req("txEng2sLookup_rev_req");
 	stream<axiWord>					ipTxData;
+	stream<ap_uint<1> > 			readCountFifo("readCountFifo");
 
-	std::vector<int> values;
-	std::vector<int> lengths;
-/*	std::vector<int> values2;
-	std::vector<int> values3;
-*/
-	std::ifstream inputFile;
-	std::ofstream outputFile;
+	vector<int> values;
+	vector<int> lengths;
 
-	/*inputFile.open("/home/dsidler/workspace/vivado_projects/tx_engine/in.dat");
+	ofstream outputFile;
 
-	if (!inputFile)
-	{
-		std::cout << "Error: could not open test input file." << std::endl;
+
+	outputFile.open("/home/mario/Documents/cmac_100g/submodules/tcp_ip_cores/TOE/src/tx_engine/out.dat");
+	if (!outputFile) {
+		cout << "Error: could not open test output file." << endl;
 		return -1;
-	}*/
-	outputFile.open("/home/dasidler/toe/hls/toe/tx_engine/out.dat");
-	if (!outputFile)
-	{
-		std::cout << "Error: could not open test output file." << std::endl;
 	}
 
 	axiWord outData;
@@ -160,8 +171,8 @@ int main()
 		values.push_back(v);
 		lengths.push_back(len+2);*/
 
-		if ((count % 9) == 0)
-		{
+		if ((count % 9) == 0){
+		//if (count  == 9) {
 			eventEng2txEng_event.write(event(TX, 3, 100, 536));
 			values.push_back(3);
 			lengths.push_back(536);
@@ -178,22 +189,22 @@ int main()
 					txEng2timer_setProbeTimer,
 					txBufferReadCmd,
 					txEng2sLookup_rev_req,
-					ipTxData);
+					ipTxData,
+					readCountFifo);
 		simulateSARtables(rxSar2txEng_upd_rsp, txSar2txEng_upd_rsp, txEng2rxSar_upd_req, txEng2txSar_upd_req);
 		simulateTxBuffer(txBufferReadCmd, txBufferReadData);
 		simulateRevSLUP(txEng2sLookup_rev_req, sLookup2txEng_rev_rsp);
-		while (!ipTxData.empty())
-		{
+		
+		while (!ipTxData.empty()) {
 			ipTxData.read(outData);
-			outputFile << std::hex;
-			outputFile << std::setfill('0');
-			outputFile << std::setw(16) << (uint32_t) outData.data(63, 32) << (uint32_t) outData.data(31, 0) << " " << std::setw(2) << outData.keep << " ";
-			outputFile << std::setw(1) << outData.last << std::endl;
-			if (outData.last)
-			{
-				outputFile << "len: " << lengths[count] << std::endl;
-				count++;
-			}
+			//outputFile << hex;
+			//outputFile << setfill('0');
+			outputFile << "Data: " << hex << outData.data << "\tkeep: " << outData.keep << "\tlast: " << dec << outData.last << endl;
+			//outputFile << setw(1) ;
+			//if (outData.last) {
+			//	outputFile << "len: " << lengths[count] << endl;
+			//	count++;
+			//}
 		}
 		count++;
 	}
@@ -211,30 +222,32 @@ int main()
 					txEng2timer_setProbeTimer,
 					txBufferReadCmd,
 					txEng2sLookup_rev_req,
-					ipTxData);
+					ipTxData,
+					readCountFifo);
 		simulateSARtables(rxSar2txEng_upd_rsp, txSar2txEng_upd_rsp, txEng2rxSar_upd_req, txEng2txSar_upd_req);
 		simulateTxBuffer(txBufferReadCmd, txBufferReadData);
 		simulateRevSLUP(txEng2sLookup_rev_req, sLookup2txEng_rev_rsp);
 		count++;
 	}
 
-	outputFile << "Data: " << std::endl;
+	outputFile << "Data: " << endl;
 	count = 0;
 	while (!ipTxData.empty())
 	{
 		ipTxData.read(outData);
-		outputFile << std::hex;
-		outputFile << std::setfill('0');
-		outputFile << std::setw(16) << (uint32_t) outData.data(63, 32) << (uint32_t) outData.data(31, 0) << " " << std::setw(2) << outData.keep << " ";
-		outputFile << std::setw(1) << outData.last << std::endl;
-		if (outData.last)
-		{
-			outputFile << "len: " << lengths[count] << std::endl;
-			count++;
-		}
+//		outputFile << hex;
+//		outputFile << setfill('0');
+//		outputFile << setw(16) << (uint32_t) outData.data(63, 32) << (uint32_t) outData.data(31, 0) << " " << setw(2) << outData.keep << " ";
+//		outputFile << setw(1) << outData.last << endl;
+		outputFile << "Data: " << hex << outData.data << "\tkeep: " << outData.keep << "\tlast: " << dec << outData.last << endl;
+//		if (outData.last)
+//		{
+//			outputFile << "len: " << lengths[count] << endl;
+//			count++;
+//		}
 	}
 
-	outputFile << "rtTimer: " << std::endl;
+	outputFile << "rtTimer: " << endl;
 	count = 0;
 	txRetransmitTimerSet set;
 	while (!(txEng2timer_setRetransmitTimer.empty()))
@@ -242,18 +255,18 @@ int main()
 		txEng2timer_setRetransmitTimer.read(set);
 		outputFile << set.sessionID << " ";
 		outputFile << ((set.sessionID == values[count]) ? "match" : "no match");
-		outputFile << std::endl;
+		outputFile << endl;
 		count++;
 	}
 
-	outputFile << "timer2: " << std::endl;
+	outputFile << "timer2: " << endl;
 	count = 0;
 	while (!(txEng2timer_setProbeTimer.empty()))
 	{
 		txEng2timer_setProbeTimer.read(sessionID);
 		outputFile << sessionID << " ";
 		outputFile << ((sessionID == values[count]) ? "match" : "no match");
-		outputFile << std::endl;
+		outputFile << endl;
 		count++;
 	}
 
