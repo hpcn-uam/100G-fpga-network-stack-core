@@ -168,7 +168,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 			txApp2txEng_data_stream.write(pushWord);
 #endif
 			axiWord outputWord = pushWord;
-			ap_uint<4> byteCount = keepToLen(pushWord.keep);
+			ap_uint<4> byteCount = keep2len(pushWord.keep);
 			if (!tasi_pushMeta.drop)
 			{
 				if (txAppBreakTemp > 8)
@@ -180,7 +180,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 					if (txAppBreakdown == true) {				/// Changes are to go in here
 						if (txAppTempCmd.saddr.range(15, 0) % 8 != 0) // If the word is not perfectly aligned then there is some magic to be worked.
 						{
-							outputWord.keep = lenToKeep(txAppBreakTemp);
+							outputWord.keep = len2Keep(txAppBreakTemp);
 						}
 						outputWord.last = 1;
 						tasiPkgPushState = 2;
@@ -249,7 +249,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 					}
 					else {
 						tasiPkgPushState = 0;
-						outputWord.keep = lenToKeep(txAppBreakTemp);
+						outputWord.keep = len2Keep(txAppBreakTemp);
 						outputWord.last = 1;
 					}
 				}
@@ -266,7 +266,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 	case 5:
 		if (!txBufferWriteData.full()) {
 			if (!tasi_pushMeta.drop) {
-				axiWord outputWord = axiWord(0, lenToKeep(txAppBreakTemp), 1);
+				axiWord outputWord = axiWord(0, len2Keep(txAppBreakTemp), 1);
 				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
 				txBufferWriteData.write(outputWord);
 				tasiPkgPushState = 0;

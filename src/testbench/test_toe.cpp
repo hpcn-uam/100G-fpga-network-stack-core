@@ -33,8 +33,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <string>
 #include "pcap2stream.hpp"
 
-#define totalSimCycles 2500000
-#define totalSimCycles 100
+//#define totalSimCycles 2500000
+#define totalSimCycles 1000
 
 using namespace std;
 
@@ -681,7 +681,7 @@ int main(int argc, char **argv) {
 
 //	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
 //		for (uint8_t i=0;i<noOfTxSessions;++i) {
-//			ipTuple newTuple = {0x0800A8C0, 0x8913}; 				// IP address and port to open
+//			ipTuple newTuple = {0x0800A8C0, 5002}; 				// IP address and port to open
 //			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
 //		}
 //	}

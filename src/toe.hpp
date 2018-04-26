@@ -27,8 +27,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
 ************************************************/
 
-#ifndef TOE_HPP_INCLUDED
-#define TOE_HPP_INCLUDED
+#ifndef _TOE_HPP_DEFINED_
+#define _TOE_HPP_DEFINED_
 
 #include <stdio.h>
 #include <iostream>
@@ -538,10 +538,17 @@ struct appTxRsp
 		:length(len), remaining_space(rem_space), error(err) {}
 };
 
+struct memDoubleAccess
+{
+	bool 		double_access;
+	ap_uint<6>	offset;
+	memDoubleAccess() {}
+	memDoubleAccess(bool double_access, ap_uint<6>	offset)
+		: double_access(double_access), offset(offset) {}
+};
+
 ap_uint<16> byteSwap16(ap_uint<16> inputVector);
 ap_uint<32> byteSwap32(ap_uint<32> inputVector);
-ap_uint<8> lenToKeep(ap_uint<4> length);
-ap_uint<4> keepToLen(ap_uint<8> keepValue);		// This function counts the number of 1s in an 8-bit value
 
 
 void toe(	// Data & Memory Interface

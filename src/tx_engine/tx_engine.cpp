@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
 #include "tx_engine.hpp"
@@ -730,185 +730,112 @@ void pseudoHeaderConstruction(
 }
 
 /** @ingroup tx_engine
- *	Reads in the TCP pseudo header stream and appends the corresponding payload stream.
+ *  It appends the pseudo TCP header with the corresponding payload stream.
  *	@param[in]		txEng_tcpHeaderBufferIn, incoming TCP pseudo header stream
  *	@param[in]		txBufferReadData, incoming payload stream
  *	@param[out]		dataOut, outgoing data stream
  */
-void tx_pseudo_header_pkt_stitcher(
+void tx_payload_stitcher(
 					stream<axiWord>&		txEng_tcpHeaderBufferIn,
 					stream<axiWord>&		txBufferReadData,
-#if (TCP_NODELAY)
-					stream<bool>&			txEng_isDDRbypass,
-					stream<axiWord>&		txApp2txEng_data_stream,
-#endif
-					stream<axiWord>&		txEng_tcpSegOut,
-					stream<ap_uint<1> > &memAccessBreakdown2txPkgStitcher)
+					stream<axiWord>&		txEng_tcpSegOut)
 {
 #pragma HLS INLINE off
-#pragma HLS pipeline II=1
+#pragma HLS LATENCY max=1
+	
+	axiWord 		payload_word;
+	axiWord 		sendWord = axiWord(0, 0, 0);
+	static axiWord 		pseudo_word;
+	static axiWord 		prevWord;
 
 	static ap_uint<3> 	ps_wordCount = 0;
 	static ap_uint<3>	tps_state = 0;
-	static axiWord 		currWord = axiWord(0, 0, 0);
 	static ap_uint<1> 	txPkgStitcherAccBreakDown = 0;
 	static ap_uint<4> 	shiftBuffer = 0;
 	static bool 		txEngBrkDownReadIn = false;
 
 	bool isShortCutData = false;
 
-	switch (tps_state)
-	{
-	case 0: // Read Header
-		if (!txEng_tcpHeaderBufferIn.empty())
-		{
-			txEng_tcpHeaderBufferIn.read(currWord);
-			txEng_tcpSegOut.write(currWord);
-			txEngBrkDownReadIn = false;
-			if (ps_wordCount == 3) {
-				if (currWord.data[9] == 1) // is a SYN packet
-				{
-					tps_state = 1;
+	enum tx_payload_states {READ_PSEUDO_HEADER,READ_PAYLOAD};
+	static tx_payload_states tx_fsm= READ_PSEUDO_HEADER;
+
+	static bool read_pseudo_header=true;
+	static bool extra_word=false;
+
+
+	if (!txEng_tcpHeaderBufferIn.empty() && read_pseudo_header && !extra_word){
+		txEng_tcpHeaderBufferIn.read(pseudo_word);
+
+		if (pseudo_word.data.bit(201)){ 				// It is a SYN packet, send it immediately 
+			txEng_tcpSegOut.write(pseudo_word);
+		}
+		else {
+			
+
+			if (!txBufferReadData.empty()) {
+				txBufferReadData.read(payload_word);
+				sendWord.data(255,  0) = pseudo_word.data(255,  0);		// TODO this is only valid with no TCP options
+				sendWord.data(511,256) = payload_word.data(255,  0);
+				sendWord.keep( 31,  0) = pseudo_word.keep( 31,  0);
+				sendWord.keep( 63, 32) = payload_word.keep( 31,  0);
+				sendWord.last 		   = payload_word.last;
+
+				if (payload_word.last){
+					if (payload_word.keep.bit(32)){
+						sendWord.last 		   = 0;
+						read_pseudo_header = false;
+						extra_word = true;
+					}
+					else {
+						read_pseudo_header = true;
+					}
 				}
-				else
-				{
-#if (TCP_NODELAY)
-					tps_state = 7;
-#else
-					tps_state = 2;
-#endif
+				else {
+					read_pseudo_header = false;
 				}
-				ps_wordCount = 0;
+				prevWord 	= 	payload_word;
+				txEng_tcpSegOut.write(sendWord);
 			}
 			else {
-				ps_wordCount++;
+				read_pseudo_header = false;
+				prevWord 	= 	pseudo_word;
 			}
-			if (currWord.last)
-			{
-				tps_state = 0;
-				ps_wordCount = 0;
+
+		}
+	}
+	else if (!txBufferReadData.empty() && !read_pseudo_header &&  !extra_word){ 									// 
+		txBufferReadData.read(payload_word);
+		sendWord.data(255,  0) = prevWord.data(255,  0);			// TODO this is only valid with no TCP options
+		sendWord.data(511,256) = payload_word.data(255,  0);
+		sendWord.keep( 31,  0) = prevWord.keep( 31,  0);
+		sendWord.keep( 63, 32) = payload_word.keep( 31,  0);
+		sendWord.last 		   = payload_word.last;
+
+		if (payload_word.last){
+			if (payload_word.keep.bit(32)){
+				sendWord.last 		   = 0;
+				extra_word = true;
+			}
+			else {
+				read_pseudo_header = true;
 			}
 		}
-		break;
-	case 1: // Read one more word for MSS Option
-		if (!txEng_tcpHeaderBufferIn.empty())
-		{
-			txEng_tcpHeaderBufferIn.read(currWord);
-			txEng_tcpSegOut.write(currWord);
-			tps_state = 7;
-			if (currWord.last)
-			{
-				tps_state = 0;
-			}
-			ps_wordCount = 0;
-		}
-		break;
-#if (TCP_NODELAY)
-	case 7:
-		if (!txEng_isDDRbypass.empty())
-		{
-			txEng_isDDRbypass.read(isShortCutData);
-			if (isShortCutData)
-			{
-				tps_state = 6;
-			}
-			else
-			{
-				tps_state = 2;
-			}
-		}
-		break;
-#endif
-	case 2:
-		if (!txBufferReadData.empty() && !txEng_tcpSegOut.full() &&  (txEngBrkDownReadIn == true || (txEngBrkDownReadIn == false && !memAccessBreakdown2txPkgStitcher.empty()))) {    // Read and output the first mem. access for the segment
-			if (txEngBrkDownReadIn == false) {
-				txEngBrkDownReadIn = true;
-				txPkgStitcherAccBreakDown = memAccessBreakdown2txPkgStitcher.read();
-			}
-			txBufferReadData.read(currWord);
-			//txPktCounter++;
-			//std::cerr <<  std::dec << cycleCounter << " - " << std::hex << currWord.data << " - " << currWord.keep << " - " << currWord.last << std::endl;
-			if (currWord.last) {								// When this mem. access is finished...
-				if (txPkgStitcherAccBreakDown == 0)	{			// Check if it was broken down in two. If not...
-					tps_state = 0;							// go back to the init state and wait for the next segment.
-					txEng_tcpSegOut.write(currWord);
-				}
-				else if (txPkgStitcherAccBreakDown == 1) {		// If yes, several options present themselves:
-					shiftBuffer = keepToLen(currWord.keep);
-					txPkgStitcherAccBreakDown = 0;
-					currWord.last = 0;
-					if (currWord.keep != 0xFF)				// If the last word is complete, this means that the data are aligned correctly & nothing else needs to be done. If not we need to align them.
-						tps_state = 3;						// Go to the next state to do just that
-					else
-						txEng_tcpSegOut.write(currWord);
-				}
-			}
-			else
-				txEng_tcpSegOut.write(currWord);
-		}
-		break;
-	case 3: // 0x8F908348249AB4F8
-		if (!txBufferReadData.empty() && !txEng_tcpSegOut.full()) {    // Read the first word of a non_aligned second mem. access
-			axiWord outputWord = axiWord(currWord.data, 0xFF, 0);
-			currWord = txBufferReadData.read();
-			outputWord.data(63, (shiftBuffer * 8)) = currWord.data(((8 - shiftBuffer) * 8) - 1, 0);
-			ap_uint<4> keepCounter = keepToLen(currWord.keep);
-			if (keepCounter < 8 - shiftBuffer) {	// If the entirety of the 2nd mem. access fits in this data word..
-				outputWord.keep = lenToKeep(keepCounter + shiftBuffer);
-				outputWord.last = 1;
-				tps_state = 0;	// then go back to idle
-			}
-			else if (currWord.last == 1)
-				tps_state = 5;
-			else
-				tps_state = 4;
-			txEng_tcpSegOut.write(outputWord);
-			//std::cerr <<  std::dec << cycleCounter << " - " << std::hex << outputWord.data << " - " << outputWord.keep << " - " << outputWord.last << std::endl;
-		}
-		break;
-	case 4: //6
-		if (!txBufferReadData.empty() && !txEng_tcpSegOut.full()) {    // Read the first word of a non_aligned second mem. access
-			axiWord outputWord = axiWord(0, 0xFF, 0);
-			outputWord.data((shiftBuffer * 8) - 1, 0) = currWord.data(63, (8 - shiftBuffer) * 8);
-			currWord = txBufferReadData.read();
-			outputWord.data(63, (8 * shiftBuffer)) = currWord.data(((8 - shiftBuffer) * 8) - 1, 0);
-			ap_uint<4> keepCounter = keepToLen(currWord.keep);
-			if (keepCounter < 8 - shiftBuffer) {	// If the entirety of the 2nd mem. access fits in this data word..
-				outputWord.keep = lenToKeep(keepCounter + shiftBuffer);
-				outputWord.last = 1;
-				tps_state = 0;	// then go back to idle
-			}
-			else if (currWord.last == 1)
-				tps_state = 5;
-			txEng_tcpSegOut.write(outputWord);
-			//std::cerr <<  std::dec << cycleCounter << " - " << std::hex << outputWord.data << " - " << outputWord.keep << " - " << outputWord.last << std::endl;
-		}
-		break;
-	case 5:
-		if (!txEng_tcpSegOut.full()) {
-			ap_uint<4> keepCounter = keepToLen(currWord.keep) - (8 - shiftBuffer);							// This is how many bits are valid in this word
-			axiWord outputWord = axiWord(0, lenToKeep(keepCounter), 1);
-			outputWord.data((shiftBuffer * 8) - 1, 0) = currWord.data(63, (8 - shiftBuffer) * 8);
-			txEng_tcpSegOut.write(outputWord);
-			//std::cerr <<  std::dec << cycleCounter << " - " << std::hex << outputWord.data << " - " << outputWord.keep << " - " << outputWord.last << std::endl;
-			tps_state = 0;
-		}
-		break;
-#if (TCP_NODELAY)
-	case 6:
-		if (!txApp2txEng_data_stream.empty() && !txEng_tcpSegOut.full())
-		{
-			txApp2txEng_data_stream.read(currWord);
-			txEng_tcpSegOut.write(currWord);
-			if (currWord.last)
-			{
-				tps_state = 0;
-			}
-		}
-		break;
-#endif
-	} // switch
+		prevWord 			= payload_word;
+
+		txEng_tcpSegOut.write(sendWord);
+
+	}
+	else if (extra_word){
+		extra_word 				= false;
+		sendWord.data(255,  0) 	= prevWord.data(255,  0);			// TODO this is only valid with no TCP options
+		sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
+		sendWord.last 		   	= 1;
+
+		txEng_tcpSegOut.write(sendWord);
+	}
+
 }
+
 
 /** @ingroup tx_engine
  *  Computes the TCP checksum and writes it into @param txEng_pseudo_tcp_checksum
@@ -1094,13 +1021,18 @@ void tx_ip_pkt_stitcher(
 
 }
 
-void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outputMemAccess, stream<ap_uint<1> > &memAccessBreakdown2txPkgStitcher) {
+void txEngMemAccessBreakdown(
+					stream<mmCmd>& 				inputMemAccess, 
+					stream<mmCmd>& 				outputMemAccess, 
+					stream<memDoubleAccess>& 	memAccessBreakdown) {
+
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 	static bool txEngBreakdown = false;
 	static mmCmd txEngTempCmd;
 	static uint16_t txEngBreakTemp = 0;
 	static uint16_t txPktCounter = 0;
+	memDoubleAccess 	double_access=memDoubleAccess(false,0);
 
 	if (txEngBreakdown == false) {
 		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
@@ -1110,9 +1042,12 @@ void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outpu
 				txEngBreakTemp = 65536 - txEngTempCmd.saddr;
 				tempCmd = mmCmd(txEngTempCmd.saddr, txEngBreakTemp);
 				txEngBreakdown = true;
+
+				double_access.double_access = true;
+				double_access.offset 		= txEngBreakTemp & 0x3F;	// Offset of MSB byte valid in the last transaction of the first burst
 			}
 			outputMemAccess.write(tempCmd);
-			memAccessBreakdown2txPkgStitcher.write(txEngBreakdown);
+			memAccessBreakdown.write(double_access);
 			txPktCounter++;
 			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << std::hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
 		}
@@ -1125,6 +1060,105 @@ void txEngMemAccessBreakdown(stream<mmCmd> &inputMemAccess, stream<mmCmd> &outpu
 			txEngBreakdown = false;
 		}
 	}
+}
+
+
+
+/** @ingroup tx_engine
+ *  It gets payload from the memory which can be split into two burst.
+ *  The main drawback is aligned the end of the first burst with the beginning
+ *  of the second burst, because, it implies a 64 to 1 multiplexer.
+ */
+
+
+void tx_payload_aligner(
+					stream<axiWord>& 			mem_payload_unaligned,
+					stream<memDoubleAccess>& 	mem_two_access,
+				
+#if (TCP_NODELAY)
+					stream<bool>&				txEng_isDDRbypass,
+					stream<axiWord>&			txApp2txEng_data_stream,
+#endif
+					stream<axiWord>& 			tx_payload_aligned)
+{
+#pragma HLS INLINE off
+#pragma HLS LATENCY max=1
+
+	static ap_uint<6>	byte_offset;
+	static bool			breakdownAccess=false;
+	static bool			reading_payload=false;
+	static bool			align_words=false;
+	static bool			extra_word=false;
+	memDoubleAccess 	mem_double_access;
+	axiWord 			currWord;
+	axiWord 			sendWord;
+	static axiWord 		prevWord;
+	axiWord 			next_previous_word;
+
+	if (!mem_payload_unaligned.empty() && !mem_two_access.empty() && !reading_payload && !align_words && !extra_word){		// New data is available 
+		mem_two_access.read(mem_double_access);
+
+		breakdownAccess		= mem_double_access.double_access;
+		byte_offset			= mem_double_access.offset;
+
+		mem_payload_unaligned.read(currWord);
+
+		if (currWord.last){
+			if (breakdownAccess){
+				align_words	= true;
+			}
+			else{
+				align_words	= false;
+			}
+			reading_payload = false;
+		}
+		else{
+			reading_payload = true;
+			tx_payload_aligned.write(currWord);
+		}
+
+		prevWord = currWord;
+
+	}
+	else if(!mem_payload_unaligned.empty()&& reading_payload && !align_words){
+		mem_payload_unaligned.read(currWord);
+		if (currWord.last){
+			if (breakdownAccess){
+				align_words	= true;
+			}
+			else{
+				align_words	= false;
+			}
+			reading_payload = false;
+		}
+		else{
+			tx_payload_aligned.write(currWord);
+		}
+		prevWord = currWord;
+	}
+	else if(!mem_payload_unaligned.empty()&& !reading_payload && align_words){
+		mem_payload_unaligned.read(currWord);
+		
+		tx_align_two_64bytes_words(currWord,prevWord,byte_offset,&sendWord,&next_previous_word);
+
+		if (currWord.last){
+			if(currWord.keep.bit(byte_offset)){
+				extra_word = true;
+			}
+			else {
+				align_words = false;
+			}
+		}
+
+		tx_payload_aligned.write(sendWord);
+		
+		prevWord = next_previous_word;
+	}
+	else if (extra_word){
+		extra_word = false;
+		tx_payload_aligned.write(prevWord);
+	}
+
 }
 
 void txDataBroadcast(
@@ -1208,7 +1242,7 @@ void txPseudo_header_Remover(
  *  @param[in]		eventEng2txEng_event
  *  @param[in]		rxSar2txEng_upd_rsp
  *  @param[in]		txSar2txEng_upd_rsp
- *  @param[in]		txBufferReadData
+ *  @param[in]		txBufferReadData_unaligned
  *  @param[in]		sLookup2txEng_rev_rsp
  *  @param[out]		txEng2rxSar_upd_req
  *  @param[out]		txEng2txSar_upd_req
@@ -1221,7 +1255,7 @@ void txPseudo_header_Remover(
 void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<rxSarEntry>&			    rxSar2txEng_rsp,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
-				stream<axiWord>&				txBufferReadData,
+				stream<axiWord>&				txBufferReadData_unaligned,
 #if (TCP_NODELAY)
 				stream<axiWord>&				txApp2txEng_data_stream,
 #endif
@@ -1235,10 +1269,10 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<axiWord>&				ipTxData,
 				stream<ap_uint<1> >&			readCountFifo)
 {
-//#pragma HLS DATAFLOW
+#pragma HLS DATAFLOW
 //#pragma HLS INTERFACE ap_ctrl_none port=return
 //#pragma HLS PIPELINE II=1
-#pragma HLS INLINE //off
+#pragma HLS INLINE off
 
 	// Memory Read delay around 76 cycles, 10 cycles/packet, so keep meta of at least 8 packets
 	static stream<tx_engine_meta>		txEng_metaDataFifo("txEng_metaDataFifo");
@@ -1297,11 +1331,15 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txMetaloader2memAccessBreakdown depth=32
 	#pragma HLS DATA_PACK variable=txMetaloader2memAccessBreakdown
 	
-	static stream<ap_uint<1> > memAccessBreakdown2txPkgStitcher("memAccessBreakdown2txPkgStitcher");
-	#pragma HLS stream variable=memAccessBreakdown2txPkgStitcher depth=32
+	static stream<memDoubleAccess> memAccessBreakdown("memAccessBreakdown");
+	#pragma HLS stream variable=memAccessBreakdown depth=32
 	
 	static stream<bool> txEng_isDDRbypass("txEng_isDDRbypass");
 	#pragma HLS stream variable=txEng_isDDRbypass depth=32
+
+	static stream<axiWord>		txBufferReadData_aligned("txBufferReadData_aligned");
+	#pragma HLS stream variable=txBufferReadData_aligned depth=16  
+	#pragma HLS DATA_PACK variable=txBufferReadData_aligned
 
 
 	metaLoader(	eventEng2txEng_event,
@@ -1321,13 +1359,17 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #endif
 				txEng_tupleShortCutFifo,
 				readCountFifo);
-	txEngMemAccessBreakdown(txMetaloader2memAccessBreakdown, txBufferReadCmd, memAccessBreakdown2txPkgStitcher);
+	txEngMemAccessBreakdown(
+				txMetaloader2memAccessBreakdown, 
+				txBufferReadCmd, 
+				memAccessBreakdown);
 
-	tupleSplitter(	sLookup2txEng_rev_rsp,
-					txEng_tupleShortCutFifo,
-					txEng_isLookUpFifo,
-					txEng_ipTupleFifo,
-					txEng_tcpTupleFifo);
+	tupleSplitter(	
+				sLookup2txEng_rev_rsp,
+				txEng_tupleShortCutFifo,
+				txEng_isLookUpFifo,
+				txEng_ipTupleFifo,
+				txEng_tcpTupleFifo);
 
 	ipHeaderConstruction(
 				txEng_ipMetaFifo, 
@@ -1339,15 +1381,19 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				txEng_tcpTupleFifo, 
 				txEng_tcpHeaderBuffer);
 
-	tx_pseudo_header_pkt_stitcher(	
-				txEng_tcpHeaderBuffer,
-				txBufferReadData,
-#if (TCP_NODELAY)
+	tx_payload_aligner(
+				txBufferReadData_unaligned,
+				memAccessBreakdown,
+	#if (TCP_NODELAY)
 				txEng_isDDRbypass,
 				txApp2txEng_data_stream,
-#endif
-				tx_Eng_pseudo_pkt,
-				memAccessBreakdown2txPkgStitcher);
+	#endif
+				txBufferReadData_aligned);
+
+	tx_payload_stitcher(	
+				txEng_tcpHeaderBuffer,
+				txBufferReadData_aligned,
+				tx_Eng_pseudo_pkt);
 
 
 	txDataBroadcast(

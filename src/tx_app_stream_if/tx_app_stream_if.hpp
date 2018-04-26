@@ -28,7 +28,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 ************************************************/
 
 #include "../toe.hpp"
-
+#include "../utilities.hpp"
 using namespace hls;
 
 static const ap_uint<4> NO_ERROR			= 0;

@@ -30,6 +30,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #define _RX_ENGINE_H_
 
 #include "../toe.hpp"
+#include "../utilities.hpp"
 
 using namespace hls;
 

@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
 #include "toe.hpp"
@@ -57,73 +57,6 @@ ap_uint<32> byteSwap32(ap_uint<32> inputVector) {
 	return (inputVector.range(7,0), inputVector(15, 8), inputVector.range(23,16), inputVector(31, 24));
 }
 
-ap_uint<4> keepToLen(ap_uint<8> keepValue)
-{
-  switch (keepValue)
-  {
-  case 0x01:
-    return 0x1;
-    break;
-  case 0x3:
-    return 0x2;
-    break;
-  case 0x07:
-    return 0x3;
-    break;
-  case 0x0F:
-    return 0x4;
-    break;
-  case 0x1F:
-    return 0x5;
-    break;
-  case 0x3F:
-    return 0x6;
-    break;
-  case 0x7F:
-    return 0x7;
-    break;
-  case 0xFF:
-    return 0x8;
-    break;
-  default:
-	return 0;
-	break;
-  }
-}
-
-ap_uint<8> lenToKeep(ap_uint<4> length)
-{
-  switch(length)
-  {
-  case 1:
-    return 0x01;
-    break;
-  case 2:
-    return 0x03;
-    break;
-  case 3:
-    return 0x07;
-    break;
-  case 4:
-    return 0x0F;
-    break;
-  case 5:
-    return 0x1F;
-    break;
-  case 6:
-    return 0x3F;
-    break;
-  case 7:
-    return 0x7F;
-    break;
-  case 8:
-    return 0xFF;
-    break;
-  default:
-	return 0;
-	break;
-  }
-}
 
 /** @ingroup timer
  *
@@ -185,8 +118,9 @@ void timerWrapper(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetransmitT
 					stream<appNotification>&			rtTimer2rxApp_notification,
 					stream<openStatus>&					rtTimer2txApp_notification)
 {
+#pragma HLS DATAFLOW
 	#pragma HLS INLINE off
-	#pragma HLS PIPELINE II=1
+	//#pragma HLS PIPELINE II=1
 	
 	static stream<ap_uint<16> > closeTimer2stateTable_releaseState("closeTimer2stateTable_releaseState");
 	static stream<ap_uint<16> > rtTimer2stateTable_releaseState("rtTimer2stateTable_releaseState");
@@ -265,7 +199,7 @@ void rxAppMemDataRead(stream<axiWord> &rxBufferReadData, stream<axiWord> &rxData
 			//rxAppMemRdOffset = 0;
 			rxAppDoubleAccessFlag = rxAppDoubleAccess.read();
 			rxBufferReadData.read(rxAppMemRdRxWord);
-			rxAppMemRdOffset = keepToLen(rxAppMemRdRxWord.keep);						// Count the number of valid bytes in this data word
+			rxAppMemRdOffset = keep2len(rxAppMemRdRxWord.keep);						// Count the number of valid bytes in this data word
 			if (rxAppMemRdRxWord.last == 1 && rxAppDoubleAccessFlag == 1) {		// If this is the last word and this access was broken down
 				rxAppMemRdRxWord.last = ~rxAppDoubleAccessFlag;					// Negate the last flag inn the axiWord and determine if there's an offset
 				if (rxAppMemRdOffset == 8) {									// No need to offset anything
@@ -292,7 +226,7 @@ void rxAppMemDataRead(stream<axiWord> &rxBufferReadData, stream<axiWord> &rxData
 	case RXAPP_STREAM:															// This state outputs the all the data words in the 1st memory access of a segment but the 1st one.
 		if (!rxBufferReadData.empty() && !rxDataRsp.full()) {					// Verify that there's data in the input and space in the output
 			rxBufferReadData.read(rxAppMemRdRxWord);							// Read the data word in
-			rxAppMemRdOffset = keepToLen(rxAppMemRdRxWord.keep);						// Count the number of valid bytes in this data word
+			rxAppMemRdOffset = keep2len(rxAppMemRdRxWord.keep);						// Count the number of valid bytes in this data word
 			if (rxAppMemRdRxWord.last == 1 && rxAppDoubleAccessFlag == 1) {		// If this is the last word and this access was broken down
 				rxAppMemRdRxWord.last = ~rxAppDoubleAccessFlag;					// Negate the last flag inn the axiWord and determine if there's an offset
 				if (rxAppMemRdOffset == 8) {									// No need to offset anything
@@ -330,11 +264,11 @@ void rxAppMemDataRead(stream<axiWord> &rxBufferReadData, stream<axiWord> &rxData
 			temp.data.range((rxAppMemRdOffset * 8) - 1, 0) = rxAppMemRdRxWord.data.range((rxAppMemRdOffset * 8) - 1, 0);	// In any case, insert the data of the new data word in the old one. Here we don't pay attention to the exact number of bytes in the new data word. In case they don't fill the entire remaining gap, there will be garbage in the output but it doesn't matter since the KEEP signal indicates which bytes are valid.
 			rxAppMemRdRxWord = rxBufferReadData.read();
 			temp.data.range(63, (rxAppMemRdOffset * 8)) = rxAppMemRdRxWord.data.range(((8 - rxAppMemRdOffset) * 8) - 1, 0);				// Buffer & realign temp into rxAppmemRdRxWord (which is a static variable)
-			ap_uint<4> tempCounter = keepToLen(rxAppMemRdRxWord.keep);					// Determine how any bytes are valid in the new data word. It might be that this is the only data word of the 2nd segment
+			ap_uint<4> tempCounter = keep2len(rxAppMemRdRxWord.keep);					// Determine how any bytes are valid in the new data word. It might be that this is the only data word of the 2nd segment
 			rxAppOffsetBuffer = tempCounter - (8 - rxAppMemRdOffset);				// Calculate the number of bytes to go into the next & final data word
 			if (rxAppMemRdRxWord.last == 1) {
 				if ((tempCounter + rxAppMemRdOffset) <= 8) {						// Check if the residue from the 1st segment and the data in the 1st data word of the 2nd segment fill this data word. If not...
-					temp.keep = lenToKeep(tempCounter + rxAppMemRdOffset);	// then set the KEEP value of the output to the sum of the 2 data word's bytes
+					temp.keep = len2Keep(tempCounter + rxAppMemRdOffset);	// then set the KEEP value of the output to the sum of the 2 data word's bytes
 					temp.last = 1;									// also set the LAST to 1, since this is going to be the final word of this segment
 					rxAppState = RXAPP_IDLE;									// And go back to idle when finished with this state
 				}
@@ -353,11 +287,11 @@ void rxAppMemDataRead(stream<axiWord> &rxBufferReadData, stream<axiWord> &rxData
 			temp.data.range((rxAppMemRdOffset * 8) - 1, 0) = rxAppMemRdRxWord.data.range(63, ((8 - rxAppMemRdOffset) * 8));
 			rxAppMemRdRxWord = rxBufferReadData.read();							// Read the new data word in
 			temp.data.range(63, (rxAppMemRdOffset * 8)) = rxAppMemRdRxWord.data.range(((8 - rxAppMemRdOffset) * 8) - 1, 0);
-			ap_uint<4> tempCounter = keepToLen(rxAppMemRdRxWord.keep);			// Determine how any bytes are valid in the new data word. It might be that this is the only data word of the 2nd segment
+			ap_uint<4> tempCounter = keep2len(rxAppMemRdRxWord.keep);			// Determine how any bytes are valid in the new data word. It might be that this is the only data word of the 2nd segment
 			rxAppOffsetBuffer = tempCounter - (8 - rxAppMemRdOffset);				// Calculate the number of bytes to go into the next & final data word
 			if (rxAppMemRdRxWord.last == 1) {
 				if ((tempCounter + rxAppMemRdOffset) <= 8) {							// Check if the residue from the 1st segment and the data in the 1st data word of the 2nd segment fill this data word. If not...
-					temp.keep = lenToKeep(tempCounter + rxAppMemRdOffset);			// then set the KEEP value of the output to the sum of the 2 data word's bytes
+					temp.keep = len2Keep(tempCounter + rxAppMemRdOffset);			// then set the KEEP value of the output to the sum of the 2 data word's bytes
 					temp.last = 1;													// also set the LAST to 1, since this is going to be the final word of this segment
 					rxAppState = RXAPP_IDLE;										// And go back to idle when finished with this state
 				}
@@ -370,7 +304,7 @@ void rxAppMemDataRead(stream<axiWord> &rxBufferReadData, stream<axiWord> &rxData
 		break;
 	case RXAPP_RESIDUE:
 		if (!rxDataRsp.full()) {
-			axiWord temp = axiWord(0, lenToKeep(rxAppOffsetBuffer), 1);
+			axiWord temp = axiWord(0, len2Keep(rxAppOffsetBuffer), 1);
 			temp.data.range((rxAppMemRdOffset * 8) - 1, 0) = rxAppMemRdRxWord.data.range(63, ((8 - rxAppMemRdOffset) * 8));
 			rxDataRsp.write(temp);												// And finally write the data word to the output
 			//std::cerr << "Mem.Data: " << std::hex << temp.data << " - " << temp.keep << " - " << temp.last << std::endl;

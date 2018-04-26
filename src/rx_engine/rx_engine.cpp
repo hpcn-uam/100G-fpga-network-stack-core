@@ -1181,7 +1181,7 @@ void rxEngMemWrite(
 			if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
 				rxMemWrDataIn.read(pushWord);
 				outputWord = pushWord;
-				ap_uint<4> byteCount = keepToLen(pushWord.keep); // Size of the current word
+				ap_uint<4> byteCount = keep2len(pushWord.keep); // Size of the current word
 				if (rxEngBreakTemp > 8) {		// At least one full transaction has to be made
 					rxEngBreakTemp -= 8; 		// Consume a whole word
 				}
@@ -1190,7 +1190,7 @@ void rxEngMemWrite(
 						rxMemWriterCmd.bbt -= rxEngBreakTemp;					// Recompute Byte to transfer 
 						/// Changes are to go in here
 						if (rxMemWriterCmd.saddr.range(15, 0) % 8 != 0) { // If the word is not perfectly aligned then there is some magic to be worked.
-							outputWord.keep = lenToKeep(rxEngBreakTemp);
+							outputWord.keep = len2Keep(rxEngBreakTemp);
 						}
 						outputWord.last = 1;
 						rxEngAccessResidue = byteCount - rxEngBreakTemp;
@@ -1245,7 +1245,7 @@ void rxEngMemWrite(
 						rxMemWrState = RXMEMWR_RESIDUE;
 					}
 					else {
-						outputWord.keep = lenToKeep(rxEngBreakTemp);
+						outputWord.keep = len2Keep(rxEngBreakTemp);
 						outputWord.last = 1;
 						rxMemWrState = RXMEMWR_IDLE;
 					}
@@ -1257,7 +1257,7 @@ void rxEngMemWrite(
 			break;
 		case RXMEMWR_RESIDUE:
 			if (!rxMemWrDataOut.full()) {
-				outputWord = axiWord(0, lenToKeep(rxEngBreakTemp), 1);
+				outputWord = axiWord(0, len2Keep(rxEngBreakTemp), 1);
 				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
 				rxMemWrDataOut.write(outputWord);
 				rxMemWrState = RXMEMWR_IDLE;
