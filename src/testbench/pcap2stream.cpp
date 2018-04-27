@@ -246,3 +246,45 @@ unsigned keep_to_length(ap_uint<ETH_INTERFACE_WIDTH/8> keep){
 	return ones_count;
 
 }
+
+
+void stream2pcap(
+				char 								*file2load, 		// pcapfilename
+				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				bool 								microseconds,		// 1: microseconds precision 0: nanoseconds precision 
+				stream<axiWord>&					input_data			// output data
+) {
+
+	axiWord 	currWord;
+
+	char packet [65536]={0x4A,0xFD,0x4B,0xE0,0x87,0xBD,0x0,0x0A,0x35,0x02,0x9D,0xE5,0x08,0x00}; // Include the Ethernet header
+	int pointer = 14;
+	
+	if (ethernet){
+		pointer = 0;
+	}
+
+
+	if (pcap_open_write(file2load,microseconds)==0){
+
+		while(!input_data.empty()){
+			input_data.read(currWord);
+			for (int i =0 ; i<64 ; i++){
+				if (currWord.keep.bit(i)){
+					packet[pointer] = currWord.data(i*8+7,i*8);
+					pointer++;
+				}
+			}
+			if (currWord.last){
+				//call write function
+				pcap_WriteData(&packet[0],pointer);
+				pointer = (ethernet) ? 0 : 14;
+			}
+		}
+
+	//pcap_WriteData(&packet[0],pointer);
+	}
+
+	pcap_close_write();
+
+}

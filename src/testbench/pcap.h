@@ -78,7 +78,7 @@ typedef void (*pcap_handler) (unsigned char *user,
 int pcap_open (char *path);
 
 /**
-* @brief Close a previous file opened with pcap_open or pcap_open_direct.
+* @brief Close a previous file opened with pcap_open.
 *
 * @param descriptor The return value of such functions.
 */
@@ -95,5 +95,25 @@ void pcap_close ();
 * @return The number of packets that have been processed.
 */
 int pcap_loop (int cnt, pcap_handler callback, unsigned char *user);
+
+/**
+* @brief Open a pcap file in write only mode.
+*
+* @param path Path to the file.
+*
+* @return if was create successful or not.
+*/
+int pcap_open_write (char *path, bool microseconds);
+
+
+int pcap_WriteData (char *data, int data_size);
+
+/**
+* @brief Close a previous file opened with pcap_open_write.
+*
+* @param descriptor The return value of such functions.
+*/
+
+void pcap_close_write ();
 
 #endif

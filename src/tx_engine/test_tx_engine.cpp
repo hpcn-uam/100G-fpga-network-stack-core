@@ -27,6 +27,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
 ************************************************/
 #include "tx_engine.hpp"
+#include "../testbench/pcap2stream.hpp"
 
 using namespace hls;
 using namespace std;
@@ -49,7 +50,8 @@ void simulateSARtables(	stream<rxSarEntry>&				rxSar2txEng_upd_rsp,
 		txEng2txSar_upd_req.read(in_txaccess);
 		if (in_txaccess.write == 0)
 		{
-			txSar2txEng_upd_rsp.write(((txTxSarReply) {3, 5, 0xffff, 1500, false,false}));
+			txSar2txEng_upd_rsp.write(((txTxSarReply) {64700, 65156, 0xffff, 1100, false,false}));
+			//txSar2txEng_upd_rsp.write(((txTxSarReply) {64700, 65156, 0xffff, 1100, false,false}));
 		}
 		//omit write
 	}
@@ -65,12 +67,18 @@ void simulateTxBuffer(stream<mmCmd>&	command,
 	static ap_uint<4> 	bcd_l=0;
 	static ap_uint<4> 	bcd_h=0;
 
+	static int packet = 0;
+	static int transaction = 0;
+	ap_uint<7> bytes;
+	static int byte_count = 0;
+
 	axiWord memWord;
 
 	switch (fsmState) {
 		case 0:
 			if (!command.empty()) {
 				command.read(cmd);
+				//cout << "CMD address: " << hex << cmd.saddr <<"\t bytes to transfer: " << dec <<  cmd.bbt << endl;
 				fsmState = 1;
 			}
 			break;
@@ -78,7 +86,7 @@ void simulateTxBuffer(stream<mmCmd>&	command,
 
 			memWord.last = 0x0;
 			for (int i=0 ; i < 64 ; i++){
-				if (wordCount <= cmd.bbt){
+				if (wordCount < cmd.bbt){
 					memWord.data(i*8+7,i*8) = (bcd_h,bcd_l);
 					memWord.keep.bit(i) = 1;
 
@@ -91,6 +99,10 @@ void simulateTxBuffer(stream<mmCmd>&	command,
 						}
 					}
 				}
+				else{
+					memWord.data(i*8+7,i*8)=0;
+					memWord.keep.bit(i) = 0;
+				}
 				wordCount++;
 			}
 
@@ -100,7 +112,20 @@ void simulateTxBuffer(stream<mmCmd>&	command,
 				wordCount = 0;
 			}
 
-			//cout << "Payload: " << hex << memWord.data << "\tkeep: " << memWord.keep << "\tlast: " << dec << memWord.last << endl;
+			//cout << "Data[" << dec << packet << "]["<< transaction <<"] " << hex << memWord.data << "\tkeep: " << memWord.keep << "\tlast: " << dec << memWord.last << endl << endl;;
+
+			bytes = keep2len (memWord.keep);
+			byte_count += bytes;
+
+			if (memWord.last){
+				packet++;
+				transaction = 0;
+				//cout << "bytes count: " << byte_count << endl;
+				byte_count = 0;
+			}
+			else{
+				transaction++;
+			}
 
 			dataOut.write(memWord);
 			break;
@@ -111,10 +136,10 @@ void simulateRevSLUP(stream<ap_uint<16> >&			txEng2sLookup_rev_req,
 					stream<fourTuple>&				sLookup2txEng_rev_rsp)
 {
 	fourTuple tuple;
-	tuple.dstIp = 0x0101010a;
-	tuple.dstPort = 0x5001;
-	tuple.srcIp = 0x01010101;
-	tuple.srcPort = 0xaffff;
+	tuple.dstIp = 0xC0A80005;
+	tuple.dstPort = 5001;
+	tuple.srcIp = 0xC0A80008;
+	tuple.srcPort = 60000;
 	if (!txEng2sLookup_rev_req.empty())
 	{
 		txEng2sLookup_rev_req.read();
@@ -122,7 +147,7 @@ void simulateRevSLUP(stream<ap_uint<16> >&			txEng2sLookup_rev_req,
 	}
 }
 
-int main()
+int main(int argc, char **argv)
 {
 	ap_uint<16> sessionID;
 	stream<extendedEvent>			eventEng2txEng_event("eventEng2txEng_event");
@@ -142,7 +167,10 @@ int main()
 	vector<int> values;
 	vector<int> lengths;
 
+	ap_uint<1> 						read_count_fifo;
+
 	ofstream outputFile;
+
 
 
 	outputFile.open("/home/mario/Documents/cmac_100g/submodules/tcp_ip_cores/TOE/src/tx_engine/out.dat");
@@ -157,8 +185,7 @@ int main()
 	uint64_t dataTemp;
 	uint16_t lastTemp;
 	int count = 0;
-	while (count < 1000)
-	{
+	while (count < 1000) {
 		int v = rand() % 100;
 		int v1 = rand() % 32000;
 		int len = rand() % 10;
@@ -171,13 +198,14 @@ int main()
 		values.push_back(v);
 		lengths.push_back(len+2);*/
 
-		if ((count % 9) == 0){
+		if ((count % 90) == 0){
 		//if (count  == 9) {
 			eventEng2txEng_event.write(event(TX, 3, 100, 536));
 			values.push_back(3);
 			lengths.push_back(536);
 		}
 
+
 		tx_engine(	eventEng2txEng_event,
 					rxSar2txEng_upd_rsp,
 					txSar2txEng_upd_rsp,
@@ -194,23 +222,11 @@ int main()
 		simulateSARtables(rxSar2txEng_upd_rsp, txSar2txEng_upd_rsp, txEng2rxSar_upd_req, txEng2txSar_upd_req);
 		simulateTxBuffer(txBufferReadCmd, txBufferReadData);
 		simulateRevSLUP(txEng2sLookup_rev_req, sLookup2txEng_rev_rsp);
-		
-		while (!ipTxData.empty()) {
-			ipTxData.read(outData);
-			//outputFile << hex;
-			//outputFile << setfill('0');
-			outputFile << "Data: " << hex << outData.data << "\tkeep: " << outData.keep << "\tlast: " << dec << outData.last << endl;
-			//outputFile << setw(1) ;
-			//if (outData.last) {
-			//	outputFile << "len: " << lengths[count] << endl;
-			//	count++;
-			//}
-		}
+
 		count++;
 	}
 	count = 0;
-	while (count < 1000)
-	{
+	while (count < 1000) {
 		tx_engine(	eventEng2txEng_event,
 					rxSar2txEng_upd_rsp,
 					txSar2txEng_upd_rsp,
@@ -230,43 +246,34 @@ int main()
 		count++;
 	}
 
-	outputFile << "Data: " << endl;
 	count = 0;
-	while (!ipTxData.empty())
-	{
-		ipTxData.read(outData);
-//		outputFile << hex;
-//		outputFile << setfill('0');
-//		outputFile << setw(16) << (uint32_t) outData.data(63, 32) << (uint32_t) outData.data(31, 0) << " " << setw(2) << outData.keep << " ";
-//		outputFile << setw(1) << outData.last << endl;
-		outputFile << "Data: " << hex << outData.data << "\tkeep: " << outData.keep << "\tlast: " << dec << outData.last << endl;
-//		if (outData.last)
-//		{
-//			outputFile << "len: " << lengths[count] << endl;
-//			count++;
-//		}
-	}
 
-	outputFile << "rtTimer: " << endl;
+	//char  *output_pcap="/home/mario/Documents/cmac_100g/submodules/tcp_ip_cores/TOE/src/tx_engine/out_pcap.pcap";
+
+	stream2pcap(argv[1],false,true,ipTxData);
+	
+	outputFile << endl;
+	while (!readCountFifo.empty()) {
+		readCountFifo.read(read_count_fifo);
+		outputFile << dec << "readCountFifo: " << hex << read_count_fifo << endl;
+	}
+	
+	outputFile << endl;
 	count = 0;
 	txRetransmitTimerSet set;
 	while (!(txEng2timer_setRetransmitTimer.empty()))
 	{
 		txEng2timer_setRetransmitTimer.read(set);
-		outputFile << set.sessionID << " ";
-		outputFile << ((set.sessionID == values[count]) ? "match" : "no match");
-		outputFile << endl;
+		outputFile  << "rtTimer ID: " << set.sessionID << " " << ((set.sessionID == values[count]) ? "match" : "no match") << endl;
+		//outputFile ;
 		count++;
 	}
 
-	outputFile << "timer2: " << endl;
 	count = 0;
-	while (!(txEng2timer_setProbeTimer.empty()))
-	{
+	while (!(txEng2timer_setProbeTimer.empty())) {
 		txEng2timer_setProbeTimer.read(sessionID);
-		outputFile << sessionID << " ";
-		outputFile << ((sessionID == values[count]) ? "match" : "no match");
-		outputFile << endl;
+
+		outputFile  << "timer2 ID: " << sessionID << " " << ((sessionID == values[count]) ? "match" : "no match") << endl;
 		count++;
 	}
 

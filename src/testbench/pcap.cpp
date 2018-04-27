@@ -17,25 +17,27 @@
 #endif
 
 
-static int fd = 0;                   /**< File descriptor of the pcap file */
-static uint64_t file_proc_size = 0;     
+static int file_read = 0;                   /**< File descriptor of the pcap file to read*/
+static FILE * file_write = NULL;                   /**< File descriptor of the pcap file to write */
+static uint64_t file_proc_size_read = 0;     
 static void *memfile;
-static struct stat sb;
+static struct stat sr;
+static struct stat sw;
 
 
 
 int pcap_open (char *path)
 {
-  if (fd) {   /* Ensure just one file is opened. */
+  if (file_read) {   /* Ensure just one file is opened. */
     return -1;
   }
 
-  fd = open (path, O_RDONLY);
-  fstat(fd, &sb);
+  file_read = open (path, O_RDONLY);
+  fstat(file_read, &sr);
 #ifdef _WIN32
-  	  memfile = mmap(NULL, sb.st_size, NULL, MAP_PRIVATE, fd, 0);
+  	  memfile = mmap(NULL, sr.st_size, NULL, MAP_PRIVATE, file_read, 0);
 #else
-  	  memfile = mmap(NULL, sb.st_size, PROT_WRITE, MAP_PRIVATE, fd, 0);
+  	  memfile = mmap(NULL, sr.st_size, PROT_WRITE, MAP_PRIVATE, file_read, 0);
 #endif
   if (memfile == MAP_FAILED) {
     printf("Error in mmap %d\n",memfile);
@@ -43,7 +45,7 @@ int pcap_open (char *path)
     return -1;
   }
 
-  file_proc_size = 0;
+  file_proc_size_read = 0;
 
   return 0;
 }
@@ -52,13 +54,13 @@ int pcap_open (char *path)
 
 void pcap_close ()
 {
-  munmap(memfile, sb.st_size);
-  close (fd);
+  munmap(memfile, sr.st_size);
+  close (file_read);
 }
 
 static int pcap_eof ()
 {
-  if (file_proc_size >= sb.st_size) {
+  if (file_proc_size_read >= sr.st_size) {
     return 1;
   } else {
     return 0;
@@ -73,7 +75,7 @@ static int pcap_eof ()
 static int readHeader ()
 {
   /* Just ignore it */
-  file_proc_size+=sizeof (pcap_hdr_t);
+  file_proc_size_read+=sizeof (pcap_hdr_t);
   return 0;
 }
 
@@ -91,11 +93,11 @@ static int readPacket (uint8_t **data, struct pcap_pkthdr *hdr)
 {
   pcaprec_hdr_t localheader;
 
-  if (file_proc_size+sizeof (pcaprec_hdr_t) >= sb.st_size)
+  if (file_proc_size_read+sizeof (pcaprec_hdr_t) >= sr.st_size)
     return 0;
 
-  localheader = *((pcaprec_hdr_t *)((uint8_t *)memfile+file_proc_size));
-  file_proc_size+=sizeof (pcaprec_hdr_t);
+  localheader = *((pcaprec_hdr_t *)((uint8_t *)memfile+file_proc_size_read));
+  file_proc_size_read+=sizeof (pcaprec_hdr_t);
   
 
 
@@ -104,8 +106,8 @@ static int readPacket (uint8_t **data, struct pcap_pkthdr *hdr)
   hdr->len        = localheader.orig_len;
 
 
-  *data =  (uint8_t *)memfile+file_proc_size;
-  file_proc_size+=localheader.incl_len;
+  *data =  (uint8_t *)memfile+file_proc_size_read;
+  file_proc_size_read+=localheader.incl_len;
 
   return 1;
 }
@@ -148,3 +150,71 @@ int pcap_loop (int cnt, pcap_handler callback, unsigned char *user)
   return cnt;
 }
 
+
+int pcap_WriteHeader (bool microseconds){
+
+  pcap_hdr_t global_header;
+
+  if (microseconds){
+    global_header.magic_number  = 0xa1b2c3d4;
+  }
+  else {
+    global_header.magic_number  = 0xa1b23c4d; 
+  }
+
+  global_header.version_major = 2;
+  global_header.version_minor = 4;
+  global_header.thiszone      = 0;
+  global_header.sigfigs       = 0;
+  global_header.snaplen       = 65535;
+  global_header.network       = 1;
+
+
+  fwrite(&global_header, sizeof(pcap_hdr_t), 1, file_write);
+
+}
+
+
+int pcap_WriteData (char *data, int data_size){
+  pcaprec_hdr_t local_header;
+
+  local_header.ts_sec   = 0;
+  local_header.ts_usec  = 0;
+  local_header.incl_len = data_size;
+  local_header.orig_len = data_size;
+
+  fwrite(&local_header, sizeof(pcaprec_hdr_t), 1, file_write);
+
+
+  for (int i=0 ; i < data_size ; i++){
+    fwrite(&data[i], 1 , 1 , file_write);
+  }
+
+  //fwrite(&data, data_size, 1, file_write);
+
+}
+
+
+int pcap_open_write (char *path, bool microseconds) {
+  
+  if (file_write != NULL) {   /* Ensure just one file is opened. */
+    perror("An output file is already open\n");
+    return -1;
+  }
+
+  if ((file_write = fopen (path, "wb")) == NULL){
+    perror("POW: Error opening output file\n");
+    return -1;
+  }
+
+  pcap_WriteHeader(microseconds);
+
+  return 0;
+}
+
+
+void pcap_close_write ()
+{
+  munmap(memfile, sw.st_size);
+  fclose (file_write);
+}
