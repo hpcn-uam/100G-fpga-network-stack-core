@@ -1,6 +1,8 @@
 
 #include "utilities.hpp"
 
+using namespace std;
+
 ap_uint<7> keep2len(ap_uint<64> keepValue){
 
 	if (keepValue.bit(63))
@@ -223,7 +225,7 @@ void tx_align_two_64bytes_words (
 //#pragma HLS INLINE
 
 	if (currWord.last){
-		if (currWord.keep.bit(byte_offset)){
+		if (currWord.keep.bit(64-byte_offset) && byte_offset!=0){
 			SendWord->last = 0;
 			next_prev_word->last = 1;
 		}
@@ -240,6 +242,7 @@ void tx_align_two_64bytes_words (
 
 	next_prev_word->data = 0;
 	next_prev_word->keep = 0;
+
 
 	switch(byte_offset){	
 		case 0:
@@ -626,9 +629,12 @@ void tx_align_two_64bytes_words (
 			next_prev_word->data(503,  0) = currWord.data(511,  8);
 			next_prev_word->keep( 62,  0) = currWord.keep( 63,  1);
 			break;
-			}
+	}
 
-	
+	//cout << dec << "payload offset " << byte_offset << endl;
+	//cout << "prevWord :" << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
+	//cout << "currWord :" << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+	//cout << "SendWord :" << hex << SendWord->data << "\tkeep: " << SendWord->keep << "\tlast: " << dec << SendWord->last << endl;
 
 }
 

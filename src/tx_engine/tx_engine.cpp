@@ -618,6 +618,7 @@ void ipHeaderConstruction(
 	if (!txEng_ipMetaDataFifoIn.empty() && !txEng_ipTupleFifoIn.empty()){
 		txEng_ipMetaDataFifoIn.read(length);
 		txEng_ipTupleFifoIn.read(ihc_tuple);
+		//cout << "IPH length: " << dec << length << endl;
 		length = length + 40;						// TODO: it has to be change if TCP options are implemented
 
 		// Compose the IP header
@@ -767,10 +768,10 @@ void tx_payload_stitcher(
 	if (!txEng_pseudo_tcpHeader.empty() && read_pseudo_header && !extra_word){
 		txEng_pseudo_tcpHeader.read(pseudo_word);
 
-		//cout << "pseudo   : " << hex << pseudo_word.data << "\tkeep: " << pseudo_word.keep << "\tlast: " << dec << pseudo_word.last << endl;
 
 		if (pseudo_word.data.bit(201)){ 				// It is a SYN packet, send it immediately 
 			txEng_tcpSegOut.write(pseudo_word);
+			//cout << "pseudo 0: " << hex << pseudo_word.data << "\tkeep: " << pseudo_word.keep << "\tlast: " << dec << pseudo_word.last << endl;
 		}
 		else {
 
@@ -799,6 +800,7 @@ void tx_payload_stitcher(
 				prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
 				prevWord.last       	= 	payload_word.last;
 
+			//cout << "pseudo 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 				txEng_tcpSegOut.write(sendWord);
 			}
 			else {
@@ -812,8 +814,6 @@ void tx_payload_stitcher(
 	}
 	else if (!txBufferReadData.empty() && !read_pseudo_header &&  !extra_word){ 									// 
 		txBufferReadData.read(payload_word);
-		//cout << "Prev   : " << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
-		//cout << "Payload: " << hex << payload_word.data << "\tkeep: " << payload_word.keep << "\tlast: " << dec << payload_word.last << endl;
 		sendWord.data(255,  0) = prevWord.data(255,  0);			// TODO this is only valid with no TCP options
 		sendWord.data(511,256) = payload_word.data(255,  0);
 		sendWord.keep( 31,  0) = prevWord.keep( 31,  0);
@@ -834,8 +834,8 @@ void tx_payload_stitcher(
 		prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
 		prevWord.last       	= 	payload_word.last;
 
-		//cout << "sendWord   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-
+		//cout << "pseudo data: " << hex << payload_word.data << "\tkeep: " << payload_word.keep << "\tlast: " << dec << payload_word.last << endl;
+		//cout << "pseudo 2: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		txEng_tcpSegOut.write(sendWord);
 
 	}
@@ -846,8 +846,8 @@ void tx_payload_stitcher(
 		sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
 		sendWord.last 		   	= 1;
 
-		//cout << "sendWord   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-
+		//cout << "pseudo 3: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		
 		txEng_tcpSegOut.write(sendWord);
 	}
 
@@ -1050,8 +1050,8 @@ void txEngMemAccessBreakdown(
 #pragma HLS INLINE off
 	static bool txEngBreakdown = false;
 	static mmCmd txEngTempCmd;
-	static uint16_t txEngBreakTemp = 0;
-	static uint16_t txPktCounter = 0;
+	static ap_uint<16> 	txEngBreakTemp = 0;
+	static ap_uint<16> 	txPktCounter = 0;
 	memDoubleAccess 	double_access=memDoubleAccess(false,0);
 
 	if (txEngBreakdown == false) {
@@ -1064,7 +1064,7 @@ void txEngMemAccessBreakdown(
 				txEngBreakdown = true;
 
 				double_access.double_access = true;
-				double_access.offset 		= txEngBreakTemp & 0x3F;	// Offset of MSB byte valid in the last transaction of the first burst
+				double_access.offset 		= txEngBreakTemp(5,0);	// Offset of MSB byte valid in the last transaction of the first burst
 			}
 			outputMemAccess.write(tempCmd);
 			memAccessBreakdown.write(double_access);
@@ -1120,7 +1120,7 @@ void tx_payload_aligner(
 
 		breakdownAccess		= mem_double_access.double_access;
 		byte_offset			= mem_double_access.offset;
-
+		//cout << "byte offset: " << dec << byte_offset << endl;
 		mem_payload_unaligned.read(currWord);
 
 		if (currWord.last){
@@ -1129,12 +1129,14 @@ void tx_payload_aligner(
 			}
 			else{
 				align_words	= false;
+				//cout << "Payload aligner 0: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 				tx_payload_aligned.write(currWord);
 			}
 			reading_payload = false;
 		}
 		else{
 			reading_payload = true;
+			//cout << "Payload aligner 1: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 			tx_payload_aligned.write(currWord);
 		}
 
@@ -1149,11 +1151,13 @@ void tx_payload_aligner(
 			}
 			else{
 				align_words	= false;
+				//cout << "Payload aligner 2: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 				tx_payload_aligned.write(currWord);
 			}
 			reading_payload = false;
 		}
 		else{
+			//cout << "Payload aligner 3: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 			tx_payload_aligned.write(currWord);
 		}
 		prevWord = currWord;
@@ -1164,20 +1168,22 @@ void tx_payload_aligner(
 		tx_align_two_64bytes_words(currWord,prevWord,byte_offset,&sendWord,&next_previous_word);
 
 		if (currWord.last){
-			if(currWord.keep.bit(byte_offset)){
+			if(currWord.keep.bit(64-byte_offset) && byte_offset != 0){
 				extra_word = true;
 			}
 			else {
 				align_words = false;
 			}
 		}
-
+		//cout << "Double access : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		tx_payload_aligned.write(sendWord);
 		
 		prevWord = next_previous_word;
 	}
 	else if (extra_word){
 		extra_word = false;
+		align_words = false;
+		//cout << "Extra : " << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
 		tx_payload_aligned.write(prevWord);
 	}
 
@@ -1193,10 +1199,32 @@ void txDataBroadcast(
 
 	axiWord currWord;
 
+	static int transaction = 0;
+	static int packet = 0;
+	static int byte_count =0;
+	ap_uint<7>  bytes;
+
 	if (!in.empty()) {
 		in.read(currWord);
 		out1.write(currWord);
 		out2.write(currWord);
+
+		bytes = keep2len (currWord.keep);
+		byte_count += bytes;
+
+		//cout << "Broadcaster ["<< dec << packet << "][" << transaction << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+		if (currWord.last){
+			packet++;
+			transaction =0;
+			//cout << "bytes count: " << byte_count << endl;
+			byte_count = 0;
+		}
+		else{
+			if (bytes !=64){
+				//cout << "Error bytes do not match" << endl;
+			}
+			transaction++;
+		}
 	}
 }
 
@@ -1224,7 +1252,7 @@ void txPseudo_header_Remover(
 				sendWord.keep( 51,  0) 	= currWord.keep( 63, 12);
 				sendWord.last 			= 1;
 				dataOut.write(sendWord);
-				//cout << "HR Out   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+				//cout << "HR Out 1   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			}
 		}
 		else{
@@ -1242,7 +1270,7 @@ void txPseudo_header_Remover(
 			else
 				sendWord.last = currWord.last;
 
-			//cout << "HR Out   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+			//cout << "HR Out 2  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			dataOut.write(sendWord);
 		}
 
@@ -1258,7 +1286,7 @@ void txPseudo_header_Remover(
 		sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
 
 		sendWord.last 			= 1;
-		//cout << "HR Out Extra   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		//cout << "HR Out Extra 3  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		dataOut.write(sendWord);
 	}
 }
