@@ -853,107 +853,6 @@ void tx_payload_stitcher(
 
 }
 
-
-/** @ingroup tx_engine
- *  Computes the TCP checksum and writes it into @param txEng_pseudo_tcp_checksum
- *	@param[in]		dataIn, incoming data stream
- *	@param[out]		dataOut, outgoing data stream
- *	@param[out]		txEng_pseudo_tcp_checksum, the computed checksum are stored into this FIFO
- */
-void tx_compute_pseudo_tcp_checksum(	
-									stream<axiWord>&			dataIn,
-									stream<ap_uint<16> >&		txEng_pseudo_tcp_checksum)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-
-	axiWord 				currWord;
-	static ap_uint<1> 		compute_checksum=0;
-
-	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-
-	ap_uint<16> tmp;
-	ap_uint<17> tmp1;
-	ap_uint<17> tmp2;
-
-	static ap_uint<17> ip_sums_L1[16];
-	static ap_uint<18> ip_sums_L2[8];
-	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
-	static ap_uint<20> ip_sums_L4[2];
-	static ap_uint<21> ip_sums_L5;
-	ap_uint<17> final_sum_r; // real add
-	ap_uint<17> final_sum_o; // overflowed add
-	ap_uint<16> res_checksum;
-
-	if (!dataIn.empty() && !compute_checksum){
-		dataIn.read(currWord);
-
-		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
-#pragma HLS UNROLL
-
-			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
-			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
-
-			tmp1 		= word_sum[i] + tmp;
-			tmp2 		= word_sum[i] + tmp + 1;
-
-			if (tmp1.bit(16)) 				// one's complement adder
-				word_sum[i] = tmp2(15,0);
-			else
-				word_sum[i] = tmp1(15,0);
-
-
-		}
-
-		if(currWord.last){
-			compute_checksum = 1;
-		}
-
-	}
-	else if(compute_checksum) {
-
-		//adder tree
-		second_level_sum : for (int i = 0; i < 16; i++) {
-		#pragma HLS unroll
-			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
-			word_sum[i*2]   = 0; // clear adder variable
-			word_sum[i*2+1] = 0;
-		}
-
-		//adder tree L2
-		third_level_sum : for (int i = 0; i < 8; i++) {
-		#pragma HLS unroll
-			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
-		}
-
-		//adder tree L3
-		fourth_level_sum : for (int i = 0; i < 4; i++) {
-		#pragma HLS unroll
-			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
-		}
-
-		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
-		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
-		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
-
-		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
-		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
-
-		if (final_sum_r.bit(16))
-			res_checksum = ~(final_sum_o.range(15,0));
-		else
-			res_checksum = ~(final_sum_r.range(15,0));
-
-		compute_checksum = 0;
-		
-		txEng_pseudo_tcp_checksum.write(res_checksum);
-
-	}
-
-}
-
-
-
 /** @ingroup tx_engine
  *  Reads the IP header stream and the payload stream. It also inserts TCP checksum
  *  The complete packet is then streamed out of the TCP engine. 
@@ -1320,7 +1219,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<mmCmd>&					txBufferReadCmd,
 				stream<ap_uint<16> >&			txEng2sLookup_rev_req,
 				stream<axiWord>&				ipTxData,
-				stream<ap_uint<1> >&			readCountFifo)
+				stream<ap_uint<1> >&			readCountFifo,
+				stream<axiWord>&				tx_pseudo_packet_to_checksum,
+				stream<ap_uint<16> >&			tx_pseudo_packet_res_checksum)
 {
 #pragma HLS DATAFLOW
 //#pragma HLS INTERFACE ap_ctrl_none port=return
@@ -1358,12 +1259,12 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txEng_tcpPkgBuffer depth=256  // critical, has to keep complete packet for checksum computation
 	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer
 	
-	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
-	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
-	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_checksum
+// 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
+//	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
+//	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_checksum
 
-	static stream<ap_uint<16> >			txEng_tcpChecksumFifo("txEng_tcpChecksumFifo");
-	#pragma HLS stream variable=txEng_tcpChecksumFifo depth=4
+//	static stream<ap_uint<16> >			txEng_tcpChecksumFifo("txEng_tcpChecksumFifo");
+//	#pragma HLS stream variable=txEng_tcpChecksumFifo depth=4
 
 	static stream<fourTuple> 		txEng_tupleShortCutFifo("txEng_tupleShortCutFifo");
 	#pragma HLS stream variable=txEng_tupleShortCutFifo depth=2
@@ -1452,11 +1353,8 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	txDataBroadcast(
 				tx_Eng_pseudo_pkt,
 				tx_Eng_pseudo_pkt_2_rm,
-				tx_Eng_pseudo_pkt_2_checksum);
+				tx_pseudo_packet_to_checksum);
 
-	tx_compute_pseudo_tcp_checksum(
-				tx_Eng_pseudo_pkt_2_checksum, 
-				txEng_tcpChecksumFifo);
 
 	txPseudo_header_Remover(
 				tx_Eng_pseudo_pkt_2_rm,
@@ -1465,6 +1363,6 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	tx_ip_pkt_stitcher(
 				txEng_ipHeaderBuffer, 
 				txEng_tcpPkgBuffer, 
-				txEng_tcpChecksumFifo, 
+				tx_pseudo_packet_res_checksum, 
 				ipTxData);
 }

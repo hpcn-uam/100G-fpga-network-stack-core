@@ -356,10 +356,10 @@ struct txTxSarReply
 	ap_uint<16> min_window;
 	ap_uint<16> app;
 	bool		finReady;
-	bool		finSent;
+	bool		finSent;/*
 	ap_uint<16> currLength; 
 	ap_uint<16> Send_Window;
-	ap_uint<16> UsableWindow;
+	ap_uint<16> UsableWindow;*/
 	txTxSarReply() {}
 	txTxSarReply(ap_uint<32> ack, ap_uint<32> nack, ap_uint<16> min_window, ap_uint<16> app, bool finReady, bool finSent)
 		:ackd(ack), not_ackd(nack), min_window(min_window), app(app), finReady(finReady), finSent(finSent) {}
@@ -595,6 +595,7 @@ void toe(	// Data & Memory Interface
 			//IP Address Input
 			ap_uint<32>								myIpAddress,
 			//statistic
-			ap_uint<16>&							regSessionCount);
-
+			ap_uint<16>&							regSessionCount,
+			stream<axiWord>&						tx_pseudo_packet_to_checksum,
+			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum);
 #endif

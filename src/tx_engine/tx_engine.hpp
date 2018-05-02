@@ -90,18 +90,20 @@ struct twoTuple
  *  complete packet is then streamed out of the @ref tx_engine.
  */
 void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
-				stream<rxSarEntry>&				rxSar2txEng_upd_rsp,
+				stream<rxSarEntry>&			    rxSar2txEng_rsp,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
-				stream<axiWord>&				txBufferReadData,
+				stream<axiWord>&				txBufferReadData_unaligned,
 #if (TCP_NODELAY)
 				stream<axiWord>&				txApp2txEng_data_stream,
 #endif
 				stream<fourTuple>&				sLookup2txEng_rev_rsp,
-				stream<ap_uint<16> >&			txEng2rxSar_upd_req,
+				stream<ap_uint<16> >&			txEng2rxSar_req,
 				stream<txTxSarQuery>&			txEng2txSar_upd_req,
 				stream<txRetransmitTimerSet>&	txEng2timer_setRetransmitTimer,
 				stream<ap_uint<16> >&			txEng2timer_setProbeTimer,
 				stream<mmCmd>&					txBufferReadCmd,
 				stream<ap_uint<16> >&			txEng2sLookup_rev_req,
 				stream<axiWord>&				ipTxData,
-				stream<ap_uint<1> >&			readCountFifo);
+				stream<ap_uint<1> >&			readCountFifo,
+				stream<axiWord>&				tx_pseudo_packet_to_checksum,
+				stream<ap_uint<16> >&			tx_pseudo_packet_res_checksum);
