@@ -694,17 +694,17 @@ void pseudoHeaderConstruction(
 		sendWord.data(191,184) = phc_meta.ackNumb(7, 0);
 
 
+		sendWord.data.bit(192) = 0; //NS bit
 		sendWord.data(195,193) = 0; // reserved
 		sendWord.data(199,196) = (0x5 + phc_meta.syn); //data offset
 		/* Control bits:
-		 * [8] == FIN
-		 * [9] == SYN
-		 * [10] == RST
-		 * [11] == PSH
-		 * [12] == ACK
-		 * [13] == URG
+		 * [200] == FIN
+		 * [201] == SYN
+		 * [202] == RST
+		 * [203] == PSH
+		 * [204] == ACK
+		 * [205] == URG
 		 */
-		sendWord.data.bit(192) = 0; //NS bit
 		sendWord.data.bit(200) = phc_meta.fin; //control bits
 		sendWord.data.bit(201) = phc_meta.syn;
 		sendWord.data.bit(202) = phc_meta.rst;
@@ -718,15 +718,13 @@ void pseudoHeaderConstruction(
 			sendWord.data(263, 256) = 0x02; // Option Kind
 			sendWord.data(271, 264) = 0x04; // Option length
 			sendWord.data(287, 272) = 0xB405; // 0x05B4 = 1460
-			sendWord.data(319, 288) = 0;
-			sendWord.keep = 0xFFFFFFFFFF;
+			sendWord.keep = 0xFFFFFFFFF;
 		}
 		else {
 			sendWord.keep = 0xFFFFFFFF;
 		}
 
 		sendWord.last=1;
-
 		dataOut.write(sendWord);
 	}
 }
@@ -1088,45 +1086,6 @@ void tx_payload_aligner(
 
 }
 
-void txDataBroadcast(
-					stream<axiWord>& in, 
-					stream<axiWord>& out1, 
-					stream<axiWord>& out2)
-{
-#pragma HLS PIPELINE II=1
-#pragma HLS INLINE off
-
-	axiWord currWord;
-
-	static int transaction = 0;
-	static int packet = 0;
-	static int byte_count =0;
-	ap_uint<7>  bytes;
-
-	if (!in.empty()) {
-		in.read(currWord);
-		out1.write(currWord);
-		out2.write(currWord);
-
-		bytes = keep2len (currWord.keep);
-		byte_count += bytes;
-
-		//cout << "Broadcaster ["<< dec << packet << "][" << transaction << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-		if (currWord.last){
-			packet++;
-			transaction =0;
-			//cout << "bytes count: " << byte_count << endl;
-			byte_count = 0;
-		}
-		else{
-			if (bytes !=64){
-				//cout << "Error bytes do not match" << endl;
-			}
-			transaction++;
-		}
-	}
-}
-
 void txPseudo_header_Remover(
 		stream<axiWord>&	dataIn, 
 		stream<axiWord>&	dataOut 
@@ -1350,7 +1309,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				tx_Eng_pseudo_pkt);
 
 
-	txDataBroadcast(
+	DataBroadcast(
 				tx_Eng_pseudo_pkt,
 				tx_Eng_pseudo_pkt_2_rm,
 				tx_pseudo_packet_to_checksum);
