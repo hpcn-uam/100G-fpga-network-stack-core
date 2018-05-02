@@ -38,6 +38,7 @@ void combine_words(
 					ap_uint<4> ip_headerlen,
 					axiWord* sendWord){
 
+#pragma HLS INLINE
 	switch(ip_headerlen) {
 		case 5:
 			sendWord->data( 447,   0) 	= previousWord.data(511,  64);
@@ -201,9 +202,7 @@ void rxTCP_pseudoheader_insert(
 				ip_dst 				= currWord.data(159,128);
 
 				keep_extra = 8 + (ip_headerlen-5) * 4;
-
 				prevWord = currWord;
-
 				if (currWord.last){
 					currWord.data = 0;
 					currWord.keep = 0;
@@ -225,10 +224,8 @@ void rxTCP_pseudoheader_insert(
 					fsm_state = TCP_PAYLOAD;
 				}
 				break;
-
 			case (TCP_PAYLOAD) :
 				dataIn.read(currWord);
-
 				combine_words( currWord, prevWord, ip_headerlen, &sendWord);
 				if (pseudo_header){
 					pseudo_header = 0;
@@ -239,7 +236,6 @@ void rxTCP_pseudoheader_insert(
 					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
 					sendWord.keep(11,0) 	= 0xFFF;
 				}
-
 				sendWord.last = 0;
 				prevWord = currWord;
 				if (currWord.last){
@@ -251,11 +247,8 @@ void rxTCP_pseudoheader_insert(
 					}
 					fsm_state = IP_HEADER;
 				}
-
 				dataOut.write(sendWord);
-
 			 	break;
-
 			default:
 				fsm_state = IP_HEADER;
 				break;
@@ -263,25 +256,28 @@ void rxTCP_pseudoheader_insert(
 	}
 }
 
-
 /** @ingroup rx_engine
- *  Checks the TCP checksum writes valid into @p validBuffer
- *  Additionally it extracts some metadata and the IP tuples from
- *  the TCP packet and writes it to @p metaDataFifoOut
+ *  This module gets the packet at Pseudo TCP layer.
+ *  First of all, it removes the pseudo TCP header and forward the payload if any.
+ *  If the res_checksum is 0, the following action are performed
+ *  It extracts some metadata and the IP tuples from
+ *  the TCP pseudo packet and writes it to @p metaDataFifoOut
  *  and @p tupleFifoOut
- *  It also sends the destination port number to the @ref port_table
+ *  Additionally, it sends the destination port number to the @ref port_table
  *  to check if the port is open.
- *  @param[in]		dataIn
- *  @param[out]		dataOut
- *  @param[out]		validFifoOut
+ *  @param[in]		pseudo_packet
+ *  @param[in]		res_checksum
+ *  @param[out]		payload
+ *  @param[out]		payload
  *  @param[out]		metaDataFifoOut
  *  @param[out]		tupleFifoOut
  *  @param[out]		portTableOut
  */
-void rxCheckTCPchecksum(
-							stream<axiWord>&				dataIn,
-							stream<axiWord>&				dataOut,
-							stream<bool>&					validFifoOut,
+void rxEng_Generate_Metadata(
+							stream<axiWord>&				pseudo_packet,
+							stream<ap_uint<16> >&			res_checksum,
+							stream<axiWord>&				payload,
+							stream<bool>&					correct_checksum,				
 							stream<rxEngineMetaData>&		metaDataFifoOut,
 							stream<fourTuple>&				tupleFifoOut,
 							stream<ap_uint<16> >&			portTableOut)
@@ -295,62 +291,38 @@ void rxCheckTCPchecksum(
 
 	static rxEngineMetaData rxMetaInfo;
 	static fourTuple 		rxTupleInfo;
-	static ap_uint<16> 		packet_checksum;
-	static ap_uint<1> 		first_word=1;
+	static bool 			first_word=true;
 	static ap_uint<16> 		dstPort;
-	static ap_uint<1> 		compute_checksum=0;
 	static ap_uint<4> 		tcp_offset;
+	static bool 			short_packet = false;
+	static bool 			extra_trans  = false;
 
-	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-	
-	ap_uint<16> tmp;
-	ap_uint<17> tmp1;
-	ap_uint<17> tmp2;
-	
-	static ap_uint<1> 	send_packet;
+	static ap_uint<16> 		payload_length;
+
+	ap_uint<16> 			rtl_checksum;
+	bool 					correct_checksum_i;
 
 
-	static ap_uint<17> ip_sums_L1[16];
-	static ap_uint<18> ip_sums_L2[8];
-	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
-	static ap_uint<20> ip_sums_L4[2];
-	static ap_uint<21> ip_sums_L5;
-	ap_uint<17> final_sum_r; // real add
-	ap_uint<17> final_sum_o; // overflowed add
-	ap_uint<16> res_checksum;
-
-	ap_uint<1> 	correct_checksum=false;
-
-	if (!dataIn.empty() && !compute_checksum){
+	if (!pseudo_packet.empty() && !short_packet && !extra_trans){
 		
-		dataIn.read(currWord);
+		pseudo_packet.read(currWord);
 		
 		if (first_word){
-			first_word=0;
-
-			packet_checksum 	= (currWord.data(231,224),currWord.data(239,232));
-
+			first_word=false;
 			// Get four tuple info
 			dstPort 			= currWord.data(127,112);
-
-//			rxTupleInfo.srcIp	= ((ap_uint<8>)currWord.data( 7 ,  0), (ap_uint<8>)currWord.data(15 ,  8), (ap_uint<8>)currWord.data(23 , 16), (ap_uint<8>)currWord.data(31 , 24));
-//			rxTupleInfo.dstIp	= ((ap_uint<8>)currWord.data(39 , 32), (ap_uint<8>)currWord.data(47 , 40), (ap_uint<8>)currWord.data(55 , 48), (ap_uint<8>)currWord.data(63 , 56));
-//			rxTupleInfo.srcPort	= (currWord.data(103, 96), currWord.data(111,104));
-//			rxTupleInfo.dstPort	= dstPort;
-			
 			// Do not swap info
 			rxTupleInfo.srcIp	= currWord.data(31 ,  0);
 			rxTupleInfo.dstIp	= currWord.data(63 , 32);
 			rxTupleInfo.srcPort	= currWord.data(111, 96);
 			rxTupleInfo.dstPort	= currWord.data(127,112);
-			
 			tcp_offset 			= currWord.data(199 ,196);
-
+			payload_length 		= (currWord.data(87 ,80),currWord.data(95 ,88)) - tcp_offset * 4;
 			// Get Meta Info
 			rxMetaInfo.seqNumb	= ((ap_uint<8>)currWord.data(135,128),(ap_uint<8>)currWord.data(143,136),(ap_uint<8>)currWord.data(151,144),(ap_uint<8>)currWord.data(159,152));
 			rxMetaInfo.ackNumb	= ((ap_uint<8>)currWord.data(167,160),(ap_uint<8>)currWord.data(175,168),(ap_uint<8>)currWord.data(183,176),(ap_uint<8>)currWord.data(191,184));
 			rxMetaInfo.winSize	= (currWord.data(215,208),currWord.data(223,216));
-			rxMetaInfo.length 	= (currWord.data(87 ,80),currWord.data(95 ,88)) - tcp_offset * 4;
+			rxMetaInfo.length 	= payload_length;
 			rxMetaInfo.cwr 		= currWord.data.bit(207);
 			rxMetaInfo.ecn 		= currWord.data.bit(206);
 			rxMetaInfo.urg 		= currWord.data.bit(205);
@@ -360,166 +332,100 @@ void rxCheckTCPchecksum(
 			rxMetaInfo.syn 		= currWord.data.bit(201);
 			rxMetaInfo.fin 		= currWord.data.bit(200);
 
-			send_packet = currWord.last;
+			short_packet 		= currWord.last;
 
 		}
-		else{
+		else{ // TODO: if tcp_offset > 13 the payload starts in the second transaction
 			sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
 			sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
 
 			if (currWord.last && currWord.keep.bit((int)(tcp_offset* 4 + 12))){
-				sendWord.last = 0;
-				send_packet  = 1;
+				sendWord.last 	= 0;
+				extra_trans  	= true;
 			}
 			else
 				sendWord.last = currWord.last;
-			dataOut.write(sendWord);
+			payload.write(sendWord);
 		}
 
 		prevWord = currWord;
 
-		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
-#pragma HLS UNROLL
-
-			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
-			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
-
-			tmp1 		= word_sum[i] + tmp;
-			tmp2 		= word_sum[i] + tmp + 1;
-
-			if (tmp1.bit(16)) 				// one's complement adder
-				word_sum[i] = tmp2(15,0);
-			else
-				word_sum[i] = tmp1(15,0);
-
-			//word_sum[i] = tmp1(15,0) + tmp1.bit(16);
-
-		}
-
 		if(currWord.last){
-			compute_checksum = 1;
-			first_word=1;
+			first_word=true;
 		}
 	}
-	else if(compute_checksum) {
-
-		if (send_packet) {
-			send_packet=0;
-			if (rxMetaInfo.length>0){										// Packets without payload are not forwarded
-				sendWord.data = prevWord.data(511,tcp_offset*32 + 96);
-				sendWord.keep = prevWord.keep( 63, tcp_offset*4 + 12);
-				sendWord.last = 1;
-				dataOut.write(sendWord);					
-			}
-		}
-
-		compute_checksum = 0;
-
-		//adder tree
-		for (int i = 0; i < 16; i++) {
-		#pragma HLS unroll
-			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
-			word_sum[i*2]   = 0; // clear adder variable
-			word_sum[i*2+1] = 0;
-		}
-
-		//adder tree L2
-		for (int i = 0; i < 8; i++) {
-		#pragma HLS unroll
-			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
-		}
-
-		//adder tree L3
-		for (int i = 0; i < 4; i++) {
-		#pragma HLS unroll
-			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
-		}
-
-		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
-		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
-		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
-
-		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
-		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
-
-		if (final_sum_r.bit(16))
-			res_checksum = ~(final_sum_o.range(15,0));
-		else
-			res_checksum = ~(final_sum_r.range(15,0));
-
-//		final_sum_r = final_sum_r.bit(16) + final_sum_r;
-//		res_checksum = ~(final_sum.range(15,0)); // ones complement
-
-		if (res_checksum == 0){
-			correct_checksum=true;
+	else if(!res_checksum.empty()){
+		res_checksum.read(rtl_checksum);
+		correct_checksum_i = (rtl_checksum==0);				// If the compute checksum is equal to zero, then the packet must be forwarded
+		
+		if (payload_length !=0)								// If there is payload send the result of the checksum
+			correct_checksum.write(correct_checksum_i);
+		
+		if (correct_checksum_i){
 			metaDataFifoOut.write(rxMetaInfo);
 			tupleFifoOut.write(rxTupleInfo);
 			portTableOut.write(dstPort);
 		}
-		if (rxMetaInfo.length>0) {
-			validFifoOut.write(correct_checksum);		// Packets without payload are not forwarded
+
+		if (short_packet){
+			short_packet = false;
+			if (payload_length !=0){
+				sendWord 	  		= axiWord(0,0,1);
+				sendWord.data 		= currWord.data(511,tcp_offset*32 + 96);
+				sendWord.keep 		= currWord.keep(63, tcp_offset* 4 + 12);
+				payload.write(sendWord);
+			}
+		}
+		else if(extra_trans){
+			extra_trans = false;
+			sendWord 	  		= axiWord(0,0,1);
+			sendWord.data 		= currWord.data(511,tcp_offset*32 + 96);
+			sendWord.keep 		= currWord.keep(63, tcp_offset* 4 + 12);
+			payload.write(sendWord);
 		}
 	}
+	
 
 
 }
 	
 
 /** @ingroup rx_engine
- *  For each packet it reads the valid value from @param validFifoIn
+ *  For each packet it reads the valid value from @param correct_checksum
  *  If the packet checksum is correct the data stream is forwarded.
  *  If it is not correct it is dropped
  *  @param[in]		dataIn, incoming data stream
- *  @param[in]		validFifoIn, Valid FIFO indicating if current packet is valid
+ *  @param[in]		correct_checksum, packet checksum if is "true" the incoming packet is correct if is not discard the packet
  *  @param[out]		dataOut, outgoing data stream
  */
 void rxTcpInvalidDropper(
 							stream<axiWord>&			dataIn,
-							stream<bool>&				validFifoIn,
+							stream<bool >&				correct_checksum,
 							stream<axiWord>&			dataOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	enum rtid_StateType {GET_VALID, FWD, DROP};
-	static rtid_StateType rtid_state = GET_VALID;
-
 	axiWord currWord;
-	bool valid;
 
-	switch (rtid_state) {
-		case GET_VALID:
-			if (!validFifoIn.empty()) {
-				validFifoIn.read(valid);
-				if (valid) {
-					rtid_state = FWD;	// Checksum correct
-				}
-				else {
-					rtid_state = DROP;  // Checksum incorrect
-				}
-			}
-			break;
-		case FWD:
-			if(!dataIn.empty() && !dataOut.full()) {
-				dataIn.read(currWord);
-				dataOut.write(currWord);
-				if (currWord.last) {
-					rtid_state = GET_VALID;
-				}
-			}
-			break;
-		case DROP:
-			if(!dataIn.empty()) {
-				dataIn.read(currWord);
-				if (currWord.last) {
-					rtid_state = GET_VALID;
-				}
-			}
-			break;
+	static bool reading_data 	= false;
+	static bool forward_packet 	= false;
+
+	if (!correct_checksum.empty() && !reading_data){
+		correct_checksum.read(forward_packet); 			// if it is "true" the packet has to be forwarded
+		reading_data = true;
+	}
+	else if (!dataIn.empty() && reading_data){
+		dataIn.read(currWord);
+
+		if (forward_packet){
+			dataOut.write(currWord);
+		}
+		if (currWord.last){
+			reading_data = false;
+		}
 	}
 }
-
-
 
 
 /** @ingroup rx_engine
@@ -665,10 +571,11 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 						stream<openStatus>&						openConStatusOut,
 						stream<event>&							rxEng2eventEng_setEvent,
 						stream<bool>&							dropDataFifoOut,
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 						stream<mmCmd>&							rxBufferWriteCmd,
 #endif
-						stream<appNotification>&				rxEng2rxApp_notification)
+						stream<appNotification>&				rxEng2rxApp_notification)	// The notification are use both with DDR or no DDR
+
 {
 #pragma HLS LATENCY max=2
 #pragma HLS INLINE off
@@ -1061,25 +968,27 @@ void rxAppNotificationDelayer(
 								stream<mmStatus>&				rxWriteStatusIn, 
 								stream<appNotification>&		internalNotificationFifoIn,
 								stream<appNotification>&		notificationOut, 
-								stream<ap_uint<1> > &doubleAccess) 
+								stream<ap_uint<1> >&			doubleAccess) 
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
 	static stream<appNotification> rand_notificationBuffer("rand_notificationBuffer");
-	#pragma HLS STREAM variable=rand_notificationBuffer depth=32 //depends on memory delay
+	#pragma HLS STREAM variable=rand_notificationBuffer depth=512 //depends on memory delay
 	#pragma HLS DATA_PACK variable=rand_notificationBuffer
 
 	static ap_uint<1>		rxAppNotificationDoubleAccessFlag = false;
 	static ap_uint<5>		rand_fifoCount = 0;
-	static mmStatus			rxAppNotificationStatus1, rxAppNotificationStatus2;
+	static mmStatus			rxAppNotificationStatus1;
 	static appNotification	rxAppNotification;
+	mmStatus				rxAppNotificationStatus2;
+
 
 	if (rxAppNotificationDoubleAccessFlag == true) {
 		if(!rxWriteStatusIn.empty()) {
 			rxWriteStatusIn.read(rxAppNotificationStatus2);
 			rand_fifoCount--;
-			if (rxAppNotificationStatus1.okay && rxAppNotificationStatus2.okay)
+			if (rxAppNotificationStatus1.okay && rxAppNotificationStatus2.okay)	// If one of both writes were wrong a retransmission is needed to fill the gap
 				notificationOut.write(rxAppNotification);
 			rxAppNotificationDoubleAccessFlag = false;
 		}
@@ -1088,11 +997,11 @@ void rxAppNotificationDelayer(
 		if(!rxWriteStatusIn.empty() && !rand_notificationBuffer.empty() && !doubleAccess.empty()) {
 			rxWriteStatusIn.read(rxAppNotificationStatus1);
 			rand_notificationBuffer.read(rxAppNotification);
-			rxAppNotificationDoubleAccessFlag = doubleAccess.read(); 	// Read the double notification flag. If one then go and w8 for the second status
-			if (rxAppNotificationDoubleAccessFlag == 0) {				// if the memory access was not broken down in two for this segment
+			doubleAccess.read(rxAppNotificationDoubleAccessFlag);				// Read the double notification flag. If true then go and wait for the second status 	
+			if (!rxAppNotificationDoubleAccessFlag) {							// if the memory access was not broken down in two for this segment
 				rand_fifoCount--;
 				if (rxAppNotificationStatus1.okay)
-					notificationOut.write(rxAppNotification);				// Output the notification
+					notificationOut.write(rxAppNotification);					// Output the notification
 			}
 			//TODO else, we are screwed since the ACK is already sent
 		}
@@ -1126,6 +1035,19 @@ void rxEventMerger(
 }
 
 
+/**
+ * @ingroup rx_engine
+ *
+ * This module reads the command issued by the TCPFSM and determines whether two memory access are needed or not.
+ * In base of that issues one or two memory write command(s), and the data is aligned properly, the realignment 
+ * if is necessary is done in the second access. 
+ *
+ * @param      rxMemWrDataIn   Packet payload if any
+ * @param      rxMemWrCmdIn    Internal command to write data into the memory. It does not take into account buffer overflow
+ * @param      rxMemWrCmdOut   Command to the data mover. It takes into account buffer overflow. Two write commands when buffer overflows
+ * @param      rxMemWrDataOut  Data to memory. If the buffer overflows, the second part of the data has to be realigned
+ * @param      doubleAccess    If two memory writes are needed this flag is set, is not is cleared
+ */
 void rxEngMemWrite(	
 					stream<axiWord>& 				rxMemWrDataIn, 
 					stream<mmCmd>&					rxMemWrCmdIn,
@@ -1136,137 +1058,97 @@ void rxEngMemWrite(
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 
-	enum rxmwrState{RXMEMWR_IDLE, RXMEMWR_WRFIRST, RXMEMWR_EVALSECOND, /*RXMEMWR_WRSECOND, */RXMEMWR_WRSECONDSTR, RXMEMWR_ALIGNED, RXMEMWR_RESIDUE};
-	static rxmwrState rxMemWrState = RXMEMWR_IDLE;
-	
-	static mmCmd rxMemWriterCmd = mmCmd(0, 0);
-	static ap_uint<16> rxEngBreakTemp = 0;
-	static uint8_t lengthBuffer = 0;
-	static uint8_t lengthBuffer_8 = 0;
-	static ap_uint<3> rxEngAccessResidue = 0;
-	static bool txAppBreakdown = false;
-	static axiWord pushWord = axiWord(0, 0xFF, 0);
+	axiWord 			currWord;
+	axiWord				sendWord;
+	static axiWord		prevWord;
+	mmCmd 				input_command;
+	ap_uint<32>			saddr;
+	ap_uint<17> 		buffer_overflow;
+	mmCmd 				first_command;
+	mmCmd 				second_command;
 
-	mmCmd tempCmd;
-	axiWord outputWord;
-	ap_uint<32>	saddr;
+	static ap_uint<6>	byte_offset;
+	static ap_uint<10>	number_of_words_to_send;
+	static ap_uint<64> 	keep_first_trans;
+	static ap_uint<10>	count_word_sent=1;
 
-	ap_uint<17> buffer_overflow;
+	static bool rxWrBreakDown 	= false;
+	static bool reading_data 	= false;
+	static bool second_write 	= false;
+	static bool extra_word	 	= false;
 
-	switch (rxMemWrState) {
-		case RXMEMWR_IDLE:
-			if (!rxMemWrCmdIn.empty() && !rxMemWrCmdOut.full() && !doubleAccess.full()) {
-				rxMemWrCmdIn.read(rxMemWriterCmd);
-				saddr = rxMemWriterCmd.saddr;
-				buffer_overflow = rxMemWriterCmd.saddr.range(15, 0) + rxMemWriterCmd.bbt;
-				
-				if (buffer_overflow.bit(16)) { 											// If this happen two write commands are needed
-					rxEngBreakTemp = 65536 - rxMemWriterCmd.saddr.range(15, 0);						// how much free space the buffer has?
-					//rxMemWriterCmd.bbt -= rxEngBreakTemp;								// Recompute Byte to transfer 
-					tempCmd = mmCmd(saddr, rxEngBreakTemp);				// Prepare command
-					txAppBreakdown = true;
-				}
-				else {
-					tempCmd = rxMemWriterCmd;
-					rxEngBreakTemp = rxMemWriterCmd.bbt;
-				}
-				rxMemWrCmdOut.write(tempCmd);
-				doubleAccess.write(txAppBreakdown);
-				//txAppPktCounter++;
-				//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
-				rxMemWrState = RXMEMWR_WRFIRST;
-			}
-			break;
-		case RXMEMWR_WRFIRST:
-			if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
-				rxMemWrDataIn.read(pushWord);
-				outputWord = pushWord;
-				ap_uint<4> byteCount = keep2len(pushWord.keep); // Size of the current word
-				if (rxEngBreakTemp > 8) {		// At least one full transaction has to be made
-					rxEngBreakTemp -= 8; 		// Consume a whole word
-				}
-				else {
-					if (txAppBreakdown == true) {
-						rxMemWriterCmd.bbt -= rxEngBreakTemp;					// Recompute Byte to transfer 
-						/// Changes are to go in here
-						if (rxMemWriterCmd.saddr.range(15, 0) % 8 != 0) { // If the word is not perfectly aligned then there is some magic to be worked.
-							outputWord.keep = len2Keep(rxEngBreakTemp);
-						}
-						outputWord.last = 1;
-						rxEngAccessResidue = byteCount - rxEngBreakTemp;
-						lengthBuffer = rxEngBreakTemp;	// Buffer the number of bits consumed.
-						lengthBuffer_8 = 8 - rxEngBreakTemp;
-						rxMemWrState = RXMEMWR_EVALSECOND;
-					}
-					else {
-						rxMemWrState = RXMEMWR_IDLE;
-					}
-				}
-				//txAppWordCounter++;
-				//std::cerr <<  std::dec << cycleCounter << " - " << txAppWordCounter << " - " << std::hex << pushWord.data << std::endl;
-				rxMemWrDataOut.write(outputWord);
-			}
-			break;
-		case RXMEMWR_EVALSECOND:				// Some part of the data is sent to the end of the buffer and other part to the beginning of the buffer
-			if (!rxMemWrCmdOut.full()) {
-				if (rxMemWriterCmd.saddr.range(15, 0) % 8 == 0)
-					rxMemWrState = RXMEMWR_ALIGNED;
-				//else if (rxMemWriterCmd.bbt + rxEngAccessResidue > 8 || rxEngAccessResidue > 0)
-				else if (rxMemWriterCmd.bbt - rxEngAccessResidue > 0)
-					rxMemWrState = RXMEMWR_WRSECONDSTR;
-				else
-					rxMemWrState = RXMEMWR_RESIDUE;
-				rxMemWriterCmd.saddr.range(15, 0) = 0;			// point to the beginning of the buffer
-				rxEngBreakTemp = rxMemWriterCmd.bbt;
-				rxMemWrCmdOut.write(mmCmd(rxMemWriterCmd.saddr, rxEngBreakTemp));
-				//std::cerr <<  "Cmd: " << std::dec << txAppPktCounter << " - " << std::hex << txAppTempCmd.saddr << " - " << txAppTempCmd.bbt << std::endl;
-				txAppBreakdown = false;
+	if (!rxMemWrCmdIn.empty() && !reading_data && !extra_word){
+		rxMemWrCmdIn.read(input_command);
 
-			}
-			break;
-		case RXMEMWR_ALIGNED:	// This is the non-realignment state
-			if (!rxMemWrDataIn.empty() & !rxMemWrDataOut.full()) {
-				rxMemWrDataIn.read(pushWord);
-				rxMemWrDataOut.write(pushWord);
-				if (pushWord.last == 1)
-					rxMemWrState = RXMEMWR_IDLE;
-			}
-			break;
-		case RXMEMWR_WRSECONDSTR: // We go into this state when we need to realign things
-			if (!rxMemWrDataIn.empty() && !rxMemWrDataOut.full()) {
-				outputWord = axiWord(0, 0xFF, 0);
-				outputWord.data.range(((lengthBuffer_8)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-				rxMemWrDataIn.read(pushWord);
-				outputWord.data.range(63, (lengthBuffer_8)*8) = pushWord.data.range((lengthBuffer * 8), 0 );
+		saddr 				= input_command.saddr;
+		buffer_overflow 	= input_command.saddr.range(15, 0) + input_command.bbt; // Compute the address of the last byte to write
 
-				if (pushWord.last == 1) {
-					if (rxEngBreakTemp - rxEngAccessResidue > lengthBuffer)	{ // In this case there's residue to be handled
-						rxEngBreakTemp -= 8;
-						rxMemWrState = RXMEMWR_RESIDUE;
-					}
-					else {
-						outputWord.keep = len2Keep(rxEngBreakTemp);
-						outputWord.last = 1;
-						rxMemWrState = RXMEMWR_IDLE;
-					}
-				}
-				else
-					rxEngBreakTemp -= 8;
-				rxMemWrDataOut.write(outputWord);
+		if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
+			// TODO: I think is enough with putting a last and the correct keep to determine the end of the first transaction. TEST IT!
+			first_command.bbt 	= 65536 - input_command.bbt;	// Compute how much bytes are needed in the first transaction 
+			first_command.saddr = input_command.saddr;
+			rxWrBreakDown = true;
+			byte_offset 		= first_command.bbt.range(5,0);	// Determines the position of the MSB in the last word
+			
+			if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
+				number_of_words_to_send = first_command.bbt.range(15,6) + 1;	
 			}
-			break;
-		case RXMEMWR_RESIDUE:
-			if (!rxMemWrDataOut.full()) {
-				outputWord = axiWord(0, len2Keep(rxEngBreakTemp), 1);
-				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-				rxMemWrDataOut.write(outputWord);
-				rxMemWrState = RXMEMWR_IDLE;
+			else {
+				number_of_words_to_send = first_command.bbt.range(15,6);
 			}
-			break;
-		default:
-			rxMemWrState = RXMEMWR_IDLE;
-			break;	
-	} //switch
+			keep_first_trans 	= len2Keep(byte_offset);			// Get the keep of the last transaction of the first memory offset
+			count_word_sent 	= 1;
+		}
+		else{
+			first_command = input_command;
+		}
+
+		doubleAccess.write(rxWrBreakDown);					// Notify if there are two memory access
+		rxMemWrCmdOut.write(first_command); 				// issue the first command
+	}
+	else if(!rxMemWrDataIn.empty() && reading_data && !second_write && !extra_word){
+		rxMemWrDataIn.read(currWord);
+
+		if (rxWrBreakDown){
+			if (count_word_sent == number_of_words_to_send){
+				currWord.keep 	= keep_first_trans;
+				currWord.last 	= 1;
+				second_command.saddr(31,16) 	= input_command.saddr(31,16);
+				second_command.saddr(15,0) 		= 0;										// point to the beginning of the buffer
+				second_command.bbt 				= input_command.bbt - first_command.bbt;	// Recompute the bytes to transfer in the second memory access
+				rxMemWrCmdOut.write(second_command);										// Issue the second command
+				second_write 	= true;
+			}
+			count_word_sent++;
+			prevWord = currWord;
+			rxMemWrDataOut.write(currWord);
+		}
+		else{												// There is not double memory access
+			if (currWord.last){
+				reading_data = false;
+			}
+			rxMemWrDataOut.write(currWord);
+		}
+	}
+	else if(!rxMemWrDataIn.empty() && reading_data && second_write && !extra_word){
+		rxMemWrDataIn.read(currWord);
+		rx_align_two_64bytes_words (currWord, prevWord,	byte_offset, &sendWord, &prevWord);
+
+		if (currWord.last){
+			if (!sendWord.last){		// If the sendWord has not have a last it is means that a extra transaction is needed
+				extra_word = true;
+			}
+			reading_data = false;
+			second_write = false;
+		}
+
+		rxMemWrDataOut.write(sendWord);
+	}
+	else if (extra_word) {
+		extra_word = false;
+		rxMemWrDataOut.write(prevWord);
+	}
+
 }
 
 /** @ingroup rx_engine
@@ -1275,14 +1157,14 @@ void rxEngMemWrite(
  *  and some more checks are done. Before it is evaluated by the main TCP state machine which triggers Events
  *  and updates the data structures depending on the packet. If the packet contains valid payload it is stored
  *  in memory and the application is notified about the new data.
- *  @param[in]		ipRxData
- *  @param[in]		sLookup2rxEng_rsp
+ *  @param[in]		ipRxData						: Incoming packets from the interface (IP Layer)
+ *  @param[in]		sLookup2rxEng_rsp				: 
  *  @param[in]		stateTable2rxEng_upd_rsp
  *  @param[in]		portTable2rxEng_rsp
  *  @param[in]		rxSar2rxEng_upd_rsp
  *  @param[in]		txSar2rxEng_upd_rsp
  *  @param[in]		rxBufferWriteStatus
- *
+ *  @param[out]		rxBufferWriteCmd
  *  @param[out]		rxBufferWriteData
  *  @param[out]		rxEng2sLookup_req
  *  @param[out]		rxEng2stateTable_upd_req
@@ -1293,7 +1175,6 @@ void rxEngMemWrite(
  *  @param[out]		rxEng2timer_setCloseTimer
  *  @param[out]		openConStatusOut
  *  @param[out]		rxEng2eventEng_setEvent
- *  @param[out]		rxBufferWriteCmd
  *  @param[out]		rxEng2rxApp_notification
  */
 
@@ -1303,7 +1184,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<bool>&						portTable2rxEng_rsp,
 				stream<rxSarEntry>&					rxSar2rxEng_upd_rsp,
 				stream<rxTxSarReply>&				txSar2rxEng_upd_rsp,
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 				stream<mmStatus>&					rxBufferWriteStatus,
 				stream<mmCmd>&						rxBufferWriteCmd,
 #endif
@@ -1318,48 +1199,61 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<ap_uint<16> >&				rxEng2timer_setCloseTimer,
 				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
-				stream<appNotification>&			rxEng2rxApp_notification)
+				stream<appNotification>&			rxEng2rxApp_notification,
+				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
+				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum)
 {
-//#pragma HLS DATAFLOW
+#pragma HLS DATAFLOW
 //#pragma HLS INTERFACE ap_ctrl_none port=return
-#pragma HLS INLINE
+#pragma HLS INLINE off
 
 	// Axi Streams
 	static stream<axiWord>		rxEng_pseudo_packet("rxEng_pseudo_packet");
-	static stream<axiWord>		rxEng_pkt_buffer_wait_checksum("rxEng_pkt_buffer_wait_checksum");
-	static stream<axiWord>		rxEng_pkt_buffer("rxEng_pkt_buffer");
 	#pragma HLS stream variable=rxEng_pseudo_packet depth=8
-	#pragma HLS stream variable=rxEng_pkt_buffer_wait_checksum depth=256 //critical, tcp checksum computation
-	#pragma HLS stream variable=rxEng_pkt_buffer depth=256
 	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet
-	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer_wait_checksum
+
+	static stream<axiWord>		rxEng_pseudo_packet_to_metadata("rxEng_pseudo_packet_to_metadata");
+	#pragma HLS stream variable=rxEng_pseudo_packet_to_metadata depth=8
+	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet_to_metadata
+
+	static stream<axiWord>		tcp_payload("tcp_payload");
+	#pragma HLS stream variable=tcp_payload depth=256 //critical, tcp checksum computation
+	#pragma HLS DATA_PACK variable=tcp_payload
+
+	static stream<axiWord>		rxEng_pkt_buffer("rxEng_pkt_buffer");
+	#pragma HLS stream variable=rxEng_pkt_buffer depth=256
 	#pragma HLS DATA_PACK variable=rxEng_pkt_buffer
 
 	// Meta Streams/FIFOs
-	static stream<bool>					rxEng_tcpCorrect_checksum("rx_tcpValidFifo");
+	static stream<bool >			rxEng_correct_checksum("rxEng_correct_checksum");
+	#pragma HLS stream variable=rxEng_correct_checksum depth=2
+
 	static stream<rxEngineMetaData>		rxEng_metaDataFifo("rx_metaDataFifo");
+	#pragma HLS stream variable=rxEng_metaDataFifo depth=2
+	#pragma HLS DATA_PACK variable=rxEng_metaDataFifo
+
 	static stream<rxFsmMetaData>		rxEng_fsmMetaDataFifo("rxEng_fsmMetaDataFifo");
 	static stream<fourTuple>			rxEng_tupleBuffer("rx_tupleBuffer");
-	static stream<ap_uint<16> >			rxEng_tcpLenFifo("rx_tcpLenFifo");
-	#pragma HLS stream variable=rxEng_tcpCorrect_checksum depth=2
-	#pragma HLS stream variable=rxEng_metaDataFifo depth=2
 	#pragma HLS stream variable=rxEng_tupleBuffer depth=2
-	#pragma HLS stream variable=rxEng_tcpLenFifo depth=2
-	#pragma HLS DATA_PACK variable=rxEng_metaDataFifo
 	#pragma HLS DATA_PACK variable=rxEng_tupleBuffer
+	
+	static stream<ap_uint<16> >			rxEng_tcpLenFifo("rx_tcpLenFifo");
+	#pragma HLS stream variable=rxEng_tcpLenFifo depth=2
 
 	static stream<extendedEvent>		rxEng_metaHandlerEventFifo("rxEng_metaHandlerEventFifo");
-	static stream<event>				rxEng_fsmEventFifo("rxEng_fsmEventFifo");
 	#pragma HLS stream variable=rxEng_metaHandlerEventFifo depth=2
-	#pragma HLS stream variable=rxEng_fsmEventFifo depth=2
 	#pragma HLS DATA_PACK variable=rxEng_metaHandlerEventFifo
+
+	static stream<event>				rxEng_fsmEventFifo("rxEng_fsmEventFifo");
+	#pragma HLS stream variable=rxEng_fsmEventFifo depth=2
 	#pragma HLS DATA_PACK variable=rxEng_fsmEventFifo
 
 	static stream<bool>					rxEng_metaHandlerDropFifo("rxEng_metaHandlerDropFifo");
-	static stream<bool>					rxEng_fsmDropFifo("rxEng_fsmDropFifo");
 	#pragma HLS stream variable=rxEng_metaHandlerDropFifo depth=2
-	#pragma HLS stream variable=rxEng_fsmDropFifo depth=2
 	#pragma HLS DATA_PACK variable=rxEng_metaHandlerDropFifo
+
+	static stream<bool>					rxEng_fsmDropFifo("rxEng_fsmDropFifo");
+	#pragma HLS stream variable=rxEng_fsmDropFifo depth=2
 	#pragma HLS DATA_PACK variable=rxEng_fsmDropFifo
 
 	static stream<appNotification> rx_internalNotificationFifo("rx_internalNotificationFifo");
@@ -1381,60 +1275,87 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 			ipRxData, 
 			rxEng_pseudo_packet);
 
-	rxCheckTCPchecksum(
-			rxEng_pseudo_packet, 
-			rxEng_pkt_buffer_wait_checksum, 
-			rxEng_tcpCorrect_checksum, 
+	DataBroadcast(
+			rxEng_pseudo_packet,
+			rxEng_pseudo_packet_to_checksum,
+			rxEng_pseudo_packet_to_metadata);
+
+	rxEng_Generate_Metadata(
+			rxEng_pseudo_packet_to_metadata,
+			rxEng_pseudo_packet_res_checksum,
+			tcp_payload, 
+			rxEng_correct_checksum, 
 			rxEng_metaDataFifo,
 			rxEng_tupleBuffer, 
 			rxEng2portTable_req);
 
 	rxTcpInvalidDropper(
-			rxEng_pkt_buffer_wait_checksum, 
-			rxEng_tcpCorrect_checksum, 
+			tcp_payload, 
+			rxEng_correct_checksum, 
 			rxEng_pkt_buffer);
 
+	rxMetadataHandler(	
+			rxEng_metaDataFifo,
+			sLookup2rxEng_rsp,
+			portTable2rxEng_rsp,
+			rxEng_tupleBuffer,
+			rxEng2sLookup_req,
+			rxEng_metaHandlerEventFifo,
+			rxEng_metaHandlerDropFifo,
+			rxEng_fsmMetaDataFifo);
 
-	rxMetadataHandler(	rxEng_metaDataFifo,
-						sLookup2rxEng_rsp,
-						portTable2rxEng_rsp,
-						rxEng_tupleBuffer,
-						rxEng2sLookup_req,
-						rxEng_metaHandlerEventFifo,
-						rxEng_metaHandlerDropFifo,
-						rxEng_fsmMetaDataFifo);
-
-	rxTcpFSM(			rxEng_fsmMetaDataFifo,
-							stateTable2rxEng_upd_rsp,
-							rxSar2rxEng_upd_rsp,
-							txSar2rxEng_upd_rsp,
-							rxEng2stateTable_upd_req,
-							rxEng2rxSar_upd_req,
-							rxEng2txSar_upd_req,
-							rxEng2timer_clearRetransmitTimer,
-							rxEng2timer_clearProbeTimer,
-							rxEng2timer_setCloseTimer,
-							openConStatusOut,
-							rxEng_fsmEventFifo,
-							rxEng_fsmDropFifo,
+	rxTcpFSM(			
+			rxEng_fsmMetaDataFifo,
+			stateTable2rxEng_upd_rsp,
+			rxSar2rxEng_upd_rsp,
+			txSar2rxEng_upd_rsp,
+			rxEng2stateTable_upd_req,
+			rxEng2rxSar_upd_req,
+			rxEng2txSar_upd_req,
+			rxEng2timer_clearRetransmitTimer,
+			rxEng2timer_clearProbeTimer,
+			rxEng2timer_setCloseTimer,
+			openConStatusOut,
+			rxEng_fsmEventFifo,
+			rxEng_fsmDropFifo,
 #if (!RX_DDR_BYPASS)
-							rxTcpFsm2wrAccessBreakdown,
-							rx_internalNotificationFifo);
+			rxTcpFsm2wrAccessBreakdown,
+			rx_internalNotificationFifo);
 #else
-							rxEng2rxApp_notification);
+			rxEng2rxApp_notification);
 #endif
 
+
 #if (!RX_DDR_BYPASS)
-	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxPkgDrop2rxMemWriter);
+	rxPacketDropper(
+			rxEng_pkt_buffer,
+			rxEng_metaHandlerDropFifo,
+			rxEng_fsmDropFifo,
+			rxPkgDrop2rxMemWriter);
 
-	rxEngMemWrite(rxPkgDrop2rxMemWriter, rxTcpFsm2wrAccessBreakdown, rxBufferWriteCmd, rxBufferWriteData,rxEngDoubleAccess);
+	rxEngMemWrite(
+			rxPkgDrop2rxMemWriter, 
+			rxTcpFsm2wrAccessBreakdown, 
+			rxBufferWriteCmd, 
+			rxBufferWriteData,
+			rxEngDoubleAccess);
 
-	rxAppNotificationDelayer(rxBufferWriteStatus, rx_internalNotificationFifo, rxEng2rxApp_notification, rxEngDoubleAccess);
+	rxAppNotificationDelayer(
+			rxBufferWriteStatus, 
+			rx_internalNotificationFifo, 
+			rxEng2rxApp_notification, 
+			rxEngDoubleAccess);
 #else
-	rxPacketDropper(rxEng_pkt_buffer, rxEng_metaHandlerDropFifo, rxEng_fsmDropFifo, rxBufferWriteData);
+	rxPacketDropper(
+			rxEng_pkt_buffer,
+			rxEng_metaHandlerDropFifo,
+			rxEng_fsmDropFifo,
+			rxBufferWriteData);
 #endif
-	rxEventMerger(rxEng_metaHandlerEventFifo, rxEng_fsmEventFifo, rxEng2eventEng_setEvent);
-
+	rxEventMerger(
+			rxEng_metaHandlerEventFifo,
+			rxEng_fsmEventFifo,
+			rxEng2eventEng_setEvent);
 }
 
 

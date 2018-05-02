@@ -513,7 +513,9 @@ void toe(	// Data & Memory Interface
 			//statistic
 			ap_uint<16>&							regSessionCount,
 			stream<axiWord>&						tx_pseudo_packet_to_checksum,
-			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum)
+			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum,
+			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,
+			stream<ap_uint<16> >&					rxEng_pseudo_packet_res_checksum)
 {
 #pragma HLS DATAFLOW
 #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -526,9 +528,10 @@ void toe(	// Data & Memory Interface
 // Data & Memory interface
 #pragma HLS INTERFACE axis off port=ipRxData name=s_axis_tcp_data
 #pragma HLS INTERFACE axis off port=ipTxData name=m_axis_tcp_data
-
-#pragma HLS INTERFACE axis off port=tx_pseudo_packet_to_checksum name=m_axis_pseudo_packet
-#pragma HLS INTERFACE axis off port=tx_pseudo_packet_res_checksum name=s_axis_pseudo_packet_checksum
+#pragma HLS INTERFACE axis off port=tx_pseudo_packet_to_checksum name=m_axis_tx_pseudo_packet
+#pragma HLS INTERFACE axis off port=tx_pseudo_packet_res_checksum name=s_axis_tx_pseudo_packet_checksum
+#pragma HLS INTERFACE axis off port=rxEng_pseudo_packet_to_checksum name=m_axis_rx_pseudo_packet
+#pragma HLS INTERFACE axis off port=rxEng_pseudo_packet_res_checksum name=s_axis_rx_pseudo_packet_checksum
 
 #pragma HLS INTERFACE axis off port=rxBufferWriteData name=m_axis_rxwrite_data
 #pragma HLS INTERFACE axis off port=rxBufferReadData name=s_axis_rxread_data
@@ -899,8 +902,9 @@ void toe(	// Data & Memory Interface
 					rxEng2timer_setCloseTimer,
 					conEstablishedFifo, //remove this
 					rxEng2eventEng_setEvent,
-					rxEng2rxApp_notification
-				);
+					rxEng2rxApp_notification,
+					rxEng_pseudo_packet_to_checksum,
+					rxEng_pseudo_packet_res_checksum);
 	// TX Engine
 	tx_engine(		eventEng2txEng_event,
 					rxSar2txEng_rsp,

@@ -597,5 +597,7 @@ void toe(	// Data & Memory Interface
 			//statistic
 			ap_uint<16>&							regSessionCount,
 			stream<axiWord>&						tx_pseudo_packet_to_checksum,
-			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum);
+			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum,
+			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,
+			stream<ap_uint<16> >&					rxEng_pseudo_packet_res_checksum);
 #endif

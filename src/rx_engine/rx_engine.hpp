@@ -94,7 +94,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<ap_uint<16> >&				rxEng2timer_setCloseTimer,
 				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
-				stream<appNotification>&			rxEng2rxApp_notification);
+				stream<appNotification>&			rxEng2rxApp_notification,
+				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
+				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum);
 
 void rxTCP_pseudoheader_insert(
 								stream<axiWord>&			dataIn,

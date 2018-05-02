@@ -8,7 +8,7 @@
 
 ap_uint<7> keep2len(ap_uint<64> keepValue);
 
-ap_uint<64> len2Keep(ap_uint<7> length);
+ap_uint<64> len2Keep(ap_uint<6> length);
 
 
 void tx_align_two_64bytes_words (
@@ -18,7 +18,20 @@ void tx_align_two_64bytes_words (
 
 			axiWord* 	SendWord,
 			axiWord* 	next_prev_word
-
 	);
+
+void rx_align_two_64bytes_words (
+			axiWord 	currWord,
+			axiWord 	prevWord,
+			ap_uint<6>	byte_offset,
+
+			axiWord* 	SendWord,
+			axiWord* 	next_prev_word
+	);
+
+void DataBroadcast(
+			stream<axiWord>& in, 
+			stream<axiWord>& out1, 
+			stream<axiWord>& out2);
 
 #endif

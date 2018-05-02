@@ -138,10 +138,11 @@ ap_uint<7> keep2len(ap_uint<64> keepValue){
 
 }
 
-ap_uint<64> len2Keep(ap_uint<7> length) {
-
+ap_uint<64> len2Keep(ap_uint<6> length) {
+	// In this context length==0 is not valid, then
+	// length=0 is consider as 64 which is every keep bit to '1'
 	const ap_uint<64> keep_table[65]={
-		0x0000000000000000,
+		0xFFFFFFFFFFFFFFFF,
 		0x0000000000000001,
 		0x0000000000000003,
 		0x0000000000000007,
@@ -204,8 +205,7 @@ ap_uint<64> len2Keep(ap_uint<7> length) {
 		0x0FFFFFFFFFFFFFFF,
 		0x1FFFFFFFFFFFFFFF,
 		0x3FFFFFFFFFFFFFFF,
-		0x7FFFFFFFFFFFFFFF,
-		0xFFFFFFFFFFFFFFFF
+		0x7FFFFFFFFFFFFFFF
 	};
 #pragma HLS RESOURCE variable=keep_table core=ROM_2P latency=1
 
@@ -638,3 +638,331 @@ void tx_align_two_64bytes_words (
 
 }
 
+
+void rx_align_two_64bytes_words (
+			axiWord 	currWord,
+			axiWord 	prevWord,
+			ap_uint<6>	byte_offset,
+
+			axiWord* 	SendWord,
+			axiWord* 	next_prev_word
+			
+	){
+//#pragma HLS INLINE
+
+	if (currWord.last){
+		if (currWord.keep.bit(64-byte_offset) && byte_offset!=0){
+			SendWord->last = 0;
+			next_prev_word->last = 1;
+		}
+		else{
+			SendWord->last = 1;
+			next_prev_word->last = 0;
+		}
+	}
+	else {
+		SendWord->last = currWord.last;
+		next_prev_word->last = currWord.last;
+	}
+
+	next_prev_word->data = currWord.data;
+
+	switch(byte_offset){	
+		case 0:
+			SendWord->data 		 = currWord.data;
+			SendWord->keep 		 = currWord.keep;
+		case 1: 
+			SendWord->data       = (currWord.data(  7,  0),prevWord.data(511,  8));
+			SendWord->keep       = (currWord.keep(  0,  0),prevWord.keep( 63,  1));
+			break;
+		case 2: 
+			SendWord->data       = (currWord.data( 15,  0),prevWord.data(511, 16));
+			SendWord->keep       = (currWord.keep(  1,  0),prevWord.keep( 63,  2));
+			break;
+		case 3: 
+			SendWord->data       = (currWord.data( 23,  0),prevWord.data(511, 24));
+			SendWord->keep       = (currWord.keep(  2,  0),prevWord.keep( 63,  3));
+			break;
+		case 4: 
+			SendWord->data       = (currWord.data( 31,  0),prevWord.data(511, 32));
+			SendWord->keep       = (currWord.keep(  3,  0),prevWord.keep( 63,  4));
+			break;
+		case 5: 
+			SendWord->data       = (currWord.data( 39,  0),prevWord.data(511, 40));
+			SendWord->keep       = (currWord.keep(  4,  0),prevWord.keep( 63,  5));
+			break;
+		case 6: 
+			SendWord->data       = (currWord.data( 47,  0),prevWord.data(511, 48));
+			SendWord->keep       = (currWord.keep(  5,  0),prevWord.keep( 63,  6));
+			break;
+		case 7: 
+			SendWord->data       = (currWord.data( 55,  0),prevWord.data(511, 56));
+			SendWord->keep       = (currWord.keep(  6,  0),prevWord.keep( 63,  7));
+			break;
+		case 8: 
+			SendWord->data       = (currWord.data( 63,  0),prevWord.data(511, 64));
+			SendWord->keep       = (currWord.keep(  7,  0),prevWord.keep( 63,  8));
+			break;
+		case 9: 
+			SendWord->data       = (currWord.data( 71,  0),prevWord.data(511, 72));
+			SendWord->keep       = (currWord.keep(  8,  0),prevWord.keep( 63,  9));
+			break;
+		case 10: 
+			SendWord->data       = (currWord.data( 79,  0),prevWord.data(511, 80));
+			SendWord->keep       = (currWord.keep(  9,  0),prevWord.keep( 63, 10));
+			break;
+		case 11: 
+			SendWord->data       = (currWord.data( 87,  0),prevWord.data(511, 88));
+			SendWord->keep       = (currWord.keep( 10,  0),prevWord.keep( 63, 11));
+			break;
+		case 12: 
+			SendWord->data       = (currWord.data( 95,  0),prevWord.data(511, 96));
+			SendWord->keep       = (currWord.keep( 11,  0),prevWord.keep( 63, 12));
+			break;
+		case 13: 
+			SendWord->data       = (currWord.data(103,  0),prevWord.data(511,104));
+			SendWord->keep       = (currWord.keep( 12,  0),prevWord.keep( 63, 13));
+			break;
+		case 14: 
+			SendWord->data       = (currWord.data(111,  0),prevWord.data(511,112));
+			SendWord->keep       = (currWord.keep( 13,  0),prevWord.keep( 63, 14));
+			break;
+		case 15: 
+			SendWord->data       = (currWord.data(119,  0),prevWord.data(511,120));
+			SendWord->keep       = (currWord.keep( 14,  0),prevWord.keep( 63, 15));
+			break;
+		case 16: 
+			SendWord->data       = (currWord.data(127,  0),prevWord.data(511,128));
+			SendWord->keep       = (currWord.keep( 15,  0),prevWord.keep( 63, 16));
+			break;
+		case 17: 
+			SendWord->data       = (currWord.data(135,  0),prevWord.data(511,136));
+			SendWord->keep       = (currWord.keep( 16,  0),prevWord.keep( 63, 17));
+			break;
+		case 18: 
+			SendWord->data       = (currWord.data(143,  0),prevWord.data(511,144));
+			SendWord->keep       = (currWord.keep( 17,  0),prevWord.keep( 63, 18));
+			break;
+		case 19: 
+			SendWord->data       = (currWord.data(151,  0),prevWord.data(511,152));
+			SendWord->keep       = (currWord.keep( 18,  0),prevWord.keep( 63, 19));
+			break;
+		case 20: 
+			SendWord->data       = (currWord.data(159,  0),prevWord.data(511,160));
+			SendWord->keep       = (currWord.keep( 19,  0),prevWord.keep( 63, 20));
+			break;
+		case 21: 
+			SendWord->data       = (currWord.data(167,  0),prevWord.data(511,168));
+			SendWord->keep       = (currWord.keep( 20,  0),prevWord.keep( 63, 21));
+			break;
+		case 22: 
+			SendWord->data       = (currWord.data(175,  0),prevWord.data(511,176));
+			SendWord->keep       = (currWord.keep( 21,  0),prevWord.keep( 63, 22));
+			break;
+		case 23: 
+			SendWord->data       = (currWord.data(183,  0),prevWord.data(511,184));
+			SendWord->keep       = (currWord.keep( 22,  0),prevWord.keep( 63, 23));
+			break;
+		case 24: 
+			SendWord->data       = (currWord.data(191,  0),prevWord.data(511,192));
+			SendWord->keep       = (currWord.keep( 23,  0),prevWord.keep( 63, 24));
+			break;
+		case 25: 
+			SendWord->data       = (currWord.data(199,  0),prevWord.data(511,200));
+			SendWord->keep       = (currWord.keep( 24,  0),prevWord.keep( 63, 25));
+			break;
+		case 26: 
+			SendWord->data       = (currWord.data(207,  0),prevWord.data(511,208));
+			SendWord->keep       = (currWord.keep( 25,  0),prevWord.keep( 63, 26));
+			break;
+		case 27: 
+			SendWord->data       = (currWord.data(215,  0),prevWord.data(511,216));
+			SendWord->keep       = (currWord.keep( 26,  0),prevWord.keep( 63, 27));
+			break;
+		case 28: 
+			SendWord->data       = (currWord.data(223,  0),prevWord.data(511,224));
+			SendWord->keep       = (currWord.keep( 27,  0),prevWord.keep( 63, 28));
+			break;
+		case 29: 
+			SendWord->data       = (currWord.data(231,  0),prevWord.data(511,232));
+			SendWord->keep       = (currWord.keep( 28,  0),prevWord.keep( 63, 29));
+			break;
+		case 30: 
+			SendWord->data       = (currWord.data(239,  0),prevWord.data(511,240));
+			SendWord->keep       = (currWord.keep( 29,  0),prevWord.keep( 63, 30));
+			break;
+		case 31: 
+			SendWord->data       = (currWord.data(247,  0),prevWord.data(511,248));
+			SendWord->keep       = (currWord.keep( 30,  0),prevWord.keep( 63, 31));
+			break;
+		case 32: 
+			SendWord->data       = (currWord.data(255,  0),prevWord.data(511,256));
+			SendWord->keep       = (currWord.keep( 31,  0),prevWord.keep( 63, 32));
+			break;
+		case 33: 
+			SendWord->data       = (currWord.data(263,  0),prevWord.data(511,264));
+			SendWord->keep       = (currWord.keep( 32,  0),prevWord.keep( 63, 33));
+			break;
+		case 34: 
+			SendWord->data       = (currWord.data(271,  0),prevWord.data(511,272));
+			SendWord->keep       = (currWord.keep( 33,  0),prevWord.keep( 63, 34));
+			break;
+		case 35: 
+			SendWord->data       = (currWord.data(279,  0),prevWord.data(511,280));
+			SendWord->keep       = (currWord.keep( 34,  0),prevWord.keep( 63, 35));
+			break;
+		case 36: 
+			SendWord->data       = (currWord.data(287,  0),prevWord.data(511,288));
+			SendWord->keep       = (currWord.keep( 35,  0),prevWord.keep( 63, 36));
+			break;
+		case 37: 
+			SendWord->data       = (currWord.data(295,  0),prevWord.data(511,296));
+			SendWord->keep       = (currWord.keep( 36,  0),prevWord.keep( 63, 37));
+			break;
+		case 38: 
+			SendWord->data       = (currWord.data(303,  0),prevWord.data(511,304));
+			SendWord->keep       = (currWord.keep( 37,  0),prevWord.keep( 63, 38));
+			break;
+		case 39: 
+			SendWord->data       = (currWord.data(311,  0),prevWord.data(511,312));
+			SendWord->keep       = (currWord.keep( 38,  0),prevWord.keep( 63, 39));
+			break;
+		case 40: 
+			SendWord->data       = (currWord.data(319,  0),prevWord.data(511,320));
+			SendWord->keep       = (currWord.keep( 39,  0),prevWord.keep( 63, 40));
+			break;
+		case 41: 
+			SendWord->data       = (currWord.data(327,  0),prevWord.data(511,328));
+			SendWord->keep       = (currWord.keep( 40,  0),prevWord.keep( 63, 41));
+			break;
+		case 42: 
+			SendWord->data       = (currWord.data(335,  0),prevWord.data(511,336));
+			SendWord->keep       = (currWord.keep( 41,  0),prevWord.keep( 63, 42));
+			break;
+		case 43: 
+			SendWord->data       = (currWord.data(343,  0),prevWord.data(511,344));
+			SendWord->keep       = (currWord.keep( 42,  0),prevWord.keep( 63, 43));
+			break;
+		case 44: 
+			SendWord->data       = (currWord.data(351,  0),prevWord.data(511,352));
+			SendWord->keep       = (currWord.keep( 43,  0),prevWord.keep( 63, 44));
+			break;
+		case 45: 
+			SendWord->data       = (currWord.data(359,  0),prevWord.data(511,360));
+			SendWord->keep       = (currWord.keep( 44,  0),prevWord.keep( 63, 45));
+			break;
+		case 46: 
+			SendWord->data       = (currWord.data(367,  0),prevWord.data(511,368));
+			SendWord->keep       = (currWord.keep( 45,  0),prevWord.keep( 63, 46));
+			break;
+		case 47: 
+			SendWord->data       = (currWord.data(375,  0),prevWord.data(511,376));
+			SendWord->keep       = (currWord.keep( 46,  0),prevWord.keep( 63, 47));
+			break;
+		case 48: 
+			SendWord->data       = (currWord.data(383,  0),prevWord.data(511,384));
+			SendWord->keep       = (currWord.keep( 47,  0),prevWord.keep( 63, 48));
+			break;
+		case 49: 
+			SendWord->data       = (currWord.data(391,  0),prevWord.data(511,392));
+			SendWord->keep       = (currWord.keep( 48,  0),prevWord.keep( 63, 49));
+			break;
+		case 50: 
+			SendWord->data       = (currWord.data(399,  0),prevWord.data(511,400));
+			SendWord->keep       = (currWord.keep( 49,  0),prevWord.keep( 63, 50));
+			break;
+		case 51: 
+			SendWord->data       = (currWord.data(407,  0),prevWord.data(511,408));
+			SendWord->keep       = (currWord.keep( 50,  0),prevWord.keep( 63, 51));
+			break;
+		case 52: 
+			SendWord->data       = (currWord.data(415,  0),prevWord.data(511,416));
+			SendWord->keep       = (currWord.keep( 51,  0),prevWord.keep( 63, 52));
+			break;
+		case 53: 
+			SendWord->data       = (currWord.data(423,  0),prevWord.data(511,424));
+			SendWord->keep       = (currWord.keep( 52,  0),prevWord.keep( 63, 53));
+			break;
+		case 54: 
+			SendWord->data       = (currWord.data(431,  0),prevWord.data(511,432));
+			SendWord->keep       = (currWord.keep( 53,  0),prevWord.keep( 63, 54));
+			break;
+		case 55: 
+			SendWord->data       = (currWord.data(439,  0),prevWord.data(511,440));
+			SendWord->keep       = (currWord.keep( 54,  0),prevWord.keep( 63, 55));
+			break;
+		case 56: 
+			SendWord->data       = (currWord.data(447,  0),prevWord.data(511,448));
+			SendWord->keep       = (currWord.keep( 55,  0),prevWord.keep( 63, 56));
+			break;
+		case 57: 
+			SendWord->data       = (currWord.data(455,  0),prevWord.data(511,456));
+			SendWord->keep       = (currWord.keep( 56,  0),prevWord.keep( 63, 57));
+			break;
+		case 58: 
+			SendWord->data       = (currWord.data(463,  0),prevWord.data(511,464));
+			SendWord->keep       = (currWord.keep( 57,  0),prevWord.keep( 63, 58));
+			break;
+		case 59: 
+			SendWord->data       = (currWord.data(471,  0),prevWord.data(511,472));
+			SendWord->keep       = (currWord.keep( 58,  0),prevWord.keep( 63, 59));
+			break;
+		case 60: 
+			SendWord->data       = (currWord.data(479,  0),prevWord.data(511,480));
+			SendWord->keep       = (currWord.keep( 59,  0),prevWord.keep( 63, 60));
+			break;
+		case 61: 
+			SendWord->data       = (currWord.data(487,  0),prevWord.data(511,488));
+			SendWord->keep       = (currWord.keep( 60,  0),prevWord.keep( 63, 61));
+			break;
+		case 62: 
+			SendWord->data       = (currWord.data(495,  0),prevWord.data(511,496));
+			SendWord->keep       = (currWord.keep( 61,  0),prevWord.keep( 63, 62));
+			break;
+		case 63: 
+			SendWord->data       = (currWord.data(503,  0),prevWord.data(511,504));
+			SendWord->keep       = (currWord.keep( 62,  0),prevWord.keep( 63, 63));
+			break;
+			break;
+
+	}	
+}
+
+void DataBroadcast(
+					stream<axiWord>& in, 
+					stream<axiWord>& out1, 
+					stream<axiWord>& out2)
+{
+#pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
+	axiWord currWord;
+
+	static int transaction = 0;
+	static int packet = 0;
+	static int byte_count =0;
+	ap_uint<7>  bytes;
+
+	if (!in.empty()) {
+		in.read(currWord);
+		out1.write(currWord);
+		out2.write(currWord);
+
+		bytes = keep2len (currWord.keep);
+		byte_count += bytes;
+
+		//cout << "Broadcaster ["<< dec << packet << "][" << transaction << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+		if (currWord.last){
+			packet++;
+			transaction =0;
+			//cout << "bytes count: " << byte_count << endl;
+			byte_count = 0;
+		}
+		else{
+			if (bytes !=64){
+				//cout << "Error bytes do not match" << endl;
+			}
+			transaction++;
+		}
+	}
+}

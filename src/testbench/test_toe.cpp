@@ -41,6 +41,157 @@ using namespace std;
 uint32_t cycleCounter;
 unsigned int	simCycleCounter		= 0;
 
+
+void rx_compute_pseudo_tcp_checksum(	
+									stream<axiWord>&			dataIn,
+									stream<ap_uint<16> >&		pseudo_tcp_checksum)
+{
+
+	axiWord 				currWord;
+	static ap_uint<1> 		compute_checksum=0;
+
+	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
+	ap_uint<16> tmp;
+	ap_uint<17> tmp1;
+	ap_uint<17> tmp2;
+
+	static ap_uint<17> ip_sums_L1[16];
+	static ap_uint<18> ip_sums_L2[8];
+	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
+	static ap_uint<20> ip_sums_L4[2];
+	static ap_uint<21> ip_sums_L5;
+	ap_uint<17> final_sum_r; 							// real add
+	ap_uint<17> final_sum_o; 							// overflowed add
+	ap_uint<16> res_checksum;
+
+	if (!dataIn.empty() && !compute_checksum){
+		dataIn.read(currWord);
+
+		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
+			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
+			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+			tmp1 		= word_sum[i] + tmp;
+			tmp2 		= word_sum[i] + tmp + 1;
+			if (tmp1.bit(16)) 				// one's complement adder
+				word_sum[i] = tmp2(15,0);
+			else
+				word_sum[i] = tmp1(15,0);
+		}
+
+		if(currWord.last){
+			compute_checksum = 1;
+		}
+	}
+	else if(compute_checksum) {
+		//adder tree
+		second_level_sum : for (int i = 0; i < 16; i++) {
+			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
+			word_sum[i*2]   = 0; // clear adder variable
+			word_sum[i*2+1] = 0;
+		}
+		//adder tree L2
+		third_level_sum : for (int i = 0; i < 8; i++) {
+			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
+		}
+		//adder tree L3
+		fourth_level_sum : for (int i = 0; i < 4; i++) {
+			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
+		}
+
+		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
+		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
+		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
+
+		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
+		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
+
+		if (final_sum_r.bit(16))
+			res_checksum = ~(final_sum_o.range(15,0));
+		else
+			res_checksum = ~(final_sum_r.range(15,0));
+
+		compute_checksum = 0;
+		pseudo_tcp_checksum.write(res_checksum);
+	}
+}
+
+
+void tx_compute_pseudo_tcp_checksum(	
+									stream<axiWord>&			dataIn,
+									stream<ap_uint<16> >&		pseudo_tcp_checksum)
+{
+
+	axiWord 				currWord;
+	static ap_uint<1> 		compute_checksum=0;
+
+	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+
+	ap_uint<16> tmp;
+	ap_uint<17> tmp1;
+	ap_uint<17> tmp2;
+
+	static ap_uint<17> ip_sums_L1[16];
+	static ap_uint<18> ip_sums_L2[8];
+	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
+	static ap_uint<20> ip_sums_L4[2];
+	static ap_uint<21> ip_sums_L5;
+	ap_uint<17> final_sum_r; 							// real add
+	ap_uint<17> final_sum_o; 							// overflowed add
+	ap_uint<16> res_checksum;
+
+	if (!dataIn.empty() && !compute_checksum){
+		dataIn.read(currWord);
+
+		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
+			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
+			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+			tmp1 		= word_sum[i] + tmp;
+			tmp2 		= word_sum[i] + tmp + 1;
+			if (tmp1.bit(16)) 				// one's complement adder
+				word_sum[i] = tmp2(15,0);
+			else
+				word_sum[i] = tmp1(15,0);
+		}
+
+		if(currWord.last){
+			compute_checksum = 1;
+		}
+	}
+	else if(compute_checksum) {
+		//adder tree
+		second_level_sum : for (int i = 0; i < 16; i++) {
+			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
+			word_sum[i*2]   = 0; // clear adder variable
+			word_sum[i*2+1] = 0;
+		}
+		//adder tree L2
+		third_level_sum : for (int i = 0; i < 8; i++) {
+			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
+		}
+		//adder tree L3
+		fourth_level_sum : for (int i = 0; i < 4; i++) {
+			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
+		}
+
+		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
+		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
+		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
+
+		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
+		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
+
+		if (final_sum_r.bit(16))
+			res_checksum = ~(final_sum_o.range(15,0));
+		else
+			res_checksum = ~(final_sum_r.range(15,0));
+
+		compute_checksum = 0;
+		pseudo_tcp_checksum.write(res_checksum);
+	}
+}
+
+
 void sessionLookupStub(
 		stream<rtlSessionLookupRequest>& 	lup_req, 
 		stream<rtlSessionLookupReply>& 		lup_rsp,
@@ -143,8 +294,14 @@ void simulateRx(
 
 
 
-void simulateTx(dummyMemory* memory, stream<mmCmd>& WriteCmdFifo,  stream<mmStatus>& WriteStatusFifo, stream<mmCmd>& ReadCmdFifo,
-					stream<axiWord>& BufferIn, stream<axiWord>& BufferOut) {
+void simulateTx(
+		dummyMemory* 		memory, 
+		stream<mmCmd>& 		WriteCmdFifo, 
+		stream<mmStatus>& 	WriteStatusFifo, 
+		stream<mmCmd>& 		ReadCmdFifo,
+		stream<axiWord>& 	BufferIn, 
+		stream<axiWord>& 	BufferOut) {
+
 	mmCmd cmd;
 	mmStatus status;
 	axiWord inWord;
@@ -157,13 +314,13 @@ void simulateTx(dummyMemory* memory, stream<mmCmd>& WriteCmdFifo,  stream<mmStat
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
-		//cerr << "WR: " << dec << cycleCounter << hex << " - " << cmd.saddr << " - " << cmd.bbt << endl;
+		cout << "WR: " << dec << cycleCounter << hex << " - " << cmd.saddr << " - " << cmd.bbt << endl;
 		memory->setWriteCmd(cmd);
 		stx_write = true;
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
-		//cerr << "Data: " << dec << cycleCounter << hex << inWord.data << " - " << inWord.keep << " - " << inWord.last << endl;
+		cout << "Data: " << dec << cycleCounter << hex << inWord.data << " - " << inWord.keep << " - " << inWord.last << endl;
 		memory->writeWord(inWord);
 		if (inWord.last) {
 			//fake_txBuffer.write(inWord); // RT hack
@@ -174,13 +331,13 @@ void simulateTx(dummyMemory* memory, stream<mmCmd>& WriteCmdFifo,  stream<mmStat
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
-		//cerr << "RD: " << cmd.saddr << " - " << cmd.bbt << endl;
+		cout << "RD: " << cmd.saddr << " - " << cmd.bbt << endl;
 		memory->setReadCmd(cmd);
 		stx_read = true;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
-		//cerr << inWord.data << " " << inWord.last << " - ";
+		cout << inWord.data << " " << inWord.last << " - ";
 		BufferOut.write(outWord);
 		if (outWord.last)
 			stx_read = false;
@@ -209,6 +366,7 @@ void iperf(
 	openStatus newConStatus;
 	appNotification notification;
 	ipTuple tuple;
+	openStatus tempStatus;
 
 	enum consumeFsmStateType {WAIT_PKG, CONSUME, HEADER_2, HEADER_3};
 	static consumeFsmStateType  serverFsmState = WAIT_PKG;
@@ -230,6 +388,7 @@ void iperf(
 		case 1:
 			if (!listenPortStatus.empty()) {
 				listenPortStatus.read(listenDone);
+				cout << "Listen port Done " << (listenDone ? "Yes" : "No") << endl;
 				listenFsm++;
 			}
 			break;
@@ -238,13 +397,16 @@ void iperf(
 
 	// In case we are connecting back
 	if (!openConStatus.empty()) {
-		openStatus tempStatus = openConStatus.read();
-		if(tempStatus.success)
+		openConStatus.read(tempStatus);
+		cout << "tempStatus.ID " << dec << tempStatus.sessionID <<"tempStatus.success: " << tempStatus.success << endl;
+		if(tempStatus.success){
 			txSessionIDs.push_back(tempStatus.sessionID);
+		}
 	}
 
 	if (!notifications.empty())	{
 		notifications.read(notification);
+		cout << "Notification length: " << dec << notification.length << endl;
 
 		if (notification.length != 0)
 			readRequest.write(appReadRequest(notification.sessionID, notification.length));
@@ -254,54 +416,54 @@ void iperf(
 
 
 	switch (serverFsmState)	{
-	case WAIT_PKG:
-		if (!rxMetaData.empty() && !rxData.empty())	{
-			cout << "WAIT_PKG time:" << dec << simCycleCounter << endl;
-			rxMetaData.read(sessionID);
-			rxData.read(currWord);
-			rxDataOut.write(currWord);
-			if (!runningExperiment) {
-				if (currWord.data(31, 0) == 0x00000080) // Dual test
-					dualTest = true;
-				else
-					dualTest = false;
+		case WAIT_PKG:
+			if (!rxMetaData.empty() && !rxData.empty())	{
+				cout << "WAIT_PKG time:" << dec << simCycleCounter << endl;
+				rxMetaData.read(sessionID);
+				rxData.read(currWord);
+				rxDataOut.write(currWord);
+				if (!runningExperiment) {
+					if (currWord.data(31, 0) == 0x00000080) // Dual test
+						dualTest = true;
+					else
+						dualTest = false;
 
-				runningExperiment = true;
-				serverFsmState = HEADER_2;
+					runningExperiment = true;
+					serverFsmState = HEADER_2;
+				}
+				else
+					serverFsmState = CONSUME;
 			}
-			else
+			break;
+		case HEADER_2:
+			if (!rxData.empty()) {
+				cout << "HEADER_2 time:" << dec << simCycleCounter << endl;
+				rxData.read(currWord);
+				rxDataOut.write(currWord);
+				if (dualTest) {
+					tuple.ip_address = 0x0800A8C0;
+					tuple.ip_port = currWord.data(31, 16);
+					openConnection.write(tuple);
+				}
+				serverFsmState = HEADER_3;
+			}
+			break;
+		case HEADER_3:
+			if (!rxData.empty()) {
+				cout << "HEADER_3 time:" << dec << simCycleCounter << endl;
+				rxData.read(currWord);
+				rxDataOut.write(currWord);
+				mAmount = currWord.data(63, 32);
 				serverFsmState = CONSUME;
-		}
-		break;
-	case HEADER_2:
-		if (!rxData.empty()) {
-			cout << "HEADER_2 time:" << dec << simCycleCounter << endl;
-			rxData.read(currWord);
-			rxDataOut.write(currWord);
-			if (dualTest) {
-				tuple.ip_address = 0x0800A8C0;
-				tuple.ip_port = currWord.data(31, 16);
-				openConnection.write(tuple);
 			}
-			serverFsmState = HEADER_3;
-		}
-		break;
-	case HEADER_3:
-		if (!rxData.empty()) {
-			cout << "HEADER_3 time:" << dec << simCycleCounter << endl;
-			rxData.read(currWord);
-			rxDataOut.write(currWord);
-			mAmount = currWord.data(63, 32);
-			serverFsmState = CONSUME;
-		}
-		break;
-	case CONSUME:
-		if (!rxData.empty()) {
-			cout << "CONSUME time:" << dec << simCycleCounter << endl;
-			rxData.read(currWord);
-			rxDataOut.write(currWord);
-		}
-		break;
+			break;
+		case CONSUME:
+			if (!rxData.empty()) {
+				cout << "CONSUME time:" << dec << simCycleCounter << endl;
+				rxData.read(currWord);
+				rxDataOut.write(currWord);
+			}
+			break;
 	}
 	if (currWord.last == 1)
 		serverFsmState = WAIT_PKG;
@@ -629,6 +791,11 @@ int main(int argc, char **argv) {
 	axiWord								ipTxDataIn_Data;
 	stream<axiWord> 					rxDataOut("rxDataOut");						// This stream contains the data output from the Rx App I/F
 	axiWord								rxDataOut_Data;								// This variable is where the data read from the stream above is temporarily stored before output
+  	
+  	stream<axiWord>						tx_pseudo_packet_to_checksum("tx_pseudo_packet_to_checksum");
+	stream<ap_uint<16> >				tx_pseudo_packet_res_checksum("tx_pseudo_packet_res_checksum");
+  	stream<axiWord>						rxEng_pseudo_packet_to_checksum("rxEng_pseudo_packet_to_checksum");
+	stream<ap_uint<16> >				rxEng_pseudo_packet_res_checksum("rxEng_pseudo_packet_res_checksum");
 
 	dummyMemory rxMemory;
 	dummyMemory txMemory;
@@ -672,8 +839,8 @@ int main(int argc, char **argv) {
 
 
 
-	if (argc < 2) {
-		cout << "[ERROR] missing arguments." << endl;
+	if (argc < 3) {
+		cout << "[ERROR] missing arguments " __FILE__  << " <INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;
 		return -1;
 	}
 
@@ -729,7 +896,11 @@ int main(int argc, char **argv) {
 			txDataRsp, 
 
 			0x0500A8C0, 						// 192.168.0.5
-			regSessionCount);
+			regSessionCount,
+			tx_pseudo_packet_to_checksum,
+			tx_pseudo_packet_res_checksum,
+			rxEng_pseudo_packet_to_checksum,
+			rxEng_pseudo_packet_res_checksum);
 
 
 		iperf(
@@ -767,21 +938,31 @@ int main(int argc, char **argv) {
 	   		sessionUpdate_req, 
 	   		sessionUpdate_rsp);
 
-		while (!ipTxData.empty()){
-			ipTxData.read(currOutWord);
-			cout << "Output packet [" << dec << packet << "][" << dec << transaction++ << "] time[" << simCycleCounter << "]";
-			cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << dec <<" (" << keep_to_length(currOutWord.keep) << ")\tlast " << currOutWord.last << endl;
-			if (currOutWord.last){
-				packet ++;
-				transaction = 0;
-			}
-		}
+	   	rx_compute_pseudo_tcp_checksum(	
+			tx_pseudo_packet_to_checksum,
+			tx_pseudo_packet_res_checksum);
+
+	   	tx_compute_pseudo_tcp_checksum(	
+			rxEng_pseudo_packet_to_checksum,
+			rxEng_pseudo_packet_res_checksum);
+
+		//while (!ipTxData.empty()){
+		//	ipTxData.read(currOutWord);
+		//	cout << "Output packet [" << dec << packet << "][" << dec << transaction++ << "] time[" << simCycleCounter << "]";
+		//	cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << dec <<" (" << keep_to_length(currOutWord.keep) << ")\tlast " << currOutWord.last << endl;
+		//	if (currOutWord.last){
+		//		packet ++;
+		//		transaction = 0;
+		//	}
+		//}
 
 	} while (simCycleCounter++ < totalSimCycles);
 
 
+	stream2pcap(argv[2],false,true,ipTxData);
 
-	
+	cout << "regSessionCount " << dec << regSessionCount << endl; 
+	/*
 	packet=0;
 	transaction=0;
 
@@ -794,7 +975,7 @@ int main(int argc, char **argv) {
 			transaction = 0;
 		}
 	}
-
+	*/
 	return 0;
 
 }
