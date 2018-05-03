@@ -8,7 +8,6 @@ add_files src/event_engine/event_engine.cpp
 add_files src/port_table/port_table.cpp
 add_files src/probe_timer/probe_timer.cpp
 add_files src/retransmit_timer/retransmit_timer.cpp
-add_files src/rx_app_if/rx_app_if.cpp
 add_files src/rx_app_stream_if/rx_app_stream_if.cpp
 add_files src/rx_engine/rx_engine.cpp
 add_files src/rx_sar_table/rx_sar_table.cpp

@@ -268,29 +268,34 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
 	/*
 	 * Listening PortTable
 	 */
-	listening_port_table(	rxApp2portTable_listen_req,
-							pt_portCheckListening_req_fifo,
-							portTable2rxApp_listen_rsp,
-							pt_portCheckListening_rsp_fifo);
+	listening_port_table(	
+					rxApp2portTable_listen_req,
+					pt_portCheckListening_req_fifo,
+					portTable2rxApp_listen_rsp,
+					pt_portCheckListening_rsp_fifo);
 
 	/*
 	 * Free PortTable
 	 */
-	free_port_table(sLookup2portTable_releasePort,
-						pt_portCheckUsed_req_fifo,
-						//txApp2portTable_port_req,
-						pt_portCheckUsed_rsp_fifo,
-						portTable2txApp_port_rsp);
+	free_port_table(
+					sLookup2portTable_releasePort,
+					pt_portCheckUsed_req_fifo,
+					//txApp2portTable_port_req,
+					pt_portCheckUsed_rsp_fifo,
+					portTable2txApp_port_rsp);
 
 	/*
 	 * Multiplex this query
 	 */
-	check_in_multiplexer(	rxEng2portTable_check_req,
-							pt_portCheckListening_req_fifo,
-							pt_portCheckUsed_req_fifo,
-							pt_dstFifo);
-	check_out_multiplexer(	pt_dstFifo,
-							pt_portCheckListening_rsp_fifo,
-							pt_portCheckUsed_rsp_fifo,
-							portTable2rxEng_check_rsp);
+	check_in_multiplexer(	
+					rxEng2portTable_check_req,
+					pt_portCheckListening_req_fifo,
+					pt_portCheckUsed_req_fifo,
+					pt_dstFifo);
+
+	check_out_multiplexer(	
+					pt_dstFifo,
+					pt_portCheckListening_rsp_fifo,
+					pt_portCheckUsed_rsp_fifo,
+					portTable2rxEng_check_rsp);
 }

@@ -846,12 +846,12 @@ int main(int argc, char **argv) {
 
 
 
-//	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
-//		for (uint8_t i=0;i<noOfTxSessions;++i) {
-//			ipTuple newTuple = {0x0800A8C0, 5002}; 				// IP address and port to open
-//			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
-//		}
-//	}
+	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
+		for (uint8_t i=0;i<noOfTxSessions;++i) {
+			ipTuple newTuple = {0x0800A8C0, 5002}; 				// IP address and port to open
+			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
+		}
+	}
 
 
 	do  {

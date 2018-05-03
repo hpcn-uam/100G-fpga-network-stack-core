@@ -938,154 +938,6 @@ void tx_ip_pkt_stitcher(
 
 }
 
-void txEngMemAccessBreakdown(
-					stream<mmCmd>& 				inputMemAccess, 
-					stream<mmCmd>& 				outputMemAccess, 
-					stream<memDoubleAccess>& 	memAccessBreakdown) {
-
-#pragma HLS pipeline II=1
-#pragma HLS INLINE off
-	static bool txEngBreakdown = false;
-	static mmCmd txEngTempCmd;
-	static ap_uint<16> 	txEngBreakTemp = 0;
-	static ap_uint<16> 	txPktCounter = 0;
-	memDoubleAccess 	double_access=memDoubleAccess(false,0);
-
-	if (txEngBreakdown == false) {
-		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
-			txEngTempCmd = inputMemAccess.read();
-			mmCmd tempCmd = txEngTempCmd;
-			if ((txEngTempCmd.saddr.range(15, 0) + txEngTempCmd.bbt) > 65536) {
-				txEngBreakTemp = 65536 - txEngTempCmd.saddr;
-				tempCmd = mmCmd(txEngTempCmd.saddr, txEngBreakTemp);
-				txEngBreakdown = true;
-
-				double_access.double_access = true;
-				double_access.offset 		= txEngBreakTemp(5,0);	// Offset of MSB byte valid in the last transaction of the first burst
-			}
-			outputMemAccess.write(tempCmd);
-			memAccessBreakdown.write(double_access);
-			txPktCounter++;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << std::hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
-		}
-	}
-	else if (txEngBreakdown == true) {
-		if (!outputMemAccess.full()) {
-			txEngTempCmd.saddr.range(15, 0) = 0;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << std::hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.bbt - txEngBreakTemp << std::endl;
-			outputMemAccess.write(mmCmd(txEngTempCmd.saddr, txEngTempCmd.bbt - txEngBreakTemp));
-			txEngBreakdown = false;
-		}
-	}
-}
-
-
-
-/** @ingroup tx_engine
- *  It gets payload from the memory which can be split into two burst.
- *  The main drawback is aligned the end of the first burst with the beginning
- *  of the second burst, because, it implies a 64 to 1 multiplexer.
- */
-
-
-void tx_payload_aligner(
-					stream<axiWord>& 			mem_payload_unaligned,
-					stream<memDoubleAccess>& 	mem_two_access,
-				
-#if (TCP_NODELAY)
-					stream<bool>&				txEng_isDDRbypass,
-					stream<axiWord>&			txApp2txEng_data_stream,
-#endif
-					stream<axiWord>& 			tx_payload_aligned)
-{
-#pragma HLS INLINE off
-#pragma HLS LATENCY max=1
-
-	static ap_uint<6>	byte_offset;
-	static bool			breakdownAccess=false;
-	static bool			reading_payload=false;
-	static bool			align_words=false;
-	static bool			extra_word=false;
-	memDoubleAccess 	mem_double_access;
-	axiWord 			currWord;
-	axiWord 			sendWord;
-	static axiWord 		prevWord;
-	axiWord 			next_previous_word;
-
-	if (!mem_payload_unaligned.empty() && !mem_two_access.empty() && !reading_payload && !align_words && !extra_word){		// New data is available 
-		mem_two_access.read(mem_double_access);
-
-		breakdownAccess		= mem_double_access.double_access;
-		byte_offset			= mem_double_access.offset;
-		//cout << "byte offset: " << dec << byte_offset << endl;
-		mem_payload_unaligned.read(currWord);
-
-		if (currWord.last){
-			if (breakdownAccess){
-				align_words	= true;
-			}
-			else{
-				align_words	= false;
-				//cout << "Payload aligner 0: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-				tx_payload_aligned.write(currWord);
-			}
-			reading_payload = false;
-		}
-		else{
-			reading_payload = true;
-			//cout << "Payload aligner 1: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-			tx_payload_aligned.write(currWord);
-		}
-
-		prevWord = currWord;
-
-	}
-	else if(!mem_payload_unaligned.empty()&& reading_payload && !align_words){
-		mem_payload_unaligned.read(currWord);
-		if (currWord.last){
-			if (breakdownAccess){
-				align_words	= true;
-			}
-			else{
-				align_words	= false;
-				//cout << "Payload aligner 2: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-				tx_payload_aligned.write(currWord);
-			}
-			reading_payload = false;
-		}
-		else{
-			//cout << "Payload aligner 3: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-			tx_payload_aligned.write(currWord);
-		}
-		prevWord = currWord;
-	}
-	else if(!mem_payload_unaligned.empty()&& !reading_payload && align_words){
-		mem_payload_unaligned.read(currWord);
-		
-		tx_align_two_64bytes_words(currWord,prevWord,byte_offset,&sendWord,&next_previous_word);
-
-		if (currWord.last){
-			if(currWord.keep.bit(64-byte_offset) && byte_offset != 0){
-				extra_word = true;
-			}
-			else {
-				align_words = false;
-			}
-		}
-		//cout << "Double access : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		tx_payload_aligned.write(sendWord);
-		
-		prevWord = next_previous_word;
-	}
-	else if (extra_word){
-		extra_word = false;
-		align_words = false;
-		//cout << "Extra : " << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
-		tx_payload_aligned.write(prevWord);
-	}
-
-}
-
 void txPseudo_header_Remover(
 		stream<axiWord>&	dataIn, 
 		stream<axiWord>&	dataOut 
@@ -1183,9 +1035,8 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<ap_uint<16> >&			tx_pseudo_packet_res_checksum)
 {
 #pragma HLS DATAFLOW
-//#pragma HLS INTERFACE ap_ctrl_none port=return
-//#pragma HLS PIPELINE II=1
-#pragma HLS INLINE off
+#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS INLINE 
 
 	// Memory Read delay around 76 cycles, 10 cycles/packet, so keep meta of at least 8 packets
 	static stream<tx_engine_meta>		txEng_metaDataFifo("txEng_metaDataFifo");
@@ -1272,7 +1123,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #endif
 				txEng_tupleShortCutFifo,
 				readCountFifo);
-	txEngMemAccessBreakdown(
+	tx_ReadMemAccessBreakdown(
 				txMetaloader2memAccessBreakdown, 
 				txBufferReadCmd, 
 				memAccessBreakdown);
@@ -1294,7 +1145,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				txEng_tcpTupleFifo, 
 				txEng_pseudo_tcpHeader);
 
-	tx_payload_aligner(
+	tx_MemDataRead_aligner(
 				txBufferReadData_unaligned,
 				memAccessBreakdown,
 	#if (TCP_NODELAY)

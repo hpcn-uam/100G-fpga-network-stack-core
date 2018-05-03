@@ -46,7 +46,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 					  stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
 					  stream<ap_uint<16> >&			appRxDataRspMetadata,
 					  stream<rxSarAppd>&			rxApp2rxSar_upd_req,
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 					  stream<mmCmd>&				rxBufferReadCmd)
 #else
 					  stream<ap_uint<1> >&			rxBufferReadCmd)
@@ -59,11 +59,13 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 
 	static ap_uint<16>				rasi_readLength;
 	static ap_uint<2>				rasi_fsmState 	= 0;
+	appReadRequest					app_read_request;
+	rxSarAppd						rxSar;
 
 	switch (rasi_fsmState) {
 		case 0:
 			if (!appRxDataReq.empty() && !rxApp2rxSar_upd_req.full()) {
-				appReadRequest	app_read_request = appRxDataReq.read();
+				appRxDataReq.read(app_read_request);
 				if (app_read_request.length != 0) { 	// Make sure length is not 0, otherwise Data Mover will hang up
 					// Get app pointer
 					rxApp2rxSar_upd_req.write(rxSarAppd(app_read_request.sessionID));
@@ -74,9 +76,9 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 			break;
 		case 1:
 			if (!rxSar2rxApp_upd_rsp.empty() && !appRxDataRspMetadata.full() && !rxBufferReadCmd.full() && !rxApp2rxSar_upd_req.full()) {
-				rxSarAppd	rxSar = rxSar2rxApp_upd_rsp.read();
+				rxSar2rxApp_upd_rsp.read(rxSar);
 				appRxDataRspMetadata.write(rxSar.sessionID);
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 				ap_uint<32> pkgAddr = 0;
 				pkgAddr(29, 16) = rxSar.sessionID(13, 0);
 				pkgAddr(15, 0) = rxSar.appd;

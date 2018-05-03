@@ -938,31 +938,31 @@ void DataBroadcast(
 
 	axiWord currWord;
 
-	static int transaction = 0;
-	static int packet = 0;
-	static int byte_count =0;
-	ap_uint<7>  bytes;
+//	static int transaction = 0;
+//	static int packet = 0;
+//	static int byte_count =0;
+//	ap_uint<7>  bytes;
 
 	if (!in.empty()) {
 		in.read(currWord);
 		out1.write(currWord);
 		out2.write(currWord);
 
-		bytes = keep2len (currWord.keep);
-		byte_count += bytes;
+//		bytes = keep2len (currWord.keep);
+//		byte_count += bytes;
 
 		//cout << "Broadcaster ["<< dec << packet << "][" << transaction << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-		if (currWord.last){
-			packet++;
-			transaction =0;
-			//cout << "bytes count: " << byte_count << endl;
-			byte_count = 0;
-		}
-		else{
-			if (bytes !=64){
-				//cout << "Error bytes do not match" << endl;
-			}
-			transaction++;
-		}
+//		if (currWord.last){
+//			packet++;
+//			transaction =0;
+//			//cout << "bytes count: " << byte_count << endl;
+//			byte_count = 0;
+//		}
+//		else{
+//			if (bytes !=64){
+//				//cout << "Error bytes do not match" << endl;
+//			}
+//			transaction++;
+//		}
 	}
 }

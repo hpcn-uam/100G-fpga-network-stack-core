@@ -32,7 +32,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 using namespace hls;
 
 /** @ingroup session_lookup_controller
- *  SessionID manager
+ *  SessionID manager. It generates free ID until the maximum number of connections is reached.
+ *  When a connection finishes, its it is inserted as a free ID.
  *  @param[in]		fin_id, IDs that are released and appended to the SessionID free list
  *  @param[out]		new_id, get a new SessionID from the SessionID free list
  */
@@ -45,13 +46,11 @@ void sessionIdManager(	stream<ap_uint<14> >&		new_id,
 	static ap_uint<14> counter = 0;
 	ap_uint<14> sessionID;
 
-	if (!fin_id.empty())
-	{
+	if (!fin_id.empty()) {
 		fin_id.read(sessionID);
 		new_id.write(sessionID);
 	}
-	else if (counter < MAX_SESSIONS)
-	{
+	else if (counter < MAX_SESSIONS) {
 		new_id.write(counter);
 		counter++;
 	}
@@ -78,8 +77,8 @@ void sessionIdManager(	stream<ap_uint<14> >&		new_id,
  */
 void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 						stream<rtlSessionUpdateReply>&			sessionInsert_rsp,
-						stream<sessionLookupQuery>&			rxEng2sLooup_req,
-						stream<fourTuple>&					txApp2sLookup_req,
+						stream<sessionLookupQuery>&				rxEng2sLooup_req,
+						stream<fourTuple>&						txApp2sLookup_req,
 						stream<ap_uint<14> >&					sessionIdFreeList,
 						stream<rtlSessionLookupRequest>&		sessionLookup_req,
 						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
@@ -108,90 +107,79 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 	enum slcFsmStateType {LUP_REQ, LUP_RSP, UPD_RSP};
 	static slcFsmStateType slc_fsmState = LUP_REQ;
 
-	switch (slc_fsmState)
-	{
-	case LUP_REQ:
-		if (!txApp2sLookup_req.empty())
-		{
-			txApp2sLookup_req.read(toeTuple);
-			intQuery.tuple.theirIp = toeTuple.dstIp;
-			intQuery.tuple.theirPort = toeTuple.dstPort;
-			intQuery.tuple.myIp = toeTuple.srcIp;
-			intQuery.tuple.myPort = toeTuple.srcPort;
-			intQuery.allowCreation = true;
-			intQuery.source = TX_APP;
-			sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
-			slc_queryCache.write(intQuery);
-			slc_fsmState = LUP_RSP;
-		}
-		else if (!rxEng2sLooup_req.empty())
-		{
-			rxEng2sLooup_req.read(query);
-			intQuery.tuple.theirIp = query.tuple.srcIp;
-			intQuery.tuple.theirPort = query.tuple.srcPort;
-			intQuery.tuple.myIp = query.tuple.dstIp;
-			intQuery.tuple.myPort = query.tuple.dstPort;
-			intQuery.allowCreation = query.allowCreation;
-			intQuery.source = RX;
-			sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
-			slc_queryCache.write(intQuery);
-			slc_fsmState = LUP_RSP;
-		}
-		break;
-	case LUP_RSP:
-		if(!sessionLookup_rsp.empty() && !slc_queryCache.empty())
-		{
-			sessionLookup_rsp.read(lupReply);
-			slc_queryCache.read(intQuery);
-			if (!lupReply.hit && intQuery.allowCreation && !sessionIdFreeList.empty())
-			{
-				sessionIdFreeList.read(freeID);
-				sessionInsert_req.write(rtlSessionUpdateRequest(intQuery.tuple, freeID, INSERT, lupReply.source));
-				slc_insertTuples.write(intQuery.tuple);
-				slc_fsmState = UPD_RSP;
+	switch (slc_fsmState) {
+		case LUP_REQ:
+			if (!txApp2sLookup_req.empty()) {
+				txApp2sLookup_req.read(toeTuple);
+				intQuery.tuple.theirIp = toeTuple.dstIp;
+				intQuery.tuple.theirPort = toeTuple.dstPort;
+				intQuery.tuple.myIp = toeTuple.srcIp;
+				intQuery.tuple.myPort = toeTuple.srcPort;
+				intQuery.allowCreation = true;
+				intQuery.source = TX_APP;
+				sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
+				slc_queryCache.write(intQuery);
+				slc_fsmState = LUP_RSP;
 			}
-			else
-			{
-				if (lupReply.source == RX)
-				{
-					sLookup2rxEng_rsp.write(sessionLookupReply(lupReply.sessionID, lupReply.hit));
+			else if (!rxEng2sLooup_req.empty()) {
+				rxEng2sLooup_req.read(query);
+				intQuery.tuple.theirIp = query.tuple.srcIp;
+				intQuery.tuple.theirPort = query.tuple.srcPort;
+				intQuery.tuple.myIp = query.tuple.dstIp;
+				intQuery.tuple.myPort = query.tuple.dstPort;
+				intQuery.allowCreation = query.allowCreation;
+				intQuery.source = RX;
+				sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
+				slc_queryCache.write(intQuery);
+				slc_fsmState = LUP_RSP;
+			}
+			break;
+		case LUP_RSP:
+			if(!sessionLookup_rsp.empty() && !slc_queryCache.empty()) {
+				sessionLookup_rsp.read(lupReply);
+				slc_queryCache.read(intQuery);
+				if (!lupReply.hit && intQuery.allowCreation && !sessionIdFreeList.empty()) {	
+					// If the tuple is not in the memory and it can be created, get a free ID and inserted the tuple into the SmartCAM
+					sessionIdFreeList.read(freeID);
+					sessionInsert_req.write(rtlSessionUpdateRequest(intQuery.tuple, freeID, INSERT, lupReply.source));
+					slc_insertTuples.write(intQuery.tuple);
+					slc_fsmState = UPD_RSP;
 				}
-				else
-				{
-					sLookup2txApp_rsp.write(sessionLookupReply(lupReply.sessionID, lupReply.hit));
+				else { 	// Forward the SmartCAM's look-up response to the proper module
+					if (lupReply.source == RX) {
+						sLookup2rxEng_rsp.write(sessionLookupReply(lupReply.sessionID, lupReply.hit));
+					}
+					else {
+						sLookup2txApp_rsp.write(sessionLookupReply(lupReply.sessionID, lupReply.hit));
+					}
+					slc_fsmState = LUP_REQ;
 				}
+			}
+			break;
+		case UPD_RSP:
+			if (!sessionInsert_rsp.empty() && !slc_insertTuples.empty()) {
+				sessionInsert_rsp.read(insertReply);
+				slc_insertTuples.read(tuple);
+				//updateReplies.write(sessionLookupReply(insertReply.sessionID, true));
+				if (insertReply.source == RX) {
+					sLookup2rxEng_rsp.write(sessionLookupReply(insertReply.sessionID, true));
+				}
+				else {
+					sLookup2txApp_rsp.write(sessionLookupReply(insertReply.sessionID, true));
+				}
+				reverseTableInsertFifo.write(revLupInsert(insertReply.sessionID, tuple));
 				slc_fsmState = LUP_REQ;
 			}
-		}
-		break;
-	//case UPD_REQ:
-		//break;
-	case UPD_RSP:
-		if (!sessionInsert_rsp.empty() && !slc_insertTuples.empty())
-		{
-			sessionInsert_rsp.read(insertReply);
-			slc_insertTuples.read(tuple);
-			//updateReplies.write(sessionLookupReply(insertReply.sessionID, true));
-			if (insertReply.source == RX)
-			{
-				sLookup2rxEng_rsp.write(sessionLookupReply(insertReply.sessionID, true));
-			}
-			else
-			{
-				sLookup2txApp_rsp.write(sessionLookupReply(insertReply.sessionID, true));
-			}
-			reverseTableInsertFifo.write(revLupInsert(insertReply.sessionID, tuple));
-			slc_fsmState = LUP_REQ;
-		}
-		break;
+			break;
 	}
 }
 
-void updateRequestSender(stream<rtlSessionUpdateRequest>&		sessionInsert_req,
-					stream<rtlSessionUpdateRequest>&		sessionDelete_req,
-					stream<rtlSessionUpdateRequest>&		sessionUpdate_req,
-					stream<ap_uint<14> >&					sessionIdFinFifo,
-					ap_uint<16>& regSessionCount)
+void updateRequestSender(
+					stream<rtlSessionUpdateRequest>&			sessionInsert_req,
+					stream<rtlSessionUpdateRequest>&			sessionDelete_req,
+					stream<rtlSessionUpdateRequest>&			sessionUpdate_req,
+					stream<ap_uint<14> >&						sessionIdFinFifo,
+					ap_uint<16>& 								regSessionCount)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -205,8 +193,7 @@ void updateRequestSender(stream<rtlSessionUpdateRequest>&		sessionInsert_req,
 		usedSessionIDs++;
 		regSessionCount = usedSessionIDs;
 	}
-	else if (!sessionDelete_req.empty())
-	{
+	else if (!sessionDelete_req.empty()) {
 		sessionDelete_req.read(request);
 		sessionUpdate_req.write(request);
 		sessionIdFinFifo.write(request.value);
@@ -226,11 +213,9 @@ void updateReplyHandler(	stream<rtlSessionUpdateReply>&			sessionUpdate_rsp,
 	rtlSessionUpdateReply upReply;
 	fourTupleInternal tuple;
 
-	if (!sessionUpdate_rsp.empty())
-	{
+	if (!sessionUpdate_rsp.empty()) {
 		sessionUpdate_rsp.read(upReply);
-		if (upReply.op == INSERT)
-		{
+		if (upReply.op == INSERT) {
 			sessionInsert_rsp.write(upReply);
 		}
 		/*else // DELETE
@@ -240,12 +225,12 @@ void updateReplyHandler(	stream<rtlSessionUpdateReply>&			sessionUpdate_rsp,
 	}
 }
 
-void reverseLookupTableInterface(	stream<revLupInsert>& revTableInserts,
-									stream<ap_uint<16> >& stateTable2sLookup_releaseSession,
-									stream<ap_uint<16> >& txEng2sLookup_rev_req,
-									stream<ap_uint<16> >& sLookup2portTable_releasePort,
-									stream<rtlSessionUpdateRequest> & deleteCache,
-									stream<fourTuple>& sLookup2txEng_rev_rsp)
+void reverseLookupTableInterface(	stream<revLupInsert>& 				revTableInserts,
+									stream<ap_uint<16> >& 				stateTable2sLookup_releaseSession,
+									stream<ap_uint<16> >& 				txEng2sLookup_rev_req,
+									stream<ap_uint<16> >& 				sLookup2portTable_releasePort,
+									stream<rtlSessionUpdateRequest>& 	deleteCache,
+									stream<fourTuple>& 					sLookup2txEng_rev_rsp)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -261,27 +246,22 @@ void reverseLookupTableInterface(	stream<revLupInsert>& revTableInserts,
 	fourTupleInternal	releaseTuple;
 	ap_uint<16>			sessionID;
 
-	if (!revTableInserts.empty())
-	{
+	if (!revTableInserts.empty()) {
 		revTableInserts.read(insert);
 		reverseLookupTable[insert.key] = insert.value;
 		tupleValid[insert.key] = true;
-
 	}
 	// TODO check if else if necessary
-	else if (!stateTable2sLookup_releaseSession.empty())
-	{
+	else if (!stateTable2sLookup_releaseSession.empty()) {
 		stateTable2sLookup_releaseSession.read(sessionID);
 		releaseTuple = reverseLookupTable[sessionID];
-		if (tupleValid[sessionID]) // if valid
-		{
+		if (tupleValid[sessionID]) {		// if valid
 			sLookup2portTable_releasePort.write(releaseTuple.myPort);
 			deleteCache.write(rtlSessionUpdateRequest(releaseTuple, sessionID, DELETE, RX));
 		}
 		tupleValid[sessionID] = false;
 	}
-	else if (!txEng2sLookup_rev_req.empty())
-	{
+	else if (!txEng2sLookup_rev_req.empty()) {
 		txEng2sLookup_rev_req.read(sessionID);
 		toeTuple.srcIp = reverseLookupTable[sessionID].myIp;
 		toeTuple.dstIp = reverseLookupTable[sessionID].theirIp;
@@ -291,22 +271,25 @@ void reverseLookupTableInterface(	stream<revLupInsert>& revTableInserts,
 	}
 }
 
-/** @ingroup session_lookup_controller
- *  This module acts as a wrapper for the RTL implementation of the SessionID Table.
- *  It also includes the wrapper for the sessionID free list which keeps track of the free SessionIDs
- *  @param[in]		rxLookupIn
- *  @param[in]		stateTable2sLookup_releaseSession
- *  @param[in]		txAppLookupIn
- *  @param[in]		txLookup
- *  @param[in]		lookupIn
- *  @param[in]		updateIn
- *  @param[out]		rxLookupOut
- *  @param[out]		portReleaseOut
- *  @param[out]		txAppLookupOut
- *  @param[out]		txResponse
- *  @param[out]		lookupOut
- *  @param[out]		updateOut
- *  @TODO rename
+/** @ingroup    session_lookup_controller 
+ * This module acts as a wrapper for the RTL implementation of the SessionID Table.
+ * It also includes the wrapper for the sessionID free list which keeps track of the free SessionIDs
+ *
+ * @brief      { function_description }
+ *
+ * @param[in]  rxEng2sLookup_req                  Look up request issued by RX engine
+ * @param[out] sLookup2rxEng_rsp                  Response to the RX engine request
+ * @param[in]  stateTable2sLookup_releaseSession  Issues a ID release because the communication finished
+ * @param[out] sLookup2portTable_releasePort      Request to close a port
+ * @param[in]  txApp2sLookup_req                  Look up request issued by TX application
+ * @param[out] sLookup2txApp_rsp                  Response to the TX application request
+ * @param[in]  txEng2sLookup_rev_req              Request the tuple associated to an specific ID
+ * @param[out] sLookup2txEng_rev_rsp              Replay the tuple associated to ID
+ * @param[out] sessionLookup_req                  Issue the tuple to the SmartCam
+ * @param[in]  sessionLookup_rsp                  SmartCam response to the issued tuple
+ * @param[out] sessionUpdate_req                  Issue a SmartCAM update, it could be insertion or deletion 
+ * @param[in]  sessionUpdate_rsp                  Response of the issued SmartCAM update
+ * @param[out] regSessionCount                    Number of current sessions
  */
 void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 								stream<sessionLookupReply>&			sLookup2rxEng_rsp,
@@ -319,13 +302,11 @@ void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 								stream<rtlSessionLookupRequest>&	sessionLookup_req,
 								stream<rtlSessionLookupReply>&		sessionLookup_rsp,
 								stream<rtlSessionUpdateRequest>&	sessionUpdate_req,
-								//stream<rtlSessionUpdateRequest>&	sessionInsert_req,
-								//stream<rtlSessionUpdateRequest>&	sessionDelete_req,
 								stream<rtlSessionUpdateReply>&		sessionUpdate_rsp,
-								ap_uint<16>& regSessionCount)
+								ap_uint<16>& 						regSessionCount)
 {
-//#pragma HLS DATAFLOW
-#pragma HLS INLINE
+#pragma HLS DATAFLOW
+//#pragma HLS INLINE
 
 	// Fifos
 	static stream<sessionLookupQueryInternal> slc_lookups("slc_lookups");
@@ -350,9 +331,12 @@ void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 	#pragma HLS STREAM variable=reverseLupInsertFifo depth=4
 
 
-	sessionIdManager(slc_sessionIdFreeList, slc_sessionIdFinFifo);
+	sessionIdManager(
+						slc_sessionIdFreeList, 
+						slc_sessionIdFinFifo);
 
-	lookupReplyHandler(	sessionLookup_rsp,
+	lookupReplyHandler(	
+						sessionLookup_rsp,
 						slc_sessionInsert_rsp,
 						rxEng2sLookup_req,
 						txApp2sLookup_req,
@@ -364,19 +348,22 @@ void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 						reverseLupInsertFifo
 						);//regSessionCount);
 
-	updateRequestSender(sessionInsert_req,
+	updateRequestSender(
+						sessionInsert_req,
 						sessionDelete_req,
 						sessionUpdate_req,
 						slc_sessionIdFinFifo,
 						regSessionCount);
 
-	updateReplyHandler(	sessionUpdate_rsp,
+	updateReplyHandler(	
+						sessionUpdate_rsp,
 						slc_sessionInsert_rsp);
 
-	reverseLookupTableInterface(	reverseLupInsertFifo,
-									stateTable2sLookup_releaseSession,
-									txEng2sLookup_rev_req,
-									sLookup2portTable_releasePort,
-									sessionDelete_req,
-									sLookup2txEng_rev_rsp);
+	reverseLookupTableInterface(	
+						reverseLupInsertFifo,
+						stateTable2sLookup_releaseSession,
+						txEng2sLookup_rev_req,
+						sLookup2portTable_releasePort,
+						sessionDelete_req,
+						sLookup2txEng_rev_rsp);
 }

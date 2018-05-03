@@ -50,7 +50,7 @@ static const uint16_t MAX_SESSIONS = 10000;
 #define TCP_NODELAY 0
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
-#define RX_DDR_BYPASS 1
+#define RX_DDR_BYPASS 0
 
 
 

@@ -218,7 +218,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 		}
 		break;
 	case 3:	// This is the non-realignment state
-		if (!tasi_pkgBuffer.empty() & !txBufferWriteData.full()) {
+		if (!tasi_pkgBuffer.empty() /* && !txBufferWriteData.full()*/) {
 			tasi_pkgBuffer.read(pushWord);
 #if (TCP_NODELAY)
 			txApp2txEng_data_stream.write(pushWord);
@@ -232,7 +232,7 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 		}
 		break;
 	case 4: // We go into this state when we need to realign things
-		if (!tasi_pkgBuffer.empty() && !txBufferWriteData.full()) {
+		if (!tasi_pkgBuffer.empty() /* && !txBufferWriteData.full()*/) {
 			axiWord outputWord = axiWord(0, 0xFF, 0);
 			outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
 			pushWord = tasi_pkgBuffer.read();
@@ -264,14 +264,14 @@ void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 		}
 		break;
 	case 5:
-		if (!txBufferWriteData.full()) {
+//		if (!txBufferWriteData.full()) {
 			if (!tasi_pushMeta.drop) {
 				axiWord outputWord = axiWord(0, len2Keep(txAppBreakTemp), 1);
 				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
 				txBufferWriteData.write(outputWord);
 				tasiPkgPushState = 0;
 			}
-		}
+//		}
 		break;
 	} //switch
 }

@@ -1082,7 +1082,7 @@ void rxEngMemWrite(
 
 		saddr 				= input_command.saddr;
 		buffer_overflow 	= input_command.saddr.range(15, 0) + input_command.bbt; // Compute the address of the last byte to write
-
+		reading_data 		= true;
 		if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
 			// TODO: I think is enough with putting a last and the correct keep to determine the end of the first transaction. TEST IT!
 			first_command.bbt 	= 65536 - input_command.bbt;	// Compute how much bytes are needed in the first transaction 
@@ -1172,10 +1172,13 @@ void rxEngMemWrite(
  *  @param[out]		rxEng2rxSar_upd_req
  *  @param[out]		rxEng2txSar_upd_req
  *  @param[out]		rxEng2timer_clearRetransmitTimer
+ *  @param[out]		rxEng2timer_clearProbeTimer
  *  @param[out]		rxEng2timer_setCloseTimer
  *  @param[out]		openConStatusOut
  *  @param[out]		rxEng2eventEng_setEvent
  *  @param[out]		rxEng2rxApp_notification
+ *  @param[out]		rxEng_pseudo_packet_to_checksum
+ *  @param[in]		rxEng_pseudo_packet_res_checksum
  */
 
 void rx_engine(	stream<axiWord>&					ipRxData,
@@ -1204,8 +1207,8 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum)
 {
 #pragma HLS DATAFLOW
-//#pragma HLS INTERFACE ap_ctrl_none port=return
-#pragma HLS INLINE off
+#pragma HLS INTERFACE ap_ctrl_none port=return
+#pragma HLS INLINE 
 
 	// Axi Streams
 	static stream<axiWord>		rxEng_pseudo_packet("rxEng_pseudo_packet");
