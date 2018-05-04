@@ -2,6 +2,7 @@
 * @file pcap.c
 * @brief Own implementation of the libpcap (just necessary functions).
 * @author José Fernando Zazo Rollón, josefernando.zazo@estudiante.uam.es
+* @author Mario Daniel Ruiz Noguera, mario.ruiz@uam.es
 * @date 2013-07-25
 */
 
@@ -9,6 +10,7 @@
 #include "pcap.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -24,9 +26,9 @@ static void *memfile;
 static struct stat sr;
 static struct stat sw;
 
+static bool read_ethernet= true;
 
-
-int pcap_open (char *path)
+int pcap_open (char *path, bool ethernet)
 {
   if (file_read) {   /* Ensure just one file is opened. */
     return -1;
@@ -41,9 +43,10 @@ int pcap_open (char *path)
 #endif
   if (memfile == MAP_FAILED) {
     printf("Error in mmap %d\n",memfile);
-	perror("Error in mmap");
+    perror("Error in mmap");
     return -1;
   }
+  read_ethernet = ethernet;
 
   file_proc_size_read = 0;
 
@@ -98,15 +101,19 @@ static int readPacket (uint8_t **data, struct pcap_pkthdr *hdr)
 
   localheader = *((pcaprec_hdr_t *)((uint8_t *)memfile+file_proc_size_read));
   file_proc_size_read+=sizeof (pcaprec_hdr_t);
-  
-
 
   hdr->ts.tv_usec = localheader.ts_usec;
   hdr->ts.tv_sec  = localheader.ts_sec;
-  hdr->len        = localheader.orig_len;
 
+  if (!read_ethernet){  // skip the ethernet header
+    hdr->len        = localheader.orig_len - 14;
+    *data =  (uint8_t *)memfile+file_proc_size_read + 14;
+  }
+  else{
+    hdr->len        = localheader.orig_len;
+    *data =  (uint8_t *)memfile+file_proc_size_read;
+  }
 
-  *data =  (uint8_t *)memfile+file_proc_size_read;
   file_proc_size_read+=localheader.incl_len;
 
   return 1;
@@ -177,8 +184,15 @@ int pcap_WriteHeader (bool microseconds){
 
 int pcap_WriteData (char *data, int data_size){
   pcaprec_hdr_t local_header;
+  static bool first_call = true;
+  struct timeval tv;
 
-  local_header.ts_sec   = 0;
+  if (first_call){
+    gettimeofday(&tv, NULL);
+    first_call = false;
+  }
+
+  local_header.ts_sec   = (uint32_t) tv.tv_sec;
   local_header.ts_usec  = 0;
   local_header.incl_len = data_size;
   local_header.orig_len = data_size;
@@ -189,9 +203,6 @@ int pcap_WriteData (char *data, int data_size){
   for (int i=0 ; i < data_size ; i++){
     fwrite(&data[i], 1 , 1 , file_write);
   }
-
-  //fwrite(&data, data_size, 1, file_write);
-
 }
 
 

@@ -8,6 +8,7 @@ HPCN research Group
 #include "pcap2stream.hpp"
 
 stream<axiWord> input_data("Data_Read_from_pcap");
+stream<axiWord> packet_without_ethernet("packet_without_ethernet");
 axiWord transaction;
 
 using namespace std;
@@ -89,7 +90,7 @@ void remove_ethernet (
 
 	do{
 		dataIn.read(currWord);
-
+		//cout << "ETH In[" << dec << pkt_count << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 
 		if (first_word){
 			first_word = false;
@@ -98,6 +99,7 @@ void remove_ethernet (
 				sendWord.keep(49 ,0) 	= currWord.keep( 63 ,  14);
 				sendWord.last 			= 1;
 				dataOut.write(sendWord);
+				//cout << "ETH Short[" << dec << pkt_count << "] " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			}
 		}
 		else{
@@ -110,16 +112,25 @@ void remove_ethernet (
 				if (currWord.keep.bit(14)) {
 					prevWord = currWord;
 					dataOut.write(sendWord);
-					sendWord = axiWord(0,0,1);
+					//cout << "ETH Extra1[" << dec << pkt_count << "] " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+					sendWord.data = 0;
+					sendWord.keep = 0;
+					sendWord.last = 1; 
 					sendWord.data(399,  0) 	= prevWord.data(511,112);
 					sendWord.keep( 49,  0) 	= prevWord.keep( 63, 14);
 					dataOut.write(sendWord);
+					//cout << "ETH Extra2[" << dec << pkt_count << "] " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 
 				}
 				else {
 					sendWord.last=1;
 					dataOut.write(sendWord);
+					//cout << "ETH Last[" << dec << pkt_count << "] " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 				}
+			}
+			else{
+					dataOut.write(sendWord);
+					//cout << "ETH Normal[" << dec << pkt_count << "] " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			}
 		}
 
@@ -127,23 +138,25 @@ void remove_ethernet (
 		
 
 	} while (!currWord.last);
+	pkt_count++;
 
 }
 
 
 int open_file (
-				char 								*file2load) {
+				char 								*file2load,
+				bool 								ethernet) {
 
 
-	cout << "File 2 load " << file2load << endl;
+	//cout << "File 2 load " << file2load << endl;
 
 	/* Read packets from pcapfile */
-	if(pcap_open (file2load)) {
+	if(pcap_open (file2load,ethernet)) {
 		cout << "Error opening the input file"<< endl;
 		return -1;
 	}
-	else
-		cout <<"File open correct" << endl << endl;
+	//else
+	//	cout <<"File open correct" << endl << endl;
 
 	if (pcap_loop (0,                  /* Iterate over all the packets */
 	                 pcapPacketHandler,  /* Routine invoked */
@@ -168,20 +181,12 @@ void pcap2stream(
 
 	axiWord 	currWord;
 
-	if (open_file(file2load)==0){
-
+	if (open_file(file2load,ethernet)==0){
 		while(!input_data.empty()){
-			if (ethernet){
-				input_data.read(currWord);
-				output_data.write(currWord);
-			}
-			else {
-				remove_ethernet(input_data , output_data);
-			}
+			input_data.read(currWord);
+			output_data.write(currWord);
 		}
-
 	}
-
 }
 
 /* It returns one complete packet each time is called
@@ -203,7 +208,7 @@ void pcap2stream_step(
 
 	if (!file_open) {
 		file_open = true;
-		if (open_file(file2load)!=0){
+		if (open_file(file2load,ethernet)!=0){
 			error_opening_file = true;
 		}
 	}
@@ -213,20 +218,10 @@ void pcap2stream_step(
 		if (!input_data.empty()){
 			do {
 				input_data.read(currWord);
-				if (ethernet){
-					output_data.write(currWord);
-				}
-				else {
-					currWord_Stream.write(currWord);
-				}
+				output_data.write(currWord);
 			} while (!currWord.last);
-
-			if (!ethernet){
-				remove_ethernet(currWord_Stream , output_data);
-			}
 		}
 	}
-
 
 }
 

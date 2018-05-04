@@ -2,6 +2,7 @@
 * @file pcap.h
 * @brief Own library inspiry in libpcap (just necessary functions).
 * @author José Fernando Zazo Rollón, josefernando.zazo@estudiante.uam.es
+* @author Mario Daniel Ruiz Noguera, mario.ruiz@uam.es
 * @date 2013-07-25
 */
 #ifndef NFP_PCAP_H
@@ -75,7 +76,7 @@ typedef void (*pcap_handler) (unsigned char *user,
 *
 * @return The FILE* associated.
 */
-int pcap_open (char *path);
+int pcap_open (char *path, bool ethernet);
 
 /**
 * @brief Close a previous file opened with pcap_open.
