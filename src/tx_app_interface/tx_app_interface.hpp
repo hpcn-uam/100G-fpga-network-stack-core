@@ -42,7 +42,8 @@ struct txAppTableEntry
 			:ackd(ackd), mempt(mempt) {}
 };
 
-void tx_app_interface(	stream<appTxMeta>&			appTxDataReqMetadata,
+void tx_app_interface(						
+					stream<appTxMeta>&			 	appTxDataReqMetadata,
 					stream<axiWord>&				appTxDataReq,
 					stream<sessionState>&			stateTable2txApp_rsp,
 					stream<txSarAckPush>&			txSar2txApp_ack_push,
@@ -55,8 +56,8 @@ void tx_app_interface(	stream<appTxMeta>&			appTxDataReqMetadata,
 					stream<sessionState>&			stateTable2txApp_upd_rsp,
 					stream<openStatus>&				conEstablishedFifo,
 
-					stream<appTxRsp>&			appTxDataRsp,
-					stream<ap_uint<16> >&				txApp2stateTable_req,
+					stream<appTxRsp>&				appTxDataRsp,
+					stream<ap_uint<16> >&			txApp2stateTable_req,
 					stream<mmCmd>&					txBufferWriteCmd,
 					stream<axiWord>&				txBufferWriteData,
 #if (TCP_NODELAY)
@@ -66,6 +67,7 @@ void tx_app_interface(	stream<appTxMeta>&			appTxDataReqMetadata,
 
 					stream<openStatus>&				appOpenConnRsp,
 					stream<fourTuple>&				txApp2sLookup_req,
+					//stream<ap_uint<1> >&			txApp2portTable_port_req,
 					stream<stateQuery>&				txApp2stateTable_upd_req,
 					stream<event>&					txApp2eventEng_setEvent,
 					stream<openStatus>&				rtTimer2txApp_notification,

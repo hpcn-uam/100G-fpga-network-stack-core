@@ -38,13 +38,13 @@ using namespace hls;
  *  the request the MetaData containig the Session-ID is also written back.
  *  @param[in]		appRxDataReq
  *  @param[in]		rxSar2rxApp_upd_rsp
- *  @param[out]		appRxDataRspMetadata
+ *  @param[out]		appRxDataRspIDsession
  *  @param[out]		rxApp2rxSar_upd_req
  *  @param[out]		rxBufferReadCmd
  */
 void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 					  stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
-					  stream<ap_uint<16> >&			appRxDataRspMetadata,
+					  stream<ap_uint<16> >&			appRxDataRspIDsession,
 					  stream<rxSarAppd>&			rxApp2rxSar_upd_req,
 #if (!RX_DDR_BYPASS)
 					  stream<mmCmd>&				rxBufferReadCmd)
@@ -75,9 +75,9 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 			}
 			break;
 		case 1:
-			if (!rxSar2rxApp_upd_rsp.empty() && !appRxDataRspMetadata.full() && !rxBufferReadCmd.full() && !rxApp2rxSar_upd_req.full()) {
+			if (!rxSar2rxApp_upd_rsp.empty() && !appRxDataRspIDsession.full() && !rxBufferReadCmd.full() && !rxApp2rxSar_upd_req.full()) {
 				rxSar2rxApp_upd_rsp.read(rxSar);
-				appRxDataRspMetadata.write(rxSar.sessionID);
+				appRxDataRspIDsession.write(rxSar.sessionID);
 #if (!RX_DDR_BYPASS)
 				ap_uint<32> pkgAddr = 0;
 				pkgAddr(29, 16) = rxSar.sessionID(13, 0);

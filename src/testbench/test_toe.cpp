@@ -32,9 +32,10 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <map>
 #include <string>
 #include "pcap2stream.hpp"
+#include "../iperf/iperf_client.hpp"
 
-//#define totalSimCycles 2500000
-#define totalSimCycles 1000
+#define totalSimCycles 100000
+//#define totalSimCycles 1000
 
 using namespace std;
 
@@ -207,6 +208,8 @@ void sessionLookupStub(
 
 	if (!lup_req.empty()) {
 		lup_req.read(request);
+		//cout << "TABLE LUP REQ DST(" << hex  << request.key.theirIp << ":" << dec << byteSwap16(request.key.theirPort) << ")";
+		//cout << "ORG(" << hex  << request.key.myIp << ":" << dec << byteSwap16(request.key.myPort) << ")" << "\ttime: " << simCycleCounter << endl;
 		findPos = lookupTable.find(request.key);
 		if (findPos != lookupTable.end()) //hit
 			lup_rsp.write(rtlSessionLookupReply(true, findPos->second, request.source));
@@ -216,6 +219,8 @@ void sessionLookupStub(
 
 	if (!upd_req.empty()) {	//TODO what if element does not exist
 		upd_req.read(update);
+		//cout << "TABLE LUP UDP DST(" << hex  << update.key.theirIp << ":" << dec << byteSwap16(update.key.theirPort) << ")";
+		//cout << "ORG(" << hex  << update.key.myIp << ":" << dec << byteSwap16(update.key.myPort) << ")" << "with ID: " << update.value << "\ttime: " << simCycleCounter << endl;
 		if (update.op == INSERT) {	//Is there a check if it already exists?
 			// Read free id
 			//new_id.read(update.value);
@@ -259,36 +264,39 @@ void simulateRx(
 		memory->setWriteCmd(cmd);
 		wrBufferWriteCounter = cmd.bbt;
 		stx_write = true;
+		//cout << "Rx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
 		//cerr << dec << rxMemCounter << " - " << hex << inWord.data << " " << inWord.keep << " " << inWord.last << endl;
 		//rxMemCounter++;;
 		memory->writeWord(inWord);
-		if (wrBufferWriteCounter < 9) {
+		if (wrBufferWriteCounter < (ETH_INTERFACE_WIDTH/8) + 1) {
 			//fake_txBuffer.write(inWord); // RT hack
 			stx_write = false;
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
 		else
-			wrBufferWriteCounter -= 8;
+			wrBufferWriteCounter -= (ETH_INTERFACE_WIDTH/8);
+		//cout << "Rx WRITE data: " << hex << inWord.data << "\tkeep: " << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		wrBufferReadCounter = cmd.bbt;
 		stx_read = true;
+		//cout << "Rx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
 		BufferOut.write(outWord);
-		//cerr << dec << rxMemCounterRd << " - " << hex << outWord.data << " " << outWord.keep << " " << outWord.last << endl;
 		rxMemCounterRd++;;
-		if (wrBufferReadCounter < 9)
+		if (wrBufferReadCounter < (ETH_INTERFACE_WIDTH/8)+1)
 			stx_read = false;
 		else
-			wrBufferReadCounter -= 8;
+			wrBufferReadCounter -= (ETH_INTERFACE_WIDTH/8);
+		//cout << "Rx READ data: " << hex << outWord.data << "\tkeep: " << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 }
 
@@ -314,13 +322,12 @@ void simulateTx(
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
-		cout << "WR: " << dec << cycleCounter << hex << " - " << cmd.saddr << " - " << cmd.bbt << endl;
 		memory->setWriteCmd(cmd);
 		stx_write = true;
+		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
-		cout << "Data: " << dec << cycleCounter << hex << inWord.data << " - " << inWord.keep << " - " << inWord.last << endl;
 		memory->writeWord(inWord);
 		if (inWord.last) {
 			//fake_txBuffer.write(inWord); // RT hack
@@ -328,145 +335,21 @@ void simulateTx(
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
+		cout << "Tx WRITE data: " << hex << inWord.data << "\tkeep: " << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
-		cout << "RD: " << cmd.saddr << " - " << cmd.bbt << endl;
 		memory->setReadCmd(cmd);
 		stx_read = true;
+		cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
-		cout << inWord.data << " " << inWord.last << " - ";
 		BufferOut.write(outWord);
 		if (outWord.last)
 			stx_read = false;
+		cout << "Tx READ data: " << hex << outWord.data << "\tkeep: " << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
-}
-
-void iperf(	
-			stream<ap_uint<16> >& 		listenPort, 
-			stream<bool>& 				listenPortStatus,
-			// This is disabled for the time being, because it adds complexity/potential issues
-			//stream<ap_uint<16> >& closePort,
-			stream<appNotification>& 	notifications, 
-			stream<appReadRequest>& 	readRequest,
-			stream<ap_uint<16> >& 		rxMetaData, 
-			stream<axiWord>& 			rxData, 
-			stream<axiWord>& 			rxDataOut,
-			stream<ipTuple>& 			openConnection, 
-			stream<openStatus>& 		openConStatus,
-			stream<ap_uint<16> >& 		closeConnection, 
-			vector<ap_uint<16> >& 		txSessionIDs) {
-
-	static bool listenDone = false;
-	static bool runningExperiment = false;
-	static ap_uint<1> listenFsm = 0;
-
-	openStatus newConStatus;
-	appNotification notification;
-	ipTuple tuple;
-	openStatus tempStatus;
-
-	enum consumeFsmStateType {WAIT_PKG, CONSUME, HEADER_2, HEADER_3};
-	static consumeFsmStateType  serverFsmState = WAIT_PKG;
-	ap_uint<16> sessionID;
-	axiWord currWord;
-	currWord.last = 0;
-	static bool dualTest = false;
-	static ap_uint<32> mAmount = 0;
-	
-	axiWord transmitWord;
-
-	// Open Port 5001
-	if (!listenDone) {
-		switch (listenFsm) {
-		case 0:
-			listenPort.write(5001);
-			listenFsm++;
-			break;
-		case 1:
-			if (!listenPortStatus.empty()) {
-				listenPortStatus.read(listenDone);
-				cout << "Listen port Done " << (listenDone ? "Yes" : "No") << endl;
-				listenFsm++;
-			}
-			break;
-		}
-	}
-
-	// In case we are connecting back
-	if (!openConStatus.empty()) {
-		openConStatus.read(tempStatus);
-		cout << "tempStatus.ID " << dec << tempStatus.sessionID <<"tempStatus.success: " << tempStatus.success << endl;
-		if(tempStatus.success){
-			txSessionIDs.push_back(tempStatus.sessionID);
-		}
-	}
-
-	if (!notifications.empty())	{
-		notifications.read(notification);
-		cout << "Notification length: " << dec << notification.length << endl;
-
-		if (notification.length != 0)
-			readRequest.write(appReadRequest(notification.sessionID, notification.length));
-		else // closed
-			runningExperiment = false;
-	}
-
-
-	switch (serverFsmState)	{
-		case WAIT_PKG:
-			if (!rxMetaData.empty() && !rxData.empty())	{
-				cout << "WAIT_PKG time:" << dec << simCycleCounter << endl;
-				rxMetaData.read(sessionID);
-				rxData.read(currWord);
-				rxDataOut.write(currWord);
-				if (!runningExperiment) {
-					if (currWord.data(31, 0) == 0x00000080) // Dual test
-						dualTest = true;
-					else
-						dualTest = false;
-
-					runningExperiment = true;
-					serverFsmState = HEADER_2;
-				}
-				else
-					serverFsmState = CONSUME;
-			}
-			break;
-		case HEADER_2:
-			if (!rxData.empty()) {
-				cout << "HEADER_2 time:" << dec << simCycleCounter << endl;
-				rxData.read(currWord);
-				rxDataOut.write(currWord);
-				if (dualTest) {
-					tuple.ip_address = 0x0800A8C0;
-					tuple.ip_port = currWord.data(31, 16);
-					openConnection.write(tuple);
-				}
-				serverFsmState = HEADER_3;
-			}
-			break;
-		case HEADER_3:
-			if (!rxData.empty()) {
-				cout << "HEADER_3 time:" << dec << simCycleCounter << endl;
-				rxData.read(currWord);
-				rxDataOut.write(currWord);
-				mAmount = currWord.data(63, 32);
-				serverFsmState = CONSUME;
-			}
-			break;
-		case CONSUME:
-			if (!rxData.empty()) {
-				cout << "CONSUME time:" << dec << simCycleCounter << endl;
-				rxData.read(currWord);
-				rxDataOut.write(currWord);
-			}
-			break;
-	}
-	if (currWord.last == 1)
-		serverFsmState = WAIT_PKG;
 }
 
 string decodeApUint64(ap_uint<64> inputNumber) {
@@ -772,15 +655,15 @@ int main(int argc, char **argv) {
 	stream<rtlSessionLookupRequest>		sessionLookup_req("sessionLookup_req");
 	stream<rtlSessionUpdateRequest>		sessionUpdate_req("sessionUpdate_req");
 //	stream<rtlSessionUpdateRequest>		sessionUpdate_req;
-	stream<ap_uint<16> >				listenPortReq("listenPortReq");
+	stream<ap_uint<16> >				rxApp2portTable_listen_req("rxApp2portTable_listen_req");
 	stream<appReadRequest>				rxDataReq("rxDataReq");
 	stream<ipTuple>						openConnReq("openConnReq");
 	stream<ap_uint<16> >				closeConnReq("closeConnReq");
 	stream<appTxMeta>				    txDataReqMeta("txDataReqMeta");
 	stream<axiWord>						txDataReq("txDataReq");
-	stream<bool>						listenPortRsp("listenPortRsp");
-	stream<appNotification>				notification("notification");
-	stream<ap_uint<16> >				rxDataRspMeta("rxDataRspMeta");
+	stream<bool>						rxApp2portTable_listen_rsp("rxApp2portTable_listen_rsp");
+	stream<appNotification>				rxAppNotification("rxAppNotification");
+	stream<ap_uint<16> >				rxDataRspIDsession("rxDataRspIDsession");
 	stream<axiWord>						rxDataRsp("rxDataRsp");
 	stream<openStatus>					openConnRsp("openConnRsp");
 	stream<appTxRsp>					txDataRsp("txDataRsp");
@@ -791,7 +674,8 @@ int main(int argc, char **argv) {
 	axiWord								ipTxDataIn_Data;
 	stream<axiWord> 					rxDataOut("rxDataOut");						// This stream contains the data output from the Rx App I/F
 	axiWord								rxDataOut_Data;								// This variable is where the data read from the stream above is temporarily stored before output
-  	
+	
+
   	stream<axiWord>						tx_pseudo_packet_to_checksum("tx_pseudo_packet_to_checksum");
 	stream<ap_uint<16> >				tx_pseudo_packet_res_checksum("tx_pseudo_packet_res_checksum");
   	stream<axiWord>						rxEng_pseudo_packet_to_checksum("rxEng_pseudo_packet_to_checksum");
@@ -835,9 +719,17 @@ int main(int argc, char **argv) {
 	vector<ap_uint<16> > txSessionIDs;		// This vector holds the session IDs of the session to which data are transmitted.
 	uint16_t	currentTxSessionID	= 0;	// Holds the session ID which was last used to send data into the Tx path.
 
-	//char 		mode 		= *argv[1];
-
-
+	stream<axiWord> 					tx_iperf_data("tx_iperf_data");						
+  	stream<ap_uint<16> > 				tx_iperf_MetaData("tx_iperf_MetaData");
+	stream<ap_int<17> > 				tx_iperf_Status("tx_iperf_Status");
+	ap_uint<1> 							iperf_runExperiment 	= 0;
+	ap_uint<1> 							iperf_dualModeEn 		= 0;
+	ap_uint<13> 						iperf_num_useConn 		= 1;
+	ap_uint<8> 							iperf_pkgWordCount 		= 8;
+	ap_uint<32> 						iperf_ipAddress0 		= 0xC0A80008;
+	ap_uint<32> 						iperf_ipAddress1 		= 0xC0A80009;
+	ap_uint<32> 						iperf_ipAddress2 		= 0xC0A8000A;
+	ap_uint<32> 						iperf_ipAddress3 		= 0xC0A8000B;
 
 	if (argc < 3) {
 		cout << "[ERROR] missing arguments " __FILE__  << " <INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;
@@ -846,18 +738,23 @@ int main(int argc, char **argv) {
 
 
 
-	if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
-		for (uint8_t i=0;i<noOfTxSessions;++i) {
-			ipTuple newTuple = {0x0800A8C0, 5002}; 				// IP address and port to open
-			openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
-		}
-	}
+	//if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
+	//	//for (uint8_t i=0;i<noOfTxSessions;++i) {
+	//		ipTuple newTuple = {0x0800A8C0, 5005}; 				// IP address and port to open
+	//		openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
+	//		cout << "Request to establish a new connection IP: " << hex << newTuple.ip_address << " Port: " << dec << newTuple.ip_port << endl;
+	//	//}
+	//}
 
 
 	do  {
 
-		if (simCycleCounter == 10 || simCycleCounter == 20){
+		if (((simCycleCounter+1) % 80) ==0){
 			pcap2stream_step(argv[1], false ,ipRxData);
+		}
+
+		if (simCycleCounter == 50){
+			iperf_runExperiment = 1;
 		}
 
 		toe(
@@ -881,16 +778,16 @@ int main(int argc, char **argv) {
 			sessionLookup_req, 
 			sessionUpdate_req, 
 
-			listenPortReq, 
+			rxApp2portTable_listen_req, 
 			rxDataReq, 
 			openConnReq, 
 			closeConnReq, 
 			txDataReqMeta, 
 			txDataReq,
 
-			listenPortRsp, 
-			notification, 
-			rxDataRspMeta, 
+			rxApp2portTable_listen_rsp, 
+			rxAppNotification, 
+			rxDataRspIDsession, 
 			rxDataRsp, 
 			openConnRsp, 
 			txDataRsp, 
@@ -903,18 +800,28 @@ int main(int argc, char **argv) {
 			rxEng_pseudo_packet_res_checksum);
 
 
-		iperf(
-			listenPortReq, 
-			listenPortRsp, 
-			notification, 
+		iperf_client(	
+			rxApp2portTable_listen_req,
+			rxApp2portTable_listen_rsp,
+			rxAppNotification,
 			rxDataReq,
-			rxDataRspMeta, 
-			rxDataRsp, 
-			rxDataOut, 								// TODO read this
-			openConnReq, 
+			rxDataRspIDsession,
+			rxDataOut,
+			openConnReq,
 			openConnRsp,
-			closeConnReq, 
-			txSessionIDs);							// TODO use this
+			closeConnReq,
+			tx_iperf_MetaData,
+			tx_iperf_data,
+			tx_iperf_Status,
+			iperf_runExperiment,
+			iperf_dualModeEn,
+			iperf_num_useConn,
+			iperf_pkgWordCount,
+			iperf_ipAddress0,
+			iperf_ipAddress1,
+			iperf_ipAddress2,
+			iperf_ipAddress3);
+
 
 		simulateRx(
 			&rxMemory, 
@@ -956,26 +863,35 @@ int main(int argc, char **argv) {
 		//	}
 		//}
 
+		stream2pcap(argv[2],false,true,ipTxData,false);
+
 	} while (simCycleCounter++ < totalSimCycles);
 
+	stream2pcap(argv[2],false,true,ipTxData,true);
 
-	stream2pcap(argv[2],false,true,ipTxData);
 
 	cout << "regSessionCount " << dec << regSessionCount << endl; 
-	/*
+	
 	packet=0;
 	transaction=0;
-
-	while (!rxDataOut.empty()){
-		rxDataOut.read(currOutWord);
-		cout << "Rx data out [" << dec << packet << "] [" << dec << transaction++ << "]";
+	
+	while (!rxDataRsp.empty()){
+		rxDataRsp.read(currOutWord);
+		cout << "rxDataRsp [" << dec << packet << "] [" << dec << transaction++ << "]";
 		cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
 		if (currOutWord.last){
 			packet ++;
 			transaction = 0;
 		}
 	}
-	*/
+
+	while (!rxDataRspIDsession.empty()){
+		ap_uint<16> rxDataResponse_meta;
+		rxDataRspIDsession.read(rxDataResponse_meta);
+		cout	<< "\trxDataRspIDsession " << dec << rxDataResponse_meta << endl;
+
+	}
+
 	return 0;
 
 }

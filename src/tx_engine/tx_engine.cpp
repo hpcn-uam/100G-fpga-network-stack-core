@@ -638,6 +638,25 @@ void ipHeaderConstruction(
 		sendWord.last 		   = 1;
 		sendWord.keep = 0xFFFFF;
 
+#ifndef __SYNTHESIS__
+		ap_uint<16> checksum;
+		ap_uint<21> first_sum=0;
+
+		ap_uint<16> tmp;
+
+		for (int i=0 ; i < 160 ; i+=16){
+			tmp( 7,0) = sendWord.data( i+15, i+8);
+			tmp(15,8) = sendWord.data( i+7, i);
+			first_sum += tmp;
+		}
+		first_sum = first_sum(15,0) + first_sum(20,16);
+		first_sum = first_sum(15,0) + first_sum(16,16);
+		checksum = ~(first_sum(15,0));
+		
+		sendWord.data( 95, 80) = (checksum(7,0),checksum(15,8));
+
+#endif		
+
 		txEng_ipHeaderBufferOut.write(sendWord);
 
 	}
@@ -655,15 +674,16 @@ void ipHeaderConstruction(
 void pseudoHeaderConstruction(
 								stream<tx_engine_meta>&		tcpMetaDataFifoIn,
 								stream<fourTuple>&			tcpTupleFifoIn,
-								stream<axiWord>&			dataOut)
+								stream<axiWord>&			dataOut,
+								stream<bool>& 				txEng_packet_with_payload)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static ap_uint<3> phc_currWord = 0;
-	axiWord sendWord = axiWord(0,0,0);
-	static tx_engine_meta phc_meta;
-	static fourTuple phc_tuple;
+	axiWord 				sendWord = axiWord(0,0,0);
+	static tx_engine_meta 	phc_meta;
+	static fourTuple 		phc_tuple;
+	bool 					packet_has_payload;
 	//static bool phc_done = true;
 	ap_uint<16> length = 0;
 
@@ -672,6 +692,13 @@ void pseudoHeaderConstruction(
 		tcpMetaDataFifoIn.read(phc_meta);
 		length = phc_meta.length + 0x14;  // 20 bytes for the header
 		
+		if (phc_meta.length == 0 || phc_meta.syn){ // If length is 0 the packet or it is a SYN packet the payload is not needed
+			packet_has_payload = false;
+		}
+		else{
+			packet_has_payload = true;
+		}
+
 		// Generate pseudoheader
 		sendWord.data( 31,  0) = phc_tuple.srcIp;
 		sendWord.data( 63, 32) = phc_tuple.dstIp;
@@ -726,6 +753,7 @@ void pseudoHeaderConstruction(
 
 		sendWord.last=1;
 		dataOut.write(sendWord);
+		txEng_packet_with_payload.write(packet_has_payload);
 	}
 }
 
@@ -737,14 +765,15 @@ void pseudoHeaderConstruction(
  */
 void tx_payload_stitcher(
 					stream<axiWord>&		txEng_pseudo_tcpHeader,
+					stream<bool>& 			txEng_packet_with_payload,
 					stream<axiWord>&		txBufferReadData,
 					stream<axiWord>&		txEng_tcpSegOut)
 {
 #pragma HLS INLINE off
 #pragma HLS LATENCY max=1
 	
-	axiWord 		payload_word;
-	axiWord 		sendWord = axiWord(0, 0, 0);
+	axiWord 			payload_word;
+	axiWord 			sendWord = axiWord(0, 0, 0);
 	static axiWord 		pseudo_word;
 	static axiWord 		prevWord;
 
@@ -753,6 +782,7 @@ void tx_payload_stitcher(
 	static ap_uint<1> 	txPkgStitcherAccBreakDown = 0;
 	static ap_uint<4> 	shiftBuffer = 0;
 	static bool 		txEngBrkDownReadIn = false;
+	bool 				packet_has_payload;
 
 	bool isShortCutData = false;
 
@@ -763,11 +793,11 @@ void tx_payload_stitcher(
 	static bool extra_word=false;
 
 
-	if (!txEng_pseudo_tcpHeader.empty() && read_pseudo_header && !extra_word){
+	if (!txEng_pseudo_tcpHeader.empty() && !txEng_packet_with_payload.empty() && read_pseudo_header && !extra_word){
 		txEng_pseudo_tcpHeader.read(pseudo_word);
+		txEng_packet_with_payload.read(packet_has_payload);
 
-
-		if (pseudo_word.data.bit(201)){ 				// It is a SYN packet, send it immediately 
+		if (!packet_has_payload){ 				// Payload is not needed because length==0 or is a SYN packet, send it immediately 
 			txEng_tcpSegOut.write(pseudo_word);
 			//cout << "pseudo 0: " << hex << pseudo_word.data << "\tkeep: " << pseudo_word.keep << "\tlast: " << dec << pseudo_word.last << endl;
 		}
@@ -856,14 +886,14 @@ void tx_payload_stitcher(
  *  The complete packet is then streamed out of the TCP engine. 
  *  The IP checksum must be computed and inserted after
  *  @param[in]		headerIn
- *  @param[in]		payloadIn
+ *  @param[in]		txEng_tcp_level_packet
  *  @param[in]		ipChecksumFifoIn
  *  @param[in]		tcpChecksumFifoIn
  *  @param[out]		dataOut
  */
 void tx_ip_pkt_stitcher(	
 					stream<axiWord>& 		txEng_ipHeaderBufferIn,
-					stream<axiWord>& 		payloadIn,
+					stream<axiWord>& 		txEng_tcp_level_packet,
 					stream<ap_uint<16> >& 	txEng_tcpChecksumFifoIn,
 					stream<axiWord>& 		ipTxDataOut)
 {
@@ -880,9 +910,9 @@ void tx_ip_pkt_stitcher(
 	static bool writing_payload=false;
 	static bool writing_extra=false;
 
- 	if (!txEng_ipHeaderBufferIn.empty() && !payloadIn.empty() && !txEng_tcpChecksumFifoIn.empty()) {
+ 	if (!txEng_ipHeaderBufferIn.empty() && !txEng_tcp_level_packet.empty() && !txEng_tcpChecksumFifoIn.empty()) {
 		txEng_ipHeaderBufferIn.read(ip_word);
-		payloadIn.read(payload);
+		txEng_tcp_level_packet.read(payload);
 		txEng_tcpChecksumFifoIn.read(tcp_checksum);
 
 		sendWord.data(159,  0) = ip_word.data(159,  0); 			// TODO: no IP options supported
@@ -907,7 +937,7 @@ void tx_ip_pkt_stitcher(
 		ipTxDataOut.write(sendWord);
 	}
 	else if (writing_payload){
-		payloadIn.read(payload);
+		txEng_tcp_level_packet.read(payload);
 		
 		sendWord.data(159,  0) = prevWord.data(511,352);
 		sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
@@ -1065,9 +1095,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=16   // is forwarded immediately, size is not critical
 	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_rm
 	
-	static stream<axiWord>		txEng_tcpPkgBuffer("txEng_tcpPkgBuffer");
-	#pragma HLS stream variable=txEng_tcpPkgBuffer depth=256  // critical, has to keep complete packet for checksum computation
-	#pragma HLS DATA_PACK variable=txEng_tcpPkgBuffer
+	static stream<axiWord>		txEng_tcp_level_packet("txEng_tcp_level_packet");
+	#pragma HLS stream variable=txEng_tcp_level_packet depth=256  // critical, has to keep complete packet for checksum computation
+	#pragma HLS DATA_PACK variable=txEng_tcp_level_packet
 	
 // 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
 //	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
@@ -1105,6 +1135,8 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txBufferReadData_aligned depth=16  
 	#pragma HLS DATA_PACK variable=txBufferReadData_aligned
 
+	static stream<bool>				txEng_packet_with_payload("txEng_packet_with_payload");
+	#pragma HLS stream variable=txEng_packet_with_payload depth=32
 
 	metaLoader(	eventEng2txEng_event,
 				rxSar2txEng_rsp,
@@ -1143,7 +1175,8 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	pseudoHeaderConstruction(
 				txEng_tcpMetaFifo, 
 				txEng_tcpTupleFifo, 
-				txEng_pseudo_tcpHeader);
+				txEng_pseudo_tcpHeader,
+				txEng_packet_with_payload);
 
 	tx_MemDataRead_aligner(
 				txBufferReadData_unaligned,
@@ -1156,6 +1189,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	tx_payload_stitcher(	
 				txEng_pseudo_tcpHeader,
+				txEng_packet_with_payload,
 				txBufferReadData_aligned,
 				tx_Eng_pseudo_pkt);
 
@@ -1168,11 +1202,11 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	txPseudo_header_Remover(
 				tx_Eng_pseudo_pkt_2_rm,
-				txEng_tcpPkgBuffer);
+				txEng_tcp_level_packet);
 
 	tx_ip_pkt_stitcher(
 				txEng_ipHeaderBuffer, 
-				txEng_tcpPkgBuffer, 
+				txEng_tcp_level_packet, 
 				tx_pseudo_packet_res_checksum, 
 				ipTxData);
 }

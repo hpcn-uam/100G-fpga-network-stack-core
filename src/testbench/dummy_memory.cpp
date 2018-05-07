@@ -56,28 +56,23 @@ void dummyMemory::setWriteCmd(mmCmd cmd)
 void dummyMemory::readWord(axiWord& word)
 {
 	readStorageIt = storage.find(readId);
-	if (readStorageIt == storage.end())
-	{
+	if (readStorageIt == storage.end()) {
 		readStorageIt = createBuffer(readId);
 		// check it?
 	}
 	int i = 0;
 	word.keep = 0;
-	while (readLen > 0 && i < 8)
-	{
+	while (readLen > 0 && i < (ETH_INTERFACE_WIDTH/8)) {
 		word.data((i*8)+7, i*8) = (readStorageIt->second)[readAddr];
-		word.keep = (word.keep << 1);
-		word.keep++;
+		word.keep.bit(i) = 1;
 		readLen--;
 		readAddr++;
 		i++;
 	}
-	if (readLen == 0)
-	{
+	if (readLen == 0) {
 		word.last = 1;
 	}
-	else
-	{
+	else {
 		word.last = 0;
 	}
 }
@@ -91,10 +86,9 @@ void dummyMemory::writeWord(axiWord& word)
 		// check it?
 	}
 	//shuffleWord(word.data);
-	for (int i = 0; i < 8; i++)
+	for (int i = 0; i < (ETH_INTERFACE_WIDTH/8); i++)
 	{
-		if (word.keep[i])
-		{
+		if (word.keep.bit(i)) {
 			(writeStorageIt->second)[writeAddr] = word.data((i*8)+7, i*8);
 			writeAddr++;
 		}

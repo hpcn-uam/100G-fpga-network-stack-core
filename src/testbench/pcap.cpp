@@ -185,7 +185,7 @@ int pcap_WriteHeader (bool microseconds){
 int pcap_WriteData (char *data, int data_size){
   pcaprec_hdr_t local_header;
   static bool first_call = true;
-  struct timeval tv;
+  static struct timeval tv;
 
   if (first_call){
     gettimeofday(&tv, NULL);

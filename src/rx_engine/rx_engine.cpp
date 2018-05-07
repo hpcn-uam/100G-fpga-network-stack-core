@@ -371,16 +371,16 @@ void rxEng_Generate_Metadata(
 			short_packet = false;
 			if (payload_length !=0){
 				sendWord 	  		= axiWord(0,0,1);
-				sendWord.data 		= currWord.data(511,tcp_offset*32 + 96);
-				sendWord.keep 		= currWord.keep(63, tcp_offset* 4 + 12);
+				sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
+				sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
 				payload.write(sendWord);
 			}
 		}
 		else if(extra_trans){
 			extra_trans = false;
 			sendWord 	  		= axiWord(0,0,1);
-			sendWord.data 		= currWord.data(511,tcp_offset*32 + 96);
-			sendWord.keep 		= currWord.keep(63, tcp_offset* 4 + 12);
+			sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
+			sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
 			payload.write(sendWord);
 		}
 	}
@@ -1219,9 +1219,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	#pragma HLS stream variable=rxEng_pseudo_packet_to_metadata depth=8
 	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet_to_metadata
 
-	static stream<axiWord>		tcp_payload("tcp_payload");
-	#pragma HLS stream variable=tcp_payload depth=256 //critical, tcp checksum computation
-	#pragma HLS DATA_PACK variable=tcp_payload
+	static stream<axiWord>		rxEng_tcp_payload("rxEng_tcp_payload");
+	#pragma HLS stream variable=rxEng_tcp_payload depth=256 //critical, tcp checksum computation
+	#pragma HLS DATA_PACK variable=rxEng_tcp_payload
 
 	static stream<axiWord>		rxEng_pkt_buffer("rxEng_pkt_buffer");
 	#pragma HLS stream variable=rxEng_pkt_buffer depth=256
@@ -1286,14 +1286,14 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	rxEng_Generate_Metadata(
 			rxEng_pseudo_packet_to_metadata,
 			rxEng_pseudo_packet_res_checksum,
-			tcp_payload, 
+			rxEng_tcp_payload, 
 			rxEng_correct_checksum, 
 			rxEng_metaDataFifo,
 			rxEng_tupleBuffer, 
 			rxEng2portTable_req);
 
 	rxTcpInvalidDropper(
-			tcp_payload, 
+			rxEng_tcp_payload, 
 			rxEng_correct_checksum, 
 			rxEng_pkt_buffer);
 

@@ -24,9 +24,10 @@ void pcap2stream_step(
 
 unsigned keep_to_length(ap_uint<ETH_INTERFACE_WIDTH/8> keep);
 
-void stream2pcap(
+int stream2pcap(
 				char 								*file2load, 		// pcapfilename
 				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
 				bool 								microseconds,		// 1: microseconds precision 0: nanoseconds precision 
-				stream<axiWord>&					input_data			// output data
+				stream<axiWord>&					input_data,			// output data
+				bool 								close_file
 );

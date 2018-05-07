@@ -36,7 +36,7 @@ using namespace hls;
  */
 void rx_app_stream_if(	stream<appReadRequest>&		appRxDataReq,
 						stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
-						stream<ap_uint<16> >&		appRxDataRspMetadata,
+						stream<ap_uint<16> >&		appRxDataRspIDsession,
 						stream<rxSarAppd>&			rxApp2rxSar_upd_req,
 #if !(RX_DDR_BYPASS)
 						stream<mmCmd>&				rxBufferReadCmd);

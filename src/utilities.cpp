@@ -951,7 +951,7 @@ void DataBroadcast(
 //		bytes = keep2len (currWord.keep);
 //		byte_count += bytes;
 
-		//cout << "Broadcaster ["<< dec << packet << "][" << transaction << "] " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+		//cout << "Broadcaster " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 //		if (currWord.last){
 //			packet++;
 //			transaction =0;

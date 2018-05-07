@@ -190,7 +190,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					stream<rxSarAppd>&				rxSar2rxApp_upd_rsp,
 					stream<appNotification>&		rxEng2rxApp_notification,
 					stream<appNotification>&		timer2rxApp_notification,
-					stream<ap_uint<16> >&			appRxDataRspMetadata,
+					stream<ap_uint<16> >&			appRxDataRspIDsession,
 					stream<rxSarAppd>&				rxApp2rxSar_upd_req,
 #if (!RX_DDR_BYPASS)
 					stream<mmCmd>&					rxBufferReadCmd,
@@ -214,7 +214,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 	rx_app_stream_if(
 					appRxDataReq, 
 					rxSar2rxApp_upd_rsp,
-					appRxDataRspMetadata,
+					appRxDataRspIDsession,
 					rxApp2rxSar_upd_req,
 					rxAppStreamIf2memAccessBreakdown);
 
@@ -235,7 +235,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 	rx_app_stream_if(
 					appRxDataReq,
 					rxSar2rxApp_upd_rsp,
-					appRxDataRspMetadata,
+					appRxDataRspIDsession,
 					rxApp2rxSar_upd_req,
 					rxBufferReadCmd);
 
@@ -279,7 +279,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  *  @param[in]		txDataReq
  *  @param[out]		portTable2rxApp_listen_rsp
  *  @param[out]		notification
- *  @param[out]		rxDataRspMeta
+ *  @param[out]		rxDataRspIDsession
  *  @param[out]		rxDataRsp
  *  @param[out]		openConnRsp
  *  @param[out]		txDataRsp
@@ -321,7 +321,7 @@ void toe(	// Data & Memory Interface
 
 			stream<bool>&							portTable2rxApp_listen_rsp,
 			stream<appNotification>&				notification,
-			stream<ap_uint<16> >&					rxDataRspMeta,
+			stream<ap_uint<16> >&					rxDataRspIDsession,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
 			stream<appTxRsp>&						txDataRsp,
@@ -397,7 +397,7 @@ void toe(	// Data & Memory Interface
 #pragma HLS INTERFACE axis off port=notification name=m_axis_notification
 #pragma HLS INTERFACE axis off port=rxDataReq name=s_axis_rx_data_req 
 
-#pragma HLS INTERFACE axis off port=rxDataRspMeta name=m_axis_rx_data_rsp_metadata
+#pragma HLS INTERFACE axis off port=rxDataRspIDsession name=m_axis_rx_data_rsp_IDsession
 #pragma HLS INTERFACE axis off port=rxDataRsp name=m_axis_rx_data_rsp 
 
 #pragma HLS INTERFACE axis off port=openConnReq name=s_axis_open_conn_req
@@ -743,7 +743,7 @@ void toe(	// Data & Memory Interface
 			 	 	rxSar2rxApp_upd_rsp,
 			 	 	rxEng2rxApp_notification,
 			 	 	timer2rxApp_notification,
-			 	 	rxDataRspMeta,
+			 	 	rxDataRspIDsession,
 			 	 	rxApp2rxSar_upd_req,
 #if !(RX_DDR_BYPASS)
 			 	 	rxBufferReadCmd,
@@ -759,12 +759,14 @@ void toe(	// Data & Memory Interface
 					//txSar2txApp_upd_rsp,
 					txSar2txApp_ack_push,
 					txBufferWriteStatus,
+
 					openConnReq,
 					closeConnReq,
 					sLookup2txApp_rsp,
 					portTable2txApp_port_rsp,
-					stateTable2txApp_upd_rsp,
+					stateTable2txApp_upd_rsp,					
 					conEstablishedFifo,
+					
 					txDataRsp,
 					txApp2stateTable_req,
 					//txApp2txSar_upd_req,

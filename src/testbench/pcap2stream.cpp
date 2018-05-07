@@ -243,12 +243,16 @@ unsigned keep_to_length(ap_uint<ETH_INTERFACE_WIDTH/8> keep){
 }
 
 
-void stream2pcap(
+int stream2pcap(
 				char 								*file2load, 		// pcapfilename
 				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
 				bool 								microseconds,		// 1: microseconds precision 0: nanoseconds precision 
-				stream<axiWord>&					input_data			// output data
+				stream<axiWord>&					input_data,			// output data
+				bool 								close_file
 ) {
+
+	static bool file_open = false;
+	static int 	pcap_open_write_return=0;
 
 	axiWord 	currWord;
 
@@ -259,27 +263,36 @@ void stream2pcap(
 		pointer = 0;
 	}
 
-
-	if (pcap_open_write(file2load,microseconds)==0){
-
-		while(!input_data.empty()){
-			input_data.read(currWord);
-			for (int i =0 ; i<64 ; i++){
-				if (currWord.keep.bit(i)){
-					packet[pointer] = currWord.data(i*8+7,i*8);
-					pointer++;
-				}
-			}
-			if (currWord.last){
-				//call write function
-				pcap_WriteData(&packet[0],pointer);
-				pointer = (ethernet) ? 0 : 14;
-			}
-		}
-
-	//pcap_WriteData(&packet[0],pointer);
+	if (!file_open){
+		pcap_open_write_return = pcap_open_write(file2load,microseconds);
+		file_open = true;
 	}
 
-	pcap_close_write();
+	if (pcap_open_write_return !=0){
+		return -1;
+	}
+
+	if (!input_data.empty()){
+		input_data.read(currWord);
+		for (int i =0 ; i<64 ; i++){
+			if (currWord.keep.bit(i)){
+				packet[pointer] = currWord.data(i*8+7,i*8);
+				pointer++;
+			}
+		}
+		if (currWord.last){
+			//call write function
+			pcap_WriteData(&packet[0],pointer);
+			pointer = (ethernet) ? 0 : 14;
+		}
+	}
+
+	if (close_file){
+		pcap_close_write();
+		file_open = false;
+	}
+
+
+
 
 }

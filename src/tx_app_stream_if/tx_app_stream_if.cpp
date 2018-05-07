@@ -35,10 +35,10 @@ using namespace hls;
  *  Reads the request from the application and loads the necessary metadata,
  *  the FSM decides if the packet is written to the TX buffer or discarded.
  */
-void tasi_metaLoader(	stream<appTxMeta>&			appTxDataReqMetaData,
+void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 						stream<sessionState>&			stateTable2txApp_rsp,
 						stream<txAppTxSarReply>&		txSar2txApp_upd_rsp,
-						stream<appTxRsp>&			appTxDataRsp,
+						stream<appTxRsp>&				appTxDataRsp,
 						stream<ap_uint<16> >&			txApp2stateTable_req,
 						stream<txAppTxSarQuery>&		txApp2txSar_upd_req,
 						stream<pkgPushMeta>&			tasi_writeToBufFifo,
@@ -297,7 +297,7 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 						stream<axiWord>&				appTxDataReq,
 						stream<sessionState>&			stateTable2txApp_rsp,
 						stream<txAppTxSarReply>&		txSar2txApp_upd_rsp, //TODO rename
-						stream<appTxRsp>&			appTxDataRsp,
+						stream<appTxRsp>&				appTxDataRsp,
 						stream<ap_uint<16> >&			txApp2stateTable_req,
 						stream<txAppTxSarQuery>&		txApp2txSar_upd_req, //TODO rename
 						stream<mmCmd>&					txBufferWriteCmd,
