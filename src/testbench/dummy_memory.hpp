@@ -40,8 +40,6 @@ public:
 	void writeWord(axiWord& word);
 private:
 	std::map<ap_uint<16>, ap_uint<8>*>::iterator createBuffer(ap_uint<16> id);
-	void shuffleWord(ap_uint<64>& );
-	bool* getBitMask(ap_uint<4> keep);
 	ap_uint<16> readAddr; //<8>
 	ap_uint<16> readId;
 	int readLen;

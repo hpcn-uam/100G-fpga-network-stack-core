@@ -256,8 +256,8 @@ int stream2pcap(
 
 	axiWord 	currWord;
 
-	char packet [65536]={0x4A,0xFD,0x4B,0xE0,0x87,0xBD,0x0,0x0A,0x35,0x02,0x9D,0xE5,0x08,0x00}; // Include the Ethernet header
-	int pointer = 14;
+	static char packet [65536]={0x4A,0xFD,0x4B,0xE0,0x87,0xBD,0x0,0x0A,0x35,0x02,0x9D,0xE5,0x08,0x00}; // Include the Ethernet header
+	static int pointer = 14;
 	
 	if (ethernet){
 		pointer = 0;
@@ -274,6 +274,7 @@ int stream2pcap(
 
 	if (!input_data.empty()){
 		input_data.read(currWord);
+		//cout << "Stream to pcap: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 		for (int i =0 ; i<64 ; i++){
 			if (currWord.keep.bit(i)){
 				packet[pointer] = currWord.data(i*8+7,i*8);

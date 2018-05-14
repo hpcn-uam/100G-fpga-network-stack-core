@@ -508,6 +508,26 @@ struct appNotification
 			:sessionID(id), length(len), ipAddress(addr), dstPort(port), closed(closed) {}
 };
 
+struct txApp_client_status
+{
+	ap_uint<16> 		sessionID;			// Tells to the tx application the ID
+	/* 
+	 * not used in the time being, tells to the app the negociated buffer size. 
+	 * 65536 * (buffersize+1) 
+	 */
+	ap_uint<8>			buffersize;			
+	ap_uint<11>			max_transfer_size;	// max 2048
+	/*
+	 * Tells the application that the design uses TCP_NODELAY which means that the data 
+	 * transfers has to be done in chunks of a maximum size
+	 */
+	bool 				tcp_nodelay;
+	bool				buffer_empty;		// Tells when the Tx buffer is empty. It is also used as a way to indicate that a new connection was opened. 
+	txApp_client_status() {}
+	txApp_client_status(ap_uint<16> id, ap_uint<8> buffersize, ap_uint<11> max_trans, bool tcp_nodelay, bool buf_empty ):
+		sessionID(id), buffersize(buffersize), max_transfer_size(max_trans),
+		tcp_nodelay(tcp_nodelay), buffer_empty(buf_empty) {}
+};
 
 struct appReadRequest
 {
@@ -528,13 +548,15 @@ struct appTxMeta
 		:sessionID(id), length(len) {}
 };
 
+enum txApp_error_msg {NO_ERROR, ERROR_NOCONNCECTION, ERROR_NOSPACE, ERROR_OVERFLOW_MSS};
+
 struct appTxRsp
 {
-	ap_uint<12> length;
-	ap_uint<16> remaining_space;
-	ap_uint<4>	error;
+	ap_uint<16> 		length;
+	ap_uint<16> 		remaining_space;
+	txApp_error_msg		error;
 	appTxRsp() {}
-	appTxRsp(ap_uint<12> len, ap_uint<16> rem_space, ap_uint<4> err)
+	appTxRsp(ap_uint<12> len, ap_uint<16> rem_space, txApp_error_msg err)
 		:length(len), remaining_space(rem_space), error(err) {}
 };
 
@@ -587,6 +609,7 @@ void toe(	// Data & Memory Interface
 
 			stream<bool>&							listenPortRsp,
 			stream<appNotification>&				notification,
+			stream<txApp_client_status>& 			rxEng2txApp_client_notification,
 			stream<ap_uint<16> >&					rxDataRspMeta,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,

@@ -31,6 +31,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 
 #include "../toe.hpp"
 #include "../utilities.hpp"
+#include "../memory_read/memory_read.hpp"
 
 using namespace hls;
 
@@ -79,7 +80,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<bool>&						portTable2rxEng_rsp,
 				stream<rxSarEntry>&					rxSar2rxEng_upd_rsp,
 				stream<rxTxSarReply>&				txSar2rxEng_upd_rsp,
-#if !(RX_DDR_BYPASS)
+#if (!RX_DDR_BYPASS)
 				stream<mmStatus>&					rxBufferWriteStatus,
 				stream<mmCmd>&						rxBufferWriteCmd,
 #endif
@@ -95,19 +96,12 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
 				stream<appNotification>&			rxEng2rxApp_notification,
+				stream<txApp_client_status>& 		rxEng2txApp_client_notification,
 				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
 				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum);
 
 void rxTCP_pseudoheader_insert(
 								stream<axiWord>&			dataIn,
 								stream<axiWord>&			dataOut);
-
-void rxCheckTCPchecksum(
-							stream<axiWord>&				dataIn,
-							stream<axiWord>&				dataOut,
-							stream<bool>&					validFifoOut,
-							stream<rxEngineMetaData>&		metaDataFifoOut,
-							stream<fourTuple>&				tupleFifoOut,
-							stream<ap_uint<16> >&			portTableOut);
 
 #endif

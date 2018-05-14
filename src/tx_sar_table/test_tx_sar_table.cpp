@@ -148,10 +148,10 @@ int main()
 
 	if (errCount == 0)
 	{
-		outputFile << "No errors coccured." << std::endl;
+		outputFile << "No errors occurred." << std::endl;
 	}
 	else
 	{
-		outputFile << errCount << " errors coccured." << std::endl;
+		outputFile << errCount << " errors occurred." << std::endl;
 	}
 }

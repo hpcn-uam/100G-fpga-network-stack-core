@@ -59,48 +59,97 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 	switch(tai_state)
 	{
 	case READ_REQUEST:
-		if (!appTxDataReqMetaData.empty())
-		{
-			// Read sessionID
-			appTxDataReqMetaData.read(tasi_writeMeta);
-			// Get session state
-			txApp2stateTable_req.write(tasi_writeMeta.sessionID);
-			// Get Ack pointer
-			txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID));
+		if (!appTxDataReqMetaData.empty()) {
+			appTxDataReqMetaData.read(tasi_writeMeta); 								// Read sessionID
+			txApp2stateTable_req.write(tasi_writeMeta.sessionID); 					// Get session state
+			txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID));	// Get Ack pointer
 			tai_state = READ_META;
 		}
 		break;
 	case READ_META:
-		if (!txSar2txApp_upd_rsp.empty() && !stateTable2txApp_rsp.empty())
-		{
+		if (!txSar2txApp_upd_rsp.empty() && !stateTable2txApp_rsp.empty()) {
 			stateTable2txApp_rsp.read(state);
 			txSar2txApp_upd_rsp.read(tasi_writeSar);
 			tasi_maxWriteLength = (tasi_writeSar.ackd - tasi_writeSar.mempt) - 1;
-			if (state != ESTABLISHED)
-			{
-				tasi_writeToBufFifo.write(pkgPushMeta(true));
-				// Notify app about fail
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOCONNCECTION));
+			if (state != ESTABLISHED) {
+				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOCONNCECTION)); // Notify app about fail
 			}
 			else if(tasi_writeMeta.length > tasi_maxWriteLength)
 			{
-				tasi_writeToBufFifo.write(pkgPushMeta(true));
-				// Notify app about fail
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOSPACE));
+				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOSPACE)); // Notify app about fail
 			}
-			else //if (state == ESTABLISHED && pkgLen <= tasi_maxWriteLength)
+#if (TCP_NODELAY)
+			else if(tasi_writeMeta.length > 1460)	// TODO Replace with MSS
 			{
+				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, 1460, ERROR_OVERFLOW_MSS)); // Notify app about fail
+			}
+#endif			
+			else {
 				// TODO there seems some redundancy
 				tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, tasi_writeSar.mempt, tasi_writeMeta.length));
 				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, NO_ERROR));
 				//tasi_eventCacheFifo.write(eventMeta(tasi_writeSessionID, tasi_writeSar.mempt, pkgLen));
+				//std::cout << "tasi_writeSar.mempt: " << std::dec << tasi_writeSar.mempt << std::endl;
 				txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, tasi_writeSar.mempt, tasi_writeMeta.length));
-				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, tasi_writeSar.mempt+tasi_writeMeta.length));
+				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, tasi_writeSar.mempt+tasi_writeMeta.length)); // TODO: maybe is too early to update TX sar because data is not in the memory yet
 			}
 			tai_state = READ_REQUEST;
 		}
 		break;
 	} //switch
+}
+
+
+/** @ingroup tx_app_stream_if
+ *  In case the @tasi_metaLoader decides to write the packet to the memory,
+ *  it forward the data and it generates a command to the memory the command may produce
+ *  buffer overflow, but the next module has to deal with it. Otherwise the data is discarded
+ *  and no command is generated.
+ */
+void tasi_pkg_dropper (
+		stream<pkgPushMeta>&			tasi_writeToBufFifo,
+		stream<axiWord>& 				tasi_dataIn,
+		stream<axiWord>& 				tasi_dataOut,
+		stream<mmCmd>&					txBufferWriteCmd){
+
+#pragma HLS pipeline II=1
+#pragma HLS INLINE off
+
+	static pkgPushMeta 	tasi_pushMeta;
+	static bool 		reading_data = false;
+	ap_uint<32> 		pkgAddr;
+	axiWord				currWord;
+
+	// TODO: The app gets a notification if can write or not, probably this modules produces a stall 
+
+	if (!tasi_writeToBufFifo.empty() && !reading_data){
+		tasi_writeToBufFifo.read(tasi_pushMeta);
+
+		if (!tasi_pushMeta.drop){
+			pkgAddr(31, 30) = 0x01;
+			pkgAddr(29, 16) = tasi_pushMeta.sessionID(13, 0);
+			pkgAddr(15, 0) = tasi_pushMeta.address;
+
+			txBufferWriteCmd.write(mmCmd(pkgAddr, tasi_pushMeta.length));
+		}
+
+		reading_data = true;
+
+	}
+	else if(!tasi_dataIn.empty() && reading_data){
+		tasi_dataIn.read(currWord);
+		if (!tasi_pushMeta.drop){
+			tasi_dataOut.write(currWord);
+		}
+
+		if (currWord.last){
+			reading_data = false;
+		}
+	}
+
 }
 
 /** @ingroup tx_app_stream_if
@@ -111,7 +160,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
 						stream<pkgPushMeta>&			tasi_writeToBufFifo,
 						stream<mmCmd>&					txBufferWriteCmd,
-#if !(TCP_NODELAY)
+#if (!TCP_NODELAY)
 						stream<axiWord>&				txBufferWriteData)
 
 #else
@@ -313,6 +362,12 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 	#pragma HLS stream variable=tasi_writeToBufFifo depth=32
 	#pragma HLS DATA_PACK variable=tasi_writeToBufFifo
 
+	static stream<axiWord> tasi_app_data_accepted("tasi_app_data_accepted");
+	#pragma HLS DATA_PACK variable=tasi_app_data_accepted
+
+	static stream<mmCmd> tasi_command_accepted("tasi_command_accepted");
+	#pragma HLS DATA_PACK variable=tasi_command_accepted
+
 	tasi_metaLoader(	appTxDataReqMetaData,
 						stateTable2txApp_rsp,
 						txSar2txApp_upd_rsp,
@@ -322,14 +377,21 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 						tasi_writeToBufFifo,
 						txAppStream2eventEng_setEvent);
 
-	tasi_pkg_pusher(	appTxDataReq,
-						tasi_writeToBufFifo,
-						txBufferWriteCmd,
-#if !(TCP_NODELAY)
-						txBufferWriteData);
-#else
-						txBufferWriteData,
-						txApp2txEng_data_stream);
-#endif
+	tasi_pkg_dropper (
+		tasi_writeToBufFifo,
+		appTxDataReq,
+		tasi_app_data_accepted,
+		tasi_command_accepted);
+
+
+	tx_Data_to_Memory(
+			tasi_app_data_accepted,
+			tasi_command_accepted,		// Command with potential overflow
+			txBufferWriteCmd,			// Command without overflow
+#if (TCP_NODELAY)					
+			txApp2txEng_data_stream,
+#endif		
+			txBufferWriteData	
+		);
 
 }

@@ -88,6 +88,8 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 	ap_uint<16> currLength;
 	ap_uint<16> usableWindow;
 	ap_uint<16> slowstart_threshold;
+	ap_uint<16> usedLength;
+	ap_uint<32> pkgAddr;
 	static tx_engine_meta meta;
 	rstEvent resetEvent;
 
@@ -166,7 +168,7 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 					//meta.length = 0;
 
 					currLength = ml_curEvent.length;
-					ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
 					// min_window, is the min(txSar.recv_window, txSar.cong_window)
 					if (txSar.min_window > usedLength) {
 						usableWindow = txSar.min_window - usedLength;
@@ -228,18 +230,16 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 					meta.length = 0;
 
 					currLength = (txSar.app - ((ap_uint<16>)txSar.not_ackd));
-					ap_uint<16> usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
 					// min_window, is the min(txSar.recv_window, txSar.cong_window)
-					if (txSar.min_window > usedLength)
-					{
+					if (txSar.min_window > usedLength) {
 						usableWindow = txSar.min_window - usedLength;
 					}
-					else
-					{
+					else {
 						usableWindow = 0;
 					}
 					// Construct address before modifying txSar.not_ackd
-					ap_uint<32> pkgAddr;
+					
 					pkgAddr(31, 30) = 0x01;
 					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
 					pkgAddr(15, 0) = txSar.not_ackd(15, 0); //ml_curEvent.address;
@@ -264,8 +264,8 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 								txSar.not_ackd += currLength;
 								meta.length = currLength;
 							}
-							else {
-								txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
+							else /*if (currLength > 0)*/{
+								txEng2timer_setProbeTimer.write(ml_curEvent.sessionID); // 	TODO: if the app tries to write data which is not multiple of MSS this lead to retransmission
 							}
 							// Write back txSar not_ackd pointer
 							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
@@ -332,7 +332,6 @@ void metaLoader(stream<extendedEvent>&				eventEng2txEng_event,
 					meta.fin = 0;
 
 					// Construct address before modifying txSar.ackd
-					ap_uint<32> pkgAddr;
 					pkgAddr(31, 30) = 0x01;
 					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
 					pkgAddr(15, 0) = txSar.ackd(15, 0); //ml_curEvent.address;
@@ -910,7 +909,7 @@ void tx_ip_pkt_stitcher(
 	static bool writing_payload=false;
 	static bool writing_extra=false;
 
- 	if (!txEng_ipHeaderBufferIn.empty() && !txEng_tcp_level_packet.empty() && !txEng_tcpChecksumFifoIn.empty()) {
+ 	if (!txEng_ipHeaderBufferIn.empty() && !txEng_tcp_level_packet.empty() && !txEng_tcpChecksumFifoIn.empty() && !writing_payload && !writing_extra) {
 		txEng_ipHeaderBufferIn.read(ip_word);
 		txEng_tcp_level_packet.read(payload);
 		txEng_tcpChecksumFifoIn.read(tcp_checksum);
@@ -933,10 +932,10 @@ void tx_ip_pkt_stitcher(
 			writing_payload 	= true;
 
 		prevWord = payload;
-		//cout << "IP Stitcher   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		//cout << "IP Stitcher 0: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		ipTxDataOut.write(sendWord);
 	}
-	else if (writing_payload){
+	else if (!txEng_tcp_level_packet.empty() && writing_payload){
 		txEng_tcp_level_packet.read(payload);
 		
 		sendWord.data(159,  0) = prevWord.data(511,352);
@@ -954,7 +953,7 @@ void tx_ip_pkt_stitcher(
 		}
 		
 		prevWord = payload;
-		//cout << "IP Stitcher   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+		//cout << "IP Stitcher 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 		ipTxDataOut.write(sendWord);
 	}
 	else if (writing_extra){
@@ -1001,14 +1000,14 @@ void txPseudo_header_Remover(
 			sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
 			sendWord.keep( 63, 52)	= currWord.keep( 11,  0);
 
+			sendWord.last = currWord.last;
+			
 			if (currWord.last){
 				if (currWord.keep.bit(12)){
 					extra_word = true;
 					sendWord.last = 0;
 				}
 			}
-			else
-				sendWord.last = currWord.last;
 
 			//cout << "HR Out 2  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
 			dataOut.write(sendWord);

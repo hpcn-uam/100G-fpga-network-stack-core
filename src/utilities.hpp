@@ -22,11 +22,10 @@ void tx_align_two_64bytes_words (
 
 void rx_align_two_64bytes_words (
 			axiWord 	currWord,
-			axiWord 	prevWord,
+			axiWord* 	prevWord,
 			ap_uint<6>	byte_offset,
 
-			axiWord* 	SendWord,
-			axiWord* 	next_prev_word
+			axiWord* 	SendWord
 	);
 
 void DataBroadcast(

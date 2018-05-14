@@ -276,7 +276,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  *  @param[in]		openConnReq
  *  @param[in]		closeConnReq
  *  @param[in]		txDataReqMeta
- *  @param[in]		txDataReq
+ *  @param[in]		txApp_Data2send
  *  @param[out]		portTable2rxApp_listen_rsp
  *  @param[out]		notification
  *  @param[out]		rxDataRspIDsession
@@ -317,10 +317,11 @@ void toe(	// Data & Memory Interface
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
 			stream<appTxMeta>&					   	txDataReqMeta,
-			stream<axiWord>&						txDataReq,
+			stream<axiWord>&						txApp_Data2send,
 
-			stream<bool>&							portTable2rxApp_listen_rsp,
+			stream<bool>&							portTable2rxApp_listen_rsp, //TODO add port number
 			stream<appNotification>&				notification,
+			stream<txApp_client_status>& 			rxEng2txApp_client_notification,
 			stream<ap_uint<16> >&					rxDataRspIDsession,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
@@ -397,6 +398,10 @@ void toe(	// Data & Memory Interface
 #pragma HLS INTERFACE axis off port=notification name=m_axis_notification
 #pragma HLS INTERFACE axis off port=rxDataReq name=s_axis_rx_data_req 
 
+#pragma HLS INTERFACE axis off port=rxEng2txApp_client_notification name=m_axis_tx_app_notification
+#pragma HLS DATA_PACK variable=rxEng2txApp_client_notification
+
+
 #pragma HLS INTERFACE axis off port=rxDataRspIDsession name=m_axis_rx_data_rsp_IDsession
 #pragma HLS INTERFACE axis off port=rxDataRsp name=m_axis_rx_data_rsp 
 
@@ -405,7 +410,7 @@ void toe(	// Data & Memory Interface
 #pragma HLS INTERFACE axis off port=closeConnReq name=s_axis_close_conn_req 
 
 #pragma HLS INTERFACE axis off port=txDataReqMeta name=s_axis_tx_data_req_metadata
-#pragma HLS INTERFACE axis off port=txDataReq name=s_axis_tx_data_req 
+#pragma HLS INTERFACE axis off port=txApp_Data2send name=s_axis_tx_data_req 
 #pragma HLS INTERFACE axis off port=txDataRsp name=m_axis_tx_data_rsp 
 #pragma HLS DATA_PACK variable=notification
 #pragma HLS DATA_PACK variable=rxDataReq
@@ -592,8 +597,8 @@ void toe(	// Data & Memory Interface
 	#pragma HLS stream variable=portTable2rxEng_check_rsp			depth=4
 
 	//static stream<ap_uint<1> >				txApp2portTable_port_req("txApp2portTable_port_req");
-	static stream<ap_uint<16> >				portTable2txApp_port_rsp("portTable2txApp_port_rsp");
-	#pragma HLS stream variable=portTable2txApp_port_rsp			depth=4
+	static stream<ap_uint<16> >				portTable2txApp_free_port("portTable2txApp_free_port");
+	#pragma HLS stream variable=portTable2txApp_free_port			depth=4
 
 	static stream<ap_uint<16> >				sLookup2portTable_releasePort("sLookup2portTable_releasePort");
 	#pragma HLS stream variable=sLookup2portTable_releasePort		depth=4
@@ -663,7 +668,7 @@ void toe(	// Data & Memory Interface
 					sLookup2portTable_releasePort,
 					portTable2rxEng_check_rsp,
 					portTable2rxApp_listen_rsp,
-					portTable2txApp_port_rsp);
+					portTable2txApp_free_port);
 
 	// Timers
 	timerWrapper(	rxEng2timer_clearRetransmitTimer,
@@ -714,6 +719,7 @@ void toe(	// Data & Memory Interface
 					conEstablishedFifo, //remove this
 					rxEng2eventEng_setEvent,
 					rxEng2rxApp_notification,
+					rxEng2txApp_client_notification,
 					rxEng_pseudo_packet_to_checksum,
 					rxEng_pseudo_packet_res_checksum);
 	// TX Engine
@@ -754,7 +760,7 @@ void toe(	// Data & Memory Interface
 
 	tx_app_interface(
 					txDataReqMeta,
-					txDataReq,
+					txApp_Data2send,
 					stateTable2txApp_rsp,
 					//txSar2txApp_upd_rsp,
 					txSar2txApp_ack_push,
@@ -763,7 +769,7 @@ void toe(	// Data & Memory Interface
 					openConnReq,
 					closeConnReq,
 					sLookup2txApp_rsp,
-					portTable2txApp_port_rsp,
+					portTable2txApp_free_port,
 					stateTable2txApp_upd_rsp,					
 					conEstablishedFifo,
 					

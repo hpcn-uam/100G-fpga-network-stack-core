@@ -32,64 +32,63 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <map>
 #include <string>
 #include "pcap2stream.hpp"
-#include "../iperf/iperf_client.hpp"
+#include "../utilities.hpp"
+#include <iomanip>
 
-#define totalSimCycles 100000
-//#define totalSimCycles 1000
+#define totalSimCycles 1000000
+//#define totalSimCycles 10000
 
 using namespace std;
 
-uint32_t cycleCounter;
 unsigned int	simCycleCounter		= 0;
 
 
-void rx_compute_pseudo_tcp_checksum(	
+void compute_pseudo_tcp_checksum(	
 									stream<axiWord>&			dataIn,
-									stream<ap_uint<16> >&		pseudo_tcp_checksum)
+									stream<ap_uint<16> >&		pseudo_tcp_checksum,
+									ap_uint<1>					source)
 {
 
-	axiWord 				currWord;
-	static ap_uint<1> 		compute_checksum=0;
+	static ap_uint<1> 	compute_checksum[2] = {0 , 0};
+	static ap_uint<16> 	word_sum[32][2]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	
+	ap_uint<17> 		ip_sums_L1[16];
+	ap_uint<18> 		ip_sums_L2[8];
+	ap_uint<19> 		ip_sums_L3[4];
+	ap_uint<20> 		ip_sums_L4[2];
+	ap_uint<21> 		ip_sums_L5;
+	ap_uint<16> 		tmp;
+	ap_uint<17> 		tmp1;
+	ap_uint<17> 		tmp2;
+	ap_uint<17> 		final_sum_r; 							// real add
+	ap_uint<17> 		final_sum_o; 							// overflowed add
+	ap_uint<16> 		res_checksum;
+	axiWord 			currWord;
 
-	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
-
-	ap_uint<16> tmp;
-	ap_uint<17> tmp1;
-	ap_uint<17> tmp2;
-
-	static ap_uint<17> ip_sums_L1[16];
-	static ap_uint<18> ip_sums_L2[8];
-	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
-	static ap_uint<20> ip_sums_L4[2];
-	static ap_uint<21> ip_sums_L5;
-	ap_uint<17> final_sum_r; 							// real add
-	ap_uint<17> final_sum_o; 							// overflowed add
-	ap_uint<16> res_checksum;
-
-	if (!dataIn.empty() && !compute_checksum){
+	if (!dataIn.empty() && !compute_checksum[source]){
 		dataIn.read(currWord);
 
 		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
 			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
 			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
-			tmp1 		= word_sum[i] + tmp;
-			tmp2 		= word_sum[i] + tmp + 1;
+			tmp1 		= word_sum[i][source] + tmp;
+			tmp2 		= word_sum[i][source] + tmp + 1;
 			if (tmp1.bit(16)) 				// one's complement adder
-				word_sum[i] = tmp2(15,0);
+				word_sum[i][source] = tmp2(15,0);
 			else
-				word_sum[i] = tmp1(15,0);
+				word_sum[i][source] = tmp1(15,0);
 		}
 
 		if(currWord.last){
-			compute_checksum = 1;
+			compute_checksum[source] = 1;
 		}
 	}
-	else if(compute_checksum) {
+	else if(compute_checksum[source]) {
 		//adder tree
 		second_level_sum : for (int i = 0; i < 16; i++) {
-			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
-			word_sum[i*2]   = 0; // clear adder variable
-			word_sum[i*2+1] = 0;
+			ip_sums_L1[i]= word_sum[i*2][source] + word_sum[i*2+1][source];
+			word_sum[i*2][source]   = 0; // clear adder variable
+			word_sum[i*2+1][source] = 0;
 		}
 		//adder tree L2
 		third_level_sum : for (int i = 0; i < 8; i++) {
@@ -112,86 +111,275 @@ void rx_compute_pseudo_tcp_checksum(
 		else
 			res_checksum = ~(final_sum_r.range(15,0));
 
-		compute_checksum = 0;
+		compute_checksum[source] = 0;
 		pseudo_tcp_checksum.write(res_checksum);
 	}
 }
 
 
-void tx_compute_pseudo_tcp_checksum(	
-									stream<axiWord>&			dataIn,
-									stream<ap_uint<16> >&		pseudo_tcp_checksum)
-{
+void rxApp_sim (
+	stream<ipTuple>& 			openConnection,
+	stream<openStatus>& 		openConStatus,
+	stream<ap_uint<16> >& 		closeConnection,
+	stream<ap_uint<16> >& 		data_session_ID, 
+	stream<axiWord>& 			memory_to_rx_app_data,
+	stream<appNotification>& 	notifications,
+	stream<appReadRequest>& 	rxapp_2_mem_read_request,
+	ap_uint<14>					connection_to_establish,
+	ap_uint<32>					remote_server_address_0,
+	ap_uint<32>					remote_server_address_1,
+	ap_uint<32>					remote_server_address_2,
+	ap_uint<32>					remote_server_address_3,
+	bool 						test_RX
+	){
 
-	axiWord 				currWord;
-	static ap_uint<1> 		compute_checksum=0;
+	enum rxApp_states {INIT_CON, WAIT_CON, READ_DATA,IDLE};
+	enum rxApp_read_data {WAIT_DATA, CONSUME_DATA};
+	static rxApp_states rx_app_fsm = INIT_CON;
+	static rxApp_read_data rx_read_data_fsm = WAIT_DATA;
 
-	static ap_uint<16> word_sum[32]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+	static ap_uint<14> 	concurrent_sessions = 0;
+	static ap_uint<16> 	current_sessionID;
+	ipTuple 			openTuple;
+	openStatus 			connection_status;
+	appNotification 	rx_app_notification;
+	axiWord 			currWord;
+	static int 			packet=0;
+	static int 			transaction=0;
 
-	ap_uint<16> tmp;
-	ap_uint<17> tmp1;
-	ap_uint<17> tmp2;
+	if (test_RX){			// Only do things if client is enable
+		switch (rx_app_fsm) {
+			case INIT_CON:
+				if (concurrent_sessions < connection_to_establish){
+					
+					switch (concurrent_sessions(1,0)){
+						case 0:
+							openTuple.ip_address    = remote_server_address_0;
+							break;
+						case 1:
+							openTuple.ip_address    = remote_server_address_1;
+							break;
+						case 2:
+							openTuple.ip_address    = remote_server_address_2;
+							break;
+						case 3:
+							openTuple.ip_address    = remote_server_address_3;
+							break;
+					}
 
-	static ap_uint<17> ip_sums_L1[16];
-	static ap_uint<18> ip_sums_L2[8];
-	static ap_uint<19> ip_sums_L3[4] = {0, 0, 0, 0};
-	static ap_uint<20> ip_sums_L4[2];
-	static ap_uint<21> ip_sums_L5;
-	ap_uint<17> final_sum_r; 							// real add
-	ap_uint<17> final_sum_o; 							// overflowed add
-	ap_uint<16> res_checksum;
+					openTuple.ip_port 		= 5001;
+					openConnection.write(openTuple);
 
-	if (!dataIn.empty() && !compute_checksum){
-		dataIn.read(currWord);
+					cout << "RX app request to establish a new connection socket " << dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
+					cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
+					cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port;
+					cout << endl;
+					concurrent_sessions++;
 
-		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
-			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
-			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
-			tmp1 		= word_sum[i] + tmp;
-			tmp2 		= word_sum[i] + tmp + 1;
-			if (tmp1.bit(16)) 				// one's complement adder
-				word_sum[i] = tmp2(15,0);
-			else
-				word_sum[i] = tmp1(15,0);
+				}
+				if (concurrent_sessions == connection_to_establish) {
+					concurrent_sessions = 0;
+					rx_app_fsm = WAIT_CON;
+				}
+				break;
+			case WAIT_CON:
+				if (concurrent_sessions < connection_to_establish){
+					if (!openConStatus.empty()){
+						openConStatus.read(connection_status);
+						if (connection_status.success){
+							cout << "Connection [" << dec << connection_status.sessionID << "] successfully opened." << endl;
+						}
+						else {
+							cout << "Connection [" << dec << connection_status.sessionID << "] could not be opened." << endl;
+						}
+						concurrent_sessions++;
+						if (concurrent_sessions == connection_to_establish) {
+							rx_app_fsm = READ_DATA;
+						}
+					}
+				}
+				break;
+			case READ_DATA: 
+
+				if (!notifications.empty()){
+					notifications.read(rx_app_notification);		// TOE notifies that there are data available in the RX buffer
+					if (rx_app_notification.length != 0){
+						rxapp_2_mem_read_request.write(appReadRequest(rx_app_notification.sessionID, rx_app_notification.length));	
+					}
+				}
+
+				break;
 		}
 
-		if(currWord.last){
-			compute_checksum = 1;
+		switch(rx_read_data_fsm){
+			case WAIT_DATA:
+				if (!data_session_ID.empty()){
+					data_session_ID.read(current_sessionID);
+					cout << "RX Data from memory to app ID[" << dec << current_sessionID <<"]" << endl;
+					rx_read_data_fsm = CONSUME_DATA;
+				}
+				break;
+			case CONSUME_DATA:
+				if(!memory_to_rx_app_data.empty()){
+					memory_to_rx_app_data.read(currWord);
+					cout << "RX APP [" << dec << packet << "][" << dec << transaction++ << "]";
+					cout << "\tData " << hex << currWord.data << "\tkeep " << currWord.keep << "\tlast " << currWord.last << endl;
+					if (currWord.last){
+						packet ++;
+						transaction = 0;
+						rx_read_data_fsm = WAIT_DATA;
+					}
+				}
+				break;				
 		}
+
 	}
-	else if(compute_checksum) {
-		//adder tree
-		second_level_sum : for (int i = 0; i < 16; i++) {
-			ip_sums_L1[i] = word_sum[i*2] + word_sum[i*2+1];
-			word_sum[i*2]   = 0; // clear adder variable
-			word_sum[i*2+1] = 0;
-		}
-		//adder tree L2
-		third_level_sum : for (int i = 0; i < 8; i++) {
-			ip_sums_L2[i] = ip_sums_L1[i*2+1] + ip_sums_L1[i*2];
-		}
-		//adder tree L3
-		fourth_level_sum : for (int i = 0; i < 4; i++) {
-			ip_sums_L3[i] = ip_sums_L2[i*2+1] + ip_sums_L2[i*2];
-		}
-
-		ip_sums_L4[0] = ip_sums_L3[1] + ip_sums_L3[0];
-		ip_sums_L4[1] = ip_sums_L3[3] + ip_sums_L3[2];
-		ip_sums_L5 = ip_sums_L4[1] + ip_sums_L4[0];
-
-		final_sum_r = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16);
-		final_sum_o = ip_sums_L5.range(15,0) + ip_sums_L5.range(20,16) + 1;
-
-		if (final_sum_r.bit(16))
-			res_checksum = ~(final_sum_o.range(15,0));
-		else
-			res_checksum = ~(final_sum_r.range(15,0));
-
-		compute_checksum = 0;
-		pseudo_tcp_checksum.write(res_checksum);
+	else {
+		if (!notifications.empty()){
+			notifications.read(rx_app_notification);
+			cout << "RX notification sessionID: " << dec << rx_app_notification.sessionID;
+			cout << "\tlength: " << rx_app_notification.length << "\t" << "\tipAddress: " << hex <<  rx_app_notification.ipAddress;
+			cout << "\tdst port: " << dec << rx_app_notification.dstPort << "\tclosed: " << rx_app_notification.closed << endl;
+		}			
 	}
 }
 
+void txApp_sim(
+	stream<ap_uint<16> >& 			rxApp2portTable_listen_req,		// notify which ports are open to listen
+	stream<txApp_client_status>& 	rxEng2txApp_client_notification,
+	stream<bool>& 					rxApp2portTable_listen_rsp,		// TOE response to listen to new port
+	stream<appTxMeta>& 				txApp_write_request,			// ask for write
+	stream<appTxRsp>&				txApp_data_write_response,		// It tells if the data was accepted by TOE
+	stream<axiWord>& 				txApp_write_Data,				// data to write
+	bool 							test_TX
+	){
+
+	enum tx_data_states {WAIT_CLIENT, SEND_COMMAND, WAIT_RESPONSE, SEND_DATA, IDLE};
+	static bool 		listenDone 	= false;
+	static ap_uint<1> 	listenFsm 	= 0;
+	static tx_data_states fsm_state = WAIT_CLIENT;
+	
+	static txApp_client_status	rx_client_notification;
+	appTxMeta 					write_request;
+	static ap_uint<16> 			bytes2send = 15000;
+	static ap_uint<16> 			bytes_sent = 0;
+	static ap_uint<16> 			tmp=0;
+	axiWord 					sendWord=axiWord(0,0,0);
+	appTxRsp 					write_request_response;
+
+	if (test_TX){
+		if (!listenDone) { 				// Open Port 15000
+			switch (listenFsm) {
+			case 0:
+				rxApp2portTable_listen_req.write(15000);
+				listenFsm++;
+				break;
+			case 1:
+				if (!rxApp2portTable_listen_rsp.empty()) {
+					rxApp2portTable_listen_rsp.read(listenDone);
+					cout << "Port 15000 opened " << dec << listenDone << endl;
+					listenFsm++;
+				}
+				break;
+			}
+		}
+
+		switch (fsm_state){
+			case WAIT_CLIENT:
+				// WAIT for a client
+				if (!rxEng2txApp_client_notification.empty()){
+					rxEng2txApp_client_notification.read(rx_client_notification);
+					cout << "Client session ID: " << dec << rx_client_notification.sessionID;
+					cout << "\t\tBuffer size: " << (rx_client_notification.buffersize+1)*65536;
+					cout << "\t\t max transfer size: " << rx_client_notification.max_transfer_size;
+					cout << "\t\tTCP_NODELAY: " << (rx_client_notification.tcp_nodelay ? "Yes" : "No");
+					cout << "\t\tBuffer empty: " << (rx_client_notification.buffer_empty ? "Yes" : "No") << endl;
+
+					fsm_state = SEND_COMMAND;
+
+				}
+				break;
+			case SEND_COMMAND:
+				write_request.sessionID = rx_client_notification.sessionID;
+	
+				fsm_state = WAIT_RESPONSE;
+				if (rx_client_notification.tcp_nodelay){
+					if (bytes2send > rx_client_notification.max_transfer_size){
+						write_request.length 	= rx_client_notification.max_transfer_size;
+						bytes_sent				= rx_client_notification.max_transfer_size;
+						bytes2send 				-= rx_client_notification.max_transfer_size;
+					}
+					else if (bytes2send > 0){
+						write_request.length 	= bytes2send;
+						bytes_sent				= bytes2send;
+						bytes2send 				= 0;
+					}
+					else {
+						fsm_state = IDLE;
+					}
+				}
+				else {
+					write_request.length 	= bytes2send;
+					bytes_sent				= bytes2send;
+				}
+
+				if (fsm_state == WAIT_RESPONSE) {
+					txApp_write_request.write(write_request);
+					cout << "A TX data transfer has been programmed ID: " << dec << rx_client_notification.sessionID;
+					cout << "\tlength: " << write_request.length << "\ttime: " << simCycleCounter << endl;
+				}
+
+				break;
+			case WAIT_RESPONSE:	
+				if (!txApp_data_write_response.empty()){
+					txApp_data_write_response.read(write_request_response);
+					cout << "Response length: " << dec << write_request_response.length;
+					cout << "\tremaining space: " << write_request_response.remaining_space;
+					cout << "\terror: " <<  write_request_response.error;
+					cout << "\ttime: "  << simCycleCounter << endl;
+
+					if (write_request_response.error){
+						fsm_state = WAIT_CLIENT;
+					}
+					else{
+						fsm_state = SEND_DATA;
+					}
+				}
+				break;
+			case SEND_DATA:
+				for (int i=0 ; i < 64 ; i++){
+					if (i < bytes_sent){
+						sendWord.data((i*8)+7,i*8) = tmp(((i%2)*8)+7,(i%2)*8);
+						sendWord.keep.bit(i)=1;
+					}
+					else {
+						sendWord.data((i*8)+7,i*8) = 0;	
+						sendWord.keep.bit(i)=0;
+						sendWord.last = 1;
+					}
+					if ((i%2) !=0 )
+						tmp++;
+				}
+				bytes_sent-=64;
+				if (sendWord.last){
+					if (rx_client_notification.tcp_nodelay){
+						fsm_state = SEND_COMMAND;
+					}
+					else {
+						fsm_state = IDLE;
+					}
+				}
+
+				txApp_write_Data.write(sendWord);
+
+				break;
+			case IDLE:
+				fsm_state = WAIT_CLIENT;
+				break;
+		}
+		
+	}
+}
 
 void sessionLookupStub(
 		stream<rtlSessionLookupRequest>& 	lup_req, 
@@ -315,16 +503,18 @@ void simulateTx(
 	axiWord inWord;
 	axiWord outWord;
 
-	static bool stx_write = false;
-	static bool stx_read = false;
-
+	static bool stx_write 	= false;
+	static bool stx_read 	= false;
 	static bool stx_readCmd = false;
+
+	static int app2mem_word=0;
+	static int mem2tx_word=0;
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
@@ -335,305 +525,23 @@ void simulateTx(
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
-		cout << "Tx WRITE data: " << hex << inWord.data << "\tkeep: " << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << endl;
+		cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
 		BufferOut.write(outWord);
 		if (outWord.last)
 			stx_read = false;
-		cout << "Tx READ data: " << hex << outWord.data << "\tkeep: " << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		//cout << "Tx  READ app2mem[" << dec << setw(3) << mem2tx_word++ << "] data: " << hex << setw(130) << outWord.data << "\tkeep: " << setw(18) << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 }
 
-string decodeApUint64(ap_uint<64> inputNumber) {
-	string 				outputString	= "0000000000000000";
-	unsigned short int			tempValue 		= 16;
-	static const char* const	lut 			= "0123456789ABCDEF";
-	for (int i = 15;i>=0;--i) {
-	tempValue = 0;
-	for (unsigned short int k = 0;k<4;++k) {
-		if (inputNumber.bit((i+1)*4-k-1) == 1)
-			tempValue += static_cast <unsigned short int>(pow(2.0, 3-k));
-		}
-		outputString[15-i] = lut[tempValue];
-	}
-	return outputString;
-}
-
-string decodeApUint8(ap_uint<8> inputNumber) {
-	string 						outputString	= "00";
-	unsigned short int			tempValue 		= 16;
-	static const char* const	lut 			= "0123456789ABCDEF";
-	for (int i = 1;i>=0;--i) {
-	tempValue = 0;
-	for (unsigned short int k = 0;k<4;++k) {
-		if (inputNumber.bit((i+1)*4-k-1) == 1)
-			tempValue += static_cast <unsigned short int>(pow(2.0, 3-k));
-		}
-		outputString[1-i] = lut[tempValue];
-	}
-	return outputString;
-}
-
-ap_uint<64> encodeApUint64(string dataString){
-	ap_uint<64> tempOutput = 0;
-	unsigned short int	tempValue = 16;
-	static const char* const	lut = "0123456789ABCDEF";
-
-	for (unsigned short int i = 0; i<dataString.size();++i) {
-		for (unsigned short int j = 0;j<16;++j) {
-			if (lut[j] == dataString[i]) {
-				tempValue = j;
-				break;
-			}
-		}
-		if (tempValue != 16) {
-			for (short int k = 3;k>=0;--k) {
-				if (tempValue >= pow(2.0, k)) {
-					tempOutput.bit(63-(4*i+(3-k))) = 1;
-					tempValue -= static_cast <unsigned short int>(pow(2.0, k));
-				}
-			}
-		}
-	}
-	return tempOutput;
-}
-
-ap_uint<8> encodeApUint8(string keepString){
-	ap_uint<8> tempOutput = 0;
-	unsigned short int	tempValue = 16;
-	static const char* const	lut = "0123456789ABCDEF";
-
-	for (unsigned short int i = 0; i<2;++i) {
-		for (unsigned short int j = 0;j<16;++j) {
-			if (lut[j] == keepString[i]) {
-				tempValue = j;
-				break;
-			}
-		}
-		if (tempValue != 16) {
-			for (short int k = 3;k>=0;--k) {
-				if (tempValue >= pow(2.0, k)) {
-					tempOutput.bit(7-(4*i+(3-k))) = 1;
-					tempValue -= static_cast <unsigned short int>(pow(2.0, k));
-				}
-			}
-		}
-	}
-	return tempOutput;
-}
-
-ap_uint<16> checksumComputation(deque<axiWord>	pseudoHeader) {
-	ap_uint<32> tcpChecksum = 0;
-	for (uint8_t i=0;i<pseudoHeader.size();++i) {
-		ap_uint<64> tempInput = (pseudoHeader[i].data.range(7, 0), pseudoHeader[i].data.range(15, 8), pseudoHeader[i].data.range(23, 16), pseudoHeader[i].data.range(31, 24), pseudoHeader[i].data.range(39, 32), pseudoHeader[i].data.range(47, 40), pseudoHeader[i].data.range(55, 48), pseudoHeader[i].data.range(63, 56));
-		//cerr << hex << tempInput << " " << pseudoHeader[i].data << endl;
-		tcpChecksum = ((((tcpChecksum + tempInput.range(63, 48)) + tempInput.range(47, 32)) + tempInput.range(31, 16)) + tempInput.range(15, 0));
-		tcpChecksum = (tcpChecksum & 0xFFFF) + (tcpChecksum >> 16);
-		tcpChecksum = (tcpChecksum & 0xFFFF) + (tcpChecksum >> 16);
-	}
-//	tcpChecksum = tcpChecksum.range(15, 0) + tcpChecksum.range(19, 16);
-	tcpChecksum = ~tcpChecksum;			// Reverse the bits of the result
-	return tcpChecksum.range(15, 0);	// and write it into the output
-}
-
-
-//// This version does not work for TCP segments that are too long... overflow happens
-//ap_uint<16> checksumComputation(deque<axiWord>	pseudoHeader) {
-//	ap_uint<20> tcpChecksum = 0;
-//	for (uint8_t i=0;i<pseudoHeader.size();++i) {
-//		ap_uint<64> tempInput = (pseudoHeader[i].data.range(7, 0), pseudoHeader[i].data.range(15, 8), pseudoHeader[i].data.range(23, 16), pseudoHeader[i].data.range(31, 24), pseudoHeader[i].data.range(39, 32), pseudoHeader[i].data.range(47, 40), pseudoHeader[i].data.range(55, 48), pseudoHeader[i].data.range(63, 56));
-//		//cerr << hex << tempInput << " " << pseudoHeader[i].data << endl;
-//		tcpChecksum = ((((tcpChecksum + tempInput.range(63, 48)) + tempInput.range(47, 32)) + tempInput.range(31, 16)) + tempInput.range(15, 0));
-//	}
-//	tcpChecksum = tcpChecksum.range(15, 0) + tcpChecksum.range(19, 16);
-//	tcpChecksum = ~tcpChecksum;			// Reverse the bits of the result
-//	return tcpChecksum.range(15, 0);	// and write it into the output
-//}
-
-ap_uint<16> recalculateChecksum(deque<axiWord> inputPacketizer) {
-	ap_uint<16> newChecksum = 0;
-	// Create the pseudo-header
-	ap_uint<16> tcpLength 					= (inputPacketizer[0].data.range(23, 16), inputPacketizer[0].data.range(31, 24)) - 20;
-	inputPacketizer[0].data					= (inputPacketizer[2].data.range(31, 0), inputPacketizer[1].data.range(63, 32));
-	inputPacketizer[1].data.range(15, 0)	= 0x0600;
-	inputPacketizer[1].data.range(31, 16)	= (tcpLength.range(7, 0), tcpLength(15, 8));
-	inputPacketizer[4].data.range(47, 32)	= 0x0;
-	//ap_uint<32> temp	= (tcpLength, 0x0600);
-	inputPacketizer[1].data.range(63, 32) 	= inputPacketizer[2].data.range(63, 32);
-	for (uint8_t i=2;i<inputPacketizer.size() -1;++i)
-		inputPacketizer[i]= inputPacketizer[i+1];
-	inputPacketizer.pop_back();
-	//for (uint8_t i=0;i<inputPacketizer.size();++i)
-	//	cerr << hex << inputPacketizer[i].data << " " << inputPacketizer[i].keep << endl;
-	//newChecksum = checksumComputation(inputPacketizer); 		// Calculate the checksum
-	//return newChecksum;
-	return checksumComputation(inputPacketizer);
-}
-
-short int injectAckNumber(deque<axiWord> &inputPacketizer, map<fourTuple, ap_uint<32> > &sessionList) {
-	fourTuple newTuple = fourTuple(inputPacketizer[1].data.range(63, 32), inputPacketizer[2].data.range(31, 0), inputPacketizer[2].data.range(47, 32), inputPacketizer[2].data.range(63, 48));
-	//cerr << hex << inputPacketizer[4].data << endl;
-	if (inputPacketizer[4].data.bit(9))	{													// If this packet is a SYN there's no need to inject anything
-		//cerr << " Open Tuple: " << hex << inputPacketizer[1].data.range(63, 32) << " - " << inputPacketizer[2].data.range(31, 0) << " - " << inputPacketizer[2].data.range(47, 32) << " - " << inputPacketizer[2].data.range(63, 48) << endl;
-		if (sessionList.find(newTuple) != sessionList.end()) {
-			cerr << "WARNING: Trying to open an existing session! - " << simCycleCounter << endl;
-			return -1;
-		}
-		else {
-			sessionList[newTuple] = 0;
-			cerr << "INFO: Opened new session - " << simCycleCounter << endl;
-			return 0;
-		}
-	}
-	else {																					// if it is any other packet
-		if (sessionList.find(newTuple) != sessionList.end()) {
-			inputPacketizer[3].data.range(63, 32) 	= sessionList[newTuple];				// inject the oldest acknowldgement number in the ack number deque
-			//cerr << hex << "Input: " << inputPacketizer[3].data.range(63, 32) << endl;
-			ap_uint<16> tempChecksum = recalculateChecksum(inputPacketizer);
-			//inputPacketizer[4].data.range(47, 32) 	= recalculateChecksum(inputPacketizer);	// and recalculate the checksum
-			inputPacketizer[4].data.range(47, 32) = (tempChecksum.range(7, 0), tempChecksum(15, 8));
-			//inputPacketizer[4].data.range(47, 32) 	= 0xB13D;
-			//for (uint8_t i=0;i<inputPacketizer.size();++i)
-			//	cerr << hex << inputPacketizer[i].data << endl;
-			return 1;
-		}
-		else {
-			cerr << "WARNING: Trying to send data to a non-existing session!" << endl;
-			return -1;
-		}
-	}
-}
-
-bool parseOutputPacket(deque<axiWord> &outputPacketizer, map<fourTuple, ap_uint<32> > &sessionList, deque<axiWord> &inputPacketizer) {		// Looks for an ACK packet in the output stream and when found if stores the ackNumber from that packet into
-// the seqNumbers deque and clears the deque containing the output packet.
-	bool returnValue = false;
-	bool finPacket = false;
-	static int pOpacketCounter = 0;
-	static ap_uint<32> oldSeqNumber = 0;
-	if (outputPacketizer[4].data.bit(9) && !outputPacketizer[4].data.bit(12)) { // Check if this is a SYN packet and if so reply with a SYN-ACK
-		inputPacketizer.push_back(outputPacketizer[0]);
-		ap_uint<32> ipBuffer = outputPacketizer[1].data.range(63, 32);
-		outputPacketizer[1].data.range(63, 32) = outputPacketizer[2].data.range(31, 0);
-		inputPacketizer.push_back(outputPacketizer[1]);
-		outputPacketizer[2].data.range(31, 0) = ipBuffer;
-		ap_uint<16> portBuffer = outputPacketizer[2].data.range(47, 32);
-		outputPacketizer[2].data.range(47, 32) = outputPacketizer[2].data.range(63, 48);
-		outputPacketizer[2].data.range(63, 48) = portBuffer;
-		inputPacketizer.push_back(outputPacketizer[2]);
-		ap_uint<32> reversedSeqNumber = (outputPacketizer[3].data.range(7,0), outputPacketizer[3].data.range(15, 8), outputPacketizer[3].data.range(23, 16), outputPacketizer[3].data.range(31, 24)) + 1;
-		reversedSeqNumber = (reversedSeqNumber.range(7, 0), reversedSeqNumber.range(15, 8), reversedSeqNumber.range(23, 16), reversedSeqNumber.range(31, 24));
-		outputPacketizer[3].data.range(31, 0) = outputPacketizer[3].data.range(63, 32);
-		outputPacketizer[3].data.range(63, 32) = reversedSeqNumber;
-		inputPacketizer.push_back(outputPacketizer[3]);
-		outputPacketizer[4].data.bit(12) = 1;												// Set the ACK bit
-		ap_uint<16> tempChecksum = recalculateChecksum(outputPacketizer);
-		outputPacketizer[4].data.range(47, 32) = (tempChecksum.range(7, 0), tempChecksum(15, 8));
-		inputPacketizer.push_back(outputPacketizer[4]);
-		/*cerr << hex << outputPacketizer[0].data << endl;
-		cerr << hex << outputPacketizer[1].data << endl;
-		cerr << hex << outputPacketizer[2].data << endl;
-		cerr << hex << outputPacketizer[3].data << endl;
-		cerr << hex << outputPacketizer[4].data << endl;*/
-	}
-	else if (outputPacketizer[4].data.bit(8) && !outputPacketizer[4].data.bit(12)) 	// If the FIN bit is set but without the ACK bit being set at the same time
-		sessionList.erase(fourTuple(outputPacketizer[1].data.range(63, 32), outputPacketizer[2].data.range(31, 0), outputPacketizer[2].data.range(47, 32), outputPacketizer[2].data.range(63, 48))); // Erase the tuple for this session from the map
-	else if (outputPacketizer[4].data.bit(12)) { // If the ACK bit is set
-		uint16_t packetLength = byteSwap16(outputPacketizer[0].data.range(31, 16));
-		ap_uint<32> reversedSeqNumber = (outputPacketizer[3].data.range(7,0), outputPacketizer[3].data.range(15, 8), outputPacketizer[3].data.range(23, 16), outputPacketizer[3].data.range(31, 24));
-		if (outputPacketizer[4].data.bit(9) || outputPacketizer[4].data.bit(8))
-			reversedSeqNumber++;
-		if (packetLength >= 40) {
-			packetLength -= 40;
-			reversedSeqNumber += packetLength;
-		}
-		reversedSeqNumber = (reversedSeqNumber.range(7, 0), reversedSeqNumber.range(15, 8), reversedSeqNumber.range(23, 16), reversedSeqNumber.range(31, 24));
-		fourTuple packetTuple = fourTuple(outputPacketizer[2].data.range(31, 0), outputPacketizer[1].data.range(63, 32), outputPacketizer[2].data.range(63, 48), outputPacketizer[2].data.range(47, 32));
-		sessionList[packetTuple] = reversedSeqNumber;
-		returnValue = true;
-		if (outputPacketizer[4].data.bit(8)) {	// This might be a FIN segment at the same time. In this case erase the session from the list
-			uint8_t itemsErased = sessionList.erase(fourTuple(outputPacketizer[2].data.range(31, 0), outputPacketizer[1].data.range(63, 32), outputPacketizer[2].data.range(63, 48), outputPacketizer[2].data.range(47, 32))); // Erase the tuple for this session from the map
-			finPacket = true;
-			//cerr << "Close Tuple: " << hex << outputPacketizer[2].data.range(31, 0) << " - " << outputPacketizer[1].data.range(63, 32) << " - " << inputPacketizer[2].data.range(63, 48) << " - " << outputPacketizer[2].data.range(47, 32) << endl;
-			if (itemsErased != 1)
-				cerr << "WARNING: Received FIN segment for a non-existing session - " << simCycleCounter << endl;
-			else
-				cerr << "INFO: Session closed successfully - " << simCycleCounter << endl;
-		}
-		// Check if the ACK packet also constains data. If it does generate an ACK for. Look into the IP header length for this.
-		if (packetLength > 0 || finPacket == true) { // 20B of IP Header & 20B of TCP Header since we never generate options
-			finPacket = false;
-			outputPacketizer[0].data.range(31, 16) = 0x2800;
-			inputPacketizer.push_back(outputPacketizer[0]);
-			ap_uint<32> ipBuffer = outputPacketizer[1].data.range(63, 32);
-			outputPacketizer[1].data.range(63, 32) = outputPacketizer[2].data.range(31, 0);
-			inputPacketizer.push_back(outputPacketizer[1]);
-			outputPacketizer[2].data.range(31, 0) = ipBuffer;
-			ap_uint<16> portBuffer = outputPacketizer[2].data.range(47, 32);
-			outputPacketizer[2].data.range(47, 32) = outputPacketizer[2].data.range(63, 48);
-			outputPacketizer[2].data.range(63, 48) = portBuffer;
-			inputPacketizer.push_back(outputPacketizer[2]);
-			//ap_uint<32> seqNumber = outputPacketizer[3].data.range(31, 0);
-			outputPacketizer[3].data.range(31, 0) = outputPacketizer[3].data.range(63, 32);
-			outputPacketizer[3].data.range(63, 32) = reversedSeqNumber;
-			//cerr << hex << outputPacketizer[3].data.range(63, 32) << " - " << reversedSeqNumber << endl;
-			inputPacketizer.push_back(outputPacketizer[3]);
-			outputPacketizer[4].data.bit(12) = 1;												// Set the ACK bit
-			outputPacketizer[4].data.bit(8) = 0;												// Unset the FIN bit
-			ap_uint<16> tempChecksum = recalculateChecksum(outputPacketizer);
-			outputPacketizer[4].data.range(47, 32) = (tempChecksum.range(7, 0), tempChecksum(15, 8));
-			outputPacketizer[4].keep = 0x3F;
-			outputPacketizer[4].last = 1;
-			inputPacketizer.push_back(outputPacketizer[4]);
-			/*cerr << std::hex << outputPacketizer[0].data << " - " << outputPacketizer[0].keep << " - " << outputPacketizer[0].last << endl;
-			cerr << std::hex << outputPacketizer[1].data << " - " << outputPacketizer[1].keep << " - " << outputPacketizer[1].last << endl;
-			cerr << std::hex << outputPacketizer[2].data << " - " << outputPacketizer[2].keep << " - " << outputPacketizer[2].last << endl;
-			cerr << std::hex << outputPacketizer[3].data << " - " << outputPacketizer[3].keep << " - " << outputPacketizer[3].last << endl;
-			cerr << std::hex << outputPacketizer[4].data << " - " << outputPacketizer[4].keep << " - " << outputPacketizer[4].last << endl;*/
-			if (oldSeqNumber != reversedSeqNumber) {
-				pOpacketCounter++;
-				//cerr << "ACK cnt: " << dec << pOpacketCounter << hex << " - " << outputPacketizer[3].data.range(63, 32) << endl;
-			}
-			oldSeqNumber = reversedSeqNumber;
-		}
-		//cerr << hex << "Output: " << outputPacketizer[3].data.range(31, 0) << endl;
-	}
-	outputPacketizer.clear();
-	return returnValue;
-}
-
-void flushInputPacketizer(deque<axiWord> &inputPacketizer, stream<axiWord> &ipRxData, map<fourTuple, ap_uint<32> > &sessionList) {
-	if (inputPacketizer.size() != 0) {
-		injectAckNumber(inputPacketizer, sessionList);
-		uint8_t inputPacketizerSize = inputPacketizer.size();
-		for (uint8_t i=0;i<inputPacketizerSize;++i) {
-			axiWord temp = inputPacketizer.front();
-			ipRxData.write(temp);
-			inputPacketizer.pop_front();
-		}
-	}
-}
-
-vector<string> parseLine(string stringBuffer) {
-	vector<string> tempBuffer;
-	bool found = false;
-
-	while (stringBuffer.find(" ") != string::npos)	// Search for spaces delimiting the different data words
-	{
-		string temp = stringBuffer.substr(0, stringBuffer.find(" "));							// Split the the string
-		stringBuffer = stringBuffer.substr(stringBuffer.find(" ")+1, stringBuffer.length());	// into two
-		tempBuffer.push_back(temp);		// and store the new part into the vector. Continue searching until no more spaces are found.
-	}
-	tempBuffer.push_back(stringBuffer);	// and finally push the final part of the string into the vector when no more spaces are present.
-	return tempBuffer;
-}
 
 int main(int argc, char **argv) {
 
@@ -654,70 +562,47 @@ int main(int argc, char **argv) {
 	stream<rtlSessionUpdateReply>		sessionUpdate_rsp("sessionUpdate_rsp");
 	stream<rtlSessionLookupRequest>		sessionLookup_req("sessionLookup_req");
 	stream<rtlSessionUpdateRequest>		sessionUpdate_req("sessionUpdate_req");
-//	stream<rtlSessionUpdateRequest>		sessionUpdate_req;
 	stream<ap_uint<16> >				rxApp2portTable_listen_req("rxApp2portTable_listen_req");
-	stream<appReadRequest>				rxDataReq("rxDataReq");
+	stream<appReadRequest>				rxApp_request_memory_data("rxApp_request_memory_data");
 	stream<ipTuple>						openConnReq("openConnReq");
 	stream<ap_uint<16> >				closeConnReq("closeConnReq");
-	stream<appTxMeta>				    txDataReqMeta("txDataReqMeta");
-	stream<axiWord>						txDataReq("txDataReq");
+	stream<appTxMeta>				    txApp_write_request("txApp_write_request");
+	stream<axiWord>						txApp_write_Data("txApp_write_Data");
 	stream<bool>						rxApp2portTable_listen_rsp("rxApp2portTable_listen_rsp");
 	stream<appNotification>				rxAppNotification("rxAppNotification");
 	stream<ap_uint<16> >				rxDataRspIDsession("rxDataRspIDsession");
-	stream<axiWord>						rxDataRsp("rxDataRsp");
+	stream<axiWord>						rxData_memory_2_app("rxData_memory_2_app");
 	stream<openStatus>					openConnRsp("openConnRsp");
-	stream<appTxRsp>					txDataRsp("txDataRsp");
+	stream<appTxRsp>					txApp_data_write_response("txApp_data_write_response");
 	ap_uint<16>							regSessionCount;
-	ap_uint<16>							relSessionCount;
-	axiWord								ipTxDataOut_Data;
-	axiWord								ipRxData_Data;
-	axiWord								ipTxDataIn_Data;
 	stream<axiWord> 					rxDataOut("rxDataOut");						// This stream contains the data output from the Rx App I/F
-	axiWord								rxDataOut_Data;								// This variable is where the data read from the stream above is temporarily stored before output
-	
-
   	stream<axiWord>						tx_pseudo_packet_to_checksum("tx_pseudo_packet_to_checksum");
 	stream<ap_uint<16> >				tx_pseudo_packet_res_checksum("tx_pseudo_packet_res_checksum");
   	stream<axiWord>						rxEng_pseudo_packet_to_checksum("rxEng_pseudo_packet_to_checksum");
 	stream<ap_uint<16> >				rxEng_pseudo_packet_res_checksum("rxEng_pseudo_packet_res_checksum");
+	stream<txApp_client_status> 		rxEng2txApp_client_notification("rxEng2txApp_client_notification");
+
 
 	dummyMemory rxMemory;
 	dummyMemory txMemory;
 	
-	map<fourTuple, ap_uint<32> > sessionList;
-
-	deque<axiWord>	inputPacketizer;
-	deque<axiWord>	outputPacketizer;						// This deque collects the output data word until a whole packet is accumulated.
-
 	axiWord currOutWord;
 	int 	packet=0;
 	int		transaction=0;
 
-	ifstream	rxInputFile;
-	ifstream	txInputFile;
-	ofstream	rxOutput;
-	ofstream	txOutput;
-	ifstream	rxGold;
-	ifstream	txGold;
-	unsigned int	skipCounter 		= 0;
-	cycleCounter = 0;
 	simCycleCounter		= 0;
-	unsigned int	myCounter		= 0;
-	bool		idleCycle		= 0;
-	string		dataString, keepString;
-	vector<string> 	stringVector;
-	vector<string>	txStringVector;
-	bool 		firstWordFlag		= true;
-	int 		rxGoldCompare		= 0;
-	int			txGoldCompare		= 0; // not used yet
-	int			returnValue		= 0;
-	uint16_t	txWordCounter 		= 0;
-	uint16_t	rxPayloadCounter	= 0; 	// This variable counts the number of packets output during the simulation on the Rx side
-	uint16_t	txPacketCounter		= 0;	// This variable countrs the number of packet send from the Tx side (total number of packets, all kinds, from all sessions).
-	bool		testRxPath		= true;	// This variable indicates if the Rx path is to be tested, thus it remains true in case of Rx only or bidirectional testing
-	bool		testTxPath		= true;	// Same but for the Tx path.
-	vector<ap_uint<16> > txSessionIDs;		// This vector holds the session IDs of the session to which data are transmitted.
-	uint16_t	currentTxSessionID	= 0;	// Holds the session ID which was last used to send data into the Tx path.
+
+	/* This variable indicates if the RX path is to be tested, thus it remains true in case of Rx only or bidirectional testing
+	* It means TOE working as a client.
+	*/
+	/* This variable indicates if the TX path is to be tested, thus it remains true in case of Rx only or bidirectional testing
+	* It means TOE working as a server.
+	*/
+	bool			testRxPath		= true;	 
+	bool			testTxPath		= false;
+	static bool		firsts_packets_pace = false;
+	static bool		seconds_packets_pace = false;
+	
 
 	stream<axiWord> 					tx_iperf_data("tx_iperf_data");						
   	stream<ap_uint<16> > 				tx_iperf_MetaData("tx_iperf_MetaData");
@@ -749,13 +634,34 @@ int main(int argc, char **argv) {
 
 	do  {
 
-		if (((simCycleCounter+1) % 80) ==0){
-			pcap2stream_step(argv[1], false ,ipRxData);
+
+		if (testTxPath){
+			if (simCycleCounter < 200){
+				firsts_packets_pace = true;
+			}
+			else{
+				firsts_packets_pace = false;
+			}
+
+			if (simCycleCounter > 800){
+				seconds_packets_pace = true;
+			}
+
+			if (((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
+				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)){
+				pcap2stream_step(argv[1], false ,ipRxData);
+			}
 		}
 
-		if (simCycleCounter == 50){
-			iperf_runExperiment = 1;
+		if (testRxPath){
+			if (((simCycleCounter+1) % 80) ==0){
+				pcap2stream_step(argv[1], false ,ipRxData);
+			}
 		}
+
+		//if (simCycleCounter == 50){
+		//	iperf_runExperiment = 1;
+		//}
 
 		toe(
 			ipRxData,
@@ -779,18 +685,20 @@ int main(int argc, char **argv) {
 			sessionUpdate_req, 
 
 			rxApp2portTable_listen_req, 
-			rxDataReq, 
+
+			rxApp_request_memory_data, 
 			openConnReq, 
 			closeConnReq, 
-			txDataReqMeta, 
-			txDataReq,
+			txApp_write_request, 		
+			txApp_write_Data,			
 
 			rxApp2portTable_listen_rsp, 
-			rxAppNotification, 
+			rxAppNotification,
+			rxEng2txApp_client_notification,
 			rxDataRspIDsession, 
-			rxDataRsp, 
+			rxData_memory_2_app, 		
 			openConnRsp, 
-			txDataRsp, 
+			txApp_data_write_response, 	
 
 			0x0500A8C0, 						// 192.168.0.5
 			regSessionCount,
@@ -799,12 +707,12 @@ int main(int argc, char **argv) {
 			rxEng_pseudo_packet_to_checksum,
 			rxEng_pseudo_packet_res_checksum);
 
-
+/*
 		iperf_client(	
 			rxApp2portTable_listen_req,
 			rxApp2portTable_listen_rsp,
 			rxAppNotification,
-			rxDataReq,
+			rxApp_request_memory_data,
 			rxDataRspIDsession,
 			rxDataOut,
 			openConnReq,
@@ -821,7 +729,33 @@ int main(int argc, char **argv) {
 			iperf_ipAddress1,
 			iperf_ipAddress2,
 			iperf_ipAddress3);
+*/
 
+		rxApp_sim (
+			openConnReq,
+			openConnRsp,
+			closeConnReq,
+			rxDataRspIDsession, 
+			rxData_memory_2_app,
+			rxAppNotification,
+			rxApp_request_memory_data,
+			iperf_num_useConn,
+			iperf_ipAddress0,
+			iperf_ipAddress1,
+			iperf_ipAddress2,
+			iperf_ipAddress3,
+			testRxPath
+		);
+
+		txApp_sim(
+			rxApp2portTable_listen_req,
+			rxEng2txApp_client_notification,
+			rxApp2portTable_listen_rsp,
+			txApp_write_request,
+			txApp_data_write_response,
+			txApp_write_Data,
+			testTxPath
+		);
 
 		simulateRx(
 			&rxMemory, 
@@ -845,52 +779,28 @@ int main(int argc, char **argv) {
 	   		sessionUpdate_req, 
 	   		sessionUpdate_rsp);
 
-	   	rx_compute_pseudo_tcp_checksum(	
+	   	compute_pseudo_tcp_checksum(	
 			tx_pseudo_packet_to_checksum,
-			tx_pseudo_packet_res_checksum);
+			tx_pseudo_packet_res_checksum,
+			0);
 
-	   	tx_compute_pseudo_tcp_checksum(	
+	   	compute_pseudo_tcp_checksum(	
 			rxEng_pseudo_packet_to_checksum,
-			rxEng_pseudo_packet_res_checksum);
+			rxEng_pseudo_packet_res_checksum,
+			1);
 
-		//while (!ipTxData.empty()){
-		//	ipTxData.read(currOutWord);
-		//	cout << "Output packet [" << dec << packet << "][" << dec << transaction++ << "] time[" << simCycleCounter << "]";
-		//	cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << dec <<" (" << keep_to_length(currOutWord.keep) << ")\tlast " << currOutWord.last << endl;
-		//	if (currOutWord.last){
-		//		packet ++;
-		//		transaction = 0;
-		//	}
-		//}
 
-		stream2pcap(argv[2],false,true,ipTxData,false);
+		stream2pcap(argv[2], false, true, ipTxData, false);
 
 	} while (simCycleCounter++ < totalSimCycles);
 
 	stream2pcap(argv[2],false,true,ipTxData,true);
 
-
 	cout << "regSessionCount " << dec << regSessionCount << endl; 
 	
 	packet=0;
 	transaction=0;
-	
-	while (!rxDataRsp.empty()){
-		rxDataRsp.read(currOutWord);
-		cout << "rxDataRsp [" << dec << packet << "] [" << dec << transaction++ << "]";
-		cout	<< "\tData " << hex << currOutWord.data << "\tkeep " << currOutWord.keep << "\tlast " << currOutWord.last << endl;
-		if (currOutWord.last){
-			packet ++;
-			transaction = 0;
-		}
-	}
-
-	while (!rxDataRspIDsession.empty()){
-		ap_uint<16> rxDataResponse_meta;
-		rxDataRspIDsession.read(rxDataResponse_meta);
-		cout	<< "\trxDataRspIDsession " << dec << rxDataResponse_meta << endl;
-
-	}
+		
 
 	return 0;
 

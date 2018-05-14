@@ -278,8 +278,8 @@ void rxEng_Generate_Metadata(
 							stream<ap_uint<16> >&			res_checksum,
 							stream<axiWord>&				payload,
 							stream<bool>&					correct_checksum,				
-							stream<rxEngineMetaData>&		metaDataFifoOut,
-							stream<fourTuple>&				tupleFifoOut,
+							stream<rxEngineMetaData>&		metaDataFifoOut,		// TODO, maybe merge with tupleFifoOut
+							stream<fourTuple>&				tupleFifoOut,			// TODO, maybe merge with metaDataFifoOut
 							stream<ap_uint<16> >&			portTableOut)
 {
 #pragma HLS INLINE off
@@ -428,88 +428,72 @@ void rxTcpInvalidDropper(
 }
 
 
-/** @ingroup rx_engine
- * The module contains 2 state machines nested into each other. The outer state machine
- * loads the metadata and does the session lookup. The inner state machine then evaluates all
- * this data. This inner state machine mostly represents the TCP state machine and contains
- * all the logic how to update the metadata, what events are triggered and so on. It is the key
- * part of the @ref rx_engine.
- * @param[in]	metaDataFifoIn
- * @param[in]	sLookup2rxEng_rsp
- * @param[in]	stateTable2rxEng_upd_rsp
- * @param[in]	portTable2rxEng_rsp
- * @param[in]	tupleBufferIn
- * @param[in]	rxSar2rxEng_upd_rsp
- * @param[in]	txSar2rxEng_upd_rsp
- * @param[out]	rxEng2sLookup_req
- * @param[out]	rxEng2stateTable_req
- * @param[out]	rxEng2rxSar_upd_req
- * @param[out]	rxEng2txSar_upd_req
- * @param[out]	rxEng2timer_clearRetransmitTimer
- * @param[out]	rxEng2timer_setCloseTimer
- * @param[out]	openConStatusOut
- * @param[out]	rxEng2eventEng_setEvent
- * @param[out]	dropDataFifoOut
- * @param[out]	rxBufferWriteCmd
- * @param[out]	rxEng2rxApp_notification
+/**
+ * @brief      { function_description }
+ *
+ * @param[In]    metaDataFifoIn           Metadata of the incomming packet
+ * @param[In]    tupleBufferIn            The tuple buffer in
+ * @param[In]    portTable2rxEng_rsp      Port is open?
+ * @param[In]    sLookup2rxEng_rsp        Look up response, it carries if the four tuple is in the table and its ID
+ * @param[Out]   rxEng2sLookup_req        Session look up, it carries the four tuple and if creation is allowed
+ * @param[Out]   rxEng2eventEng_setEvent  Set event
+ * @param[Out]   dropDataFifoOut          The drop data fifo out
+ * @param[Out]   fsmMetaDataFifo          The fsm meta data fifo
  */
-
-void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
-						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
-						stream<bool>&							portTable2rxEng_rsp,
-						stream<fourTuple>&						tupleBufferIn,
-						stream<sessionLookupQuery>&				rxEng2sLookup_req,
-						stream<extendedEvent>&					rxEng2eventEng_setEvent,
-						stream<bool>&							dropDataFifoOut,
-						stream<rxFsmMetaData>&					fsmMetaDataFifo)
+void rxMetadataHandler(	
+			stream<rxEngineMetaData>&				metaDataFifoIn,
+			stream<fourTuple>&						tupleBufferIn,
+			stream<bool>&							portTable2rxEng_rsp,
+			stream<sessionLookupReply>&				sLookup2rxEng_rsp,
+			stream<sessionLookupQuery>&				rxEng2sLookup_req,
+			stream<extendedEvent>&					rxEng2eventEng_setEvent,
+			stream<bool>&							dropDataFifoOut,
+			stream<rxFsmMetaData>&					fsmMetaDataFifo)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static rxEngineMetaData mh_meta;
-	static sessionLookupReply mh_lup;
 	enum mhStateType {META, LOOKUP};
-	static mhStateType mh_state = META;
-	static ap_uint<32> mh_srcIpAddress;
-	static ap_uint<16> mh_dstIpPort;
-
-	fourTuple tuple;
-	bool portIsOpen;
+	
+	static rxEngineMetaData 	mh_meta;
+	static sessionLookupReply 	mh_lup;
+	static mhStateType 			mh_state = META;
+	static ap_uint<32> 			mh_srcIpAddress;
+	static ap_uint<16> 			mh_dstIpPort;
+	fourTuple 					tuple;
+	fourTuple 					switchedTuple;
+	bool 						portIsOpen;
 
 	switch (mh_state) {
 		case META:
-			if (!metaDataFifoIn.empty() && !portTable2rxEng_rsp.empty() && !tupleBufferIn.empty()) {
-				
+			if (!metaDataFifoIn.empty() && !tupleBufferIn.empty() && !portTable2rxEng_rsp.empty()) {
 				metaDataFifoIn.read(mh_meta);
-				portTable2rxEng_rsp.read(portIsOpen);
 				tupleBufferIn.read(tuple);
-
-				mh_srcIpAddress = ((ap_uint<8>)tuple.srcIp( 7 ,  0), (ap_uint<8>)tuple.srcIp(15 ,  8), (ap_uint<8>)tuple.srcIp(23 , 16), (ap_uint<8>)tuple.srcIp(31 , 24));
-				mh_dstIpPort = (tuple.dstPort(7, 0),tuple.dstPort(15, 8));
+				portTable2rxEng_rsp.read(portIsOpen);
+				mh_srcIpAddress = byteSwap32(tuple.srcIp);			// Swap source IP and destination port
+				mh_dstIpPort 	= byteSwap16(tuple.dstPort);
 
 				if (!portIsOpen) {									// Check if port is closed
 					// SEND RST+ACK
 					if (!mh_meta.rst) {
 						// send necessary tuple through event
-						fourTuple switchedTuple;
-						switchedTuple.srcIp = tuple.dstIp;
-						switchedTuple.dstIp = tuple.srcIp;
-						switchedTuple.srcPort = tuple.dstPort;
-						switchedTuple.dstPort = tuple.srcPort;
+						switchedTuple.srcIp 	= tuple.dstIp;
+						switchedTuple.dstIp 	= tuple.srcIp;
+						switchedTuple.srcPort 	= tuple.dstPort;
+						switchedTuple.dstPort 	= tuple.srcPort;
 						if (mh_meta.syn || mh_meta.fin) {
 							rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length+1), switchedTuple)); //always 0
 						}
 						else {
 							rxEng2eventEng_setEvent.write(extendedEvent(rstEvent(mh_meta.seqNumb+mh_meta.length), switchedTuple));
 						}
-					}
+					} 
 					//else ignore => do nothing
-					if (mh_meta.length != 0) {
+					if (mh_meta.length != 0) {			// Drop payload because port is closed
 						dropDataFifoOut.write(true);
 					}
 				}
-				else {
-					// Make session lookup, only allow creation of new entry when SYN or SYN_ACK
+				else { // Port is open. Make session lookup, only allow creation of new entry when SYN or SYN_ACK
 					rxEng2sLookup_req.write(sessionLookupQuery(tuple, (mh_meta.syn && !mh_meta.rst && !mh_meta.fin)));
 					mh_state = LOOKUP;
 				}
@@ -558,6 +542,32 @@ void rxMetadataHandler(	stream<rxEngineMetaData>&				metaDataFifoIn,
 	}//switch
 }
 
+/** @ingroup rx_engine
+ * The module contains 2 state machines nested into each other. The outer state machine
+ * loads the metadata and does the session lookup. The inner state machine then evaluates all
+ * this data. This inner state machine mostly represents the TCP state machine and contains
+ * all the logic how to update the metadata, what events are triggered and so on. It is the key
+ * part of the @ref rx_engine.
+ * @param[in]	metaDataFifoIn
+ * @param[in]	sLookup2rxEng_rsp
+ * @param[in]	stateTable2rxEng_upd_rsp
+ * @param[in]	portTable2rxEng_rsp
+ * @param[in]	tupleBufferIn
+ * @param[in]	rxSar2rxEng_upd_rsp
+ * @param[in]	txSar2rxEng_upd_rsp
+ * @param[out]	rxEng2sLookup_req
+ * @param[out]	rxEng2stateTable_req
+ * @param[out]	rxEng2rxSar_upd_req
+ * @param[out]	rxEng2txSar_upd_req
+ * @param[out]	rxEng2timer_clearRetransmitTimer
+ * @param[out]	rxEng2timer_setCloseTimer
+ * @param[out]	openConStatusOut
+ * @param[out]	rxEng2eventEng_setEvent
+ * @param[out]	dropDataFifoOut
+ * @param[out]	rxBufferWriteCmd
+ * @param[out]	rxEng2rxApp_notification
+ */
+
 void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 						stream<sessionState>&					stateTable2rxEng_upd_rsp,
 						stream<rxSarEntry>&						rxSar2rxEng_upd_rsp,
@@ -574,8 +584,9 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 #if (!RX_DDR_BYPASS)
 						stream<mmCmd>&							rxBufferWriteCmd,
 #endif
-						stream<appNotification>&				rxEng2rxApp_notification)	// The notification are use both with DDR or no DDR
-
+						stream<appNotification>&				rxEng2rxApp_notification, 	// The notification are use both with DDR or no DDR
+						stream<txApp_client_status>& 			rxEng2txApp_client_notification				
+						)	
 {
 #pragma HLS LATENCY max=2
 #pragma HLS INLINE off
@@ -645,7 +656,9 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 							}
 							else {
 								// Notify probeTimer about new ACK
-								rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
+								if (fsm_meta.meta.ackNumb == txSar.nextByte){				// Only notify probe timer if ACK is the expected
+									rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
+								}
 								// Check for SlowStart & Increase Congestion Window
 								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
 									txSar.cong_window += MSS;
@@ -673,7 +686,7 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 									ap_uint<32> pkgAddr;
 									pkgAddr(31, 30) = 0x0;
 									pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
-									pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
+									pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);					// TODO maybe align to the beginning of the buffer
 #if (!RX_DDR_BYPASS)
 									rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
 #endif
@@ -697,6 +710,9 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 								switch (tcpState) {
 									case SYN_RECEIVED:
 										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); //TODO MAYBE REARRANGE
+										// Notify the tx App about new client
+										// TODO 1460 is the default value, but it could change if options are presented in the TCP header
+										rxEng2txApp_client_notification.write(txApp_client_status(fsm_meta.sessionID, 0, 1460 , TCP_NODELAY, true)); 
 										break;
 									case CLOSING:
 										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
@@ -706,7 +722,7 @@ void rxTcpFSM(			stream<rxFsmMetaData>&					fsmMetaDataFifo,
 										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
 										break;
 									default:
-										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));	// TODO I think this is not necessary
+										//rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));	// TODO I think this is not necessary
 										break;
 								}
 							}
@@ -1035,122 +1051,6 @@ void rxEventMerger(
 }
 
 
-/**
- * @ingroup rx_engine
- *
- * This module reads the command issued by the TCPFSM and determines whether two memory access are needed or not.
- * In base of that issues one or two memory write command(s), and the data is aligned properly, the realignment 
- * if is necessary is done in the second access. 
- *
- * @param      rxMemWrDataIn   Packet payload if any
- * @param      rxMemWrCmdIn    Internal command to write data into the memory. It does not take into account buffer overflow
- * @param      rxMemWrCmdOut   Command to the data mover. It takes into account buffer overflow. Two write commands when buffer overflows
- * @param      rxMemWrDataOut  Data to memory. If the buffer overflows, the second part of the data has to be realigned
- * @param      doubleAccess    If two memory writes are needed this flag is set, is not is cleared
- */
-void rxEngMemWrite(	
-					stream<axiWord>& 				rxMemWrDataIn, 
-					stream<mmCmd>&					rxMemWrCmdIn,
-					stream<mmCmd>&					rxMemWrCmdOut, 
-					stream<axiWord>&				rxMemWrDataOut,
-					stream<ap_uint<1> >&			doubleAccess) 
-{
-#pragma HLS pipeline II=1
-#pragma HLS INLINE off
-
-	axiWord 			currWord;
-	axiWord				sendWord;
-	static axiWord		prevWord;
-	mmCmd 				input_command;
-	ap_uint<32>			saddr;
-	ap_uint<17> 		buffer_overflow;
-	mmCmd 				first_command;
-	mmCmd 				second_command;
-
-	static ap_uint<6>	byte_offset;
-	static ap_uint<10>	number_of_words_to_send;
-	static ap_uint<64> 	keep_first_trans;
-	static ap_uint<10>	count_word_sent=1;
-
-	static bool rxWrBreakDown 	= false;
-	static bool reading_data 	= false;
-	static bool second_write 	= false;
-	static bool extra_word	 	= false;
-
-	if (!rxMemWrCmdIn.empty() && !reading_data && !extra_word){
-		rxMemWrCmdIn.read(input_command);
-
-		saddr 				= input_command.saddr;
-		buffer_overflow 	= input_command.saddr.range(15, 0) + input_command.bbt; // Compute the address of the last byte to write
-		reading_data 		= true;
-		if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
-			// TODO: I think is enough with putting a last and the correct keep to determine the end of the first transaction. TEST IT!
-			first_command.bbt 	= 65536 - input_command.bbt;	// Compute how much bytes are needed in the first transaction 
-			first_command.saddr = input_command.saddr;
-			rxWrBreakDown = true;
-			byte_offset 		= first_command.bbt.range(5,0);	// Determines the position of the MSB in the last word
-			
-			if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
-				number_of_words_to_send = first_command.bbt.range(15,6) + 1;	
-			}
-			else {
-				number_of_words_to_send = first_command.bbt.range(15,6);
-			}
-			keep_first_trans 	= len2Keep(byte_offset);			// Get the keep of the last transaction of the first memory offset
-			count_word_sent 	= 1;
-		}
-		else{
-			first_command = input_command;
-		}
-
-		doubleAccess.write(rxWrBreakDown);					// Notify if there are two memory access
-		rxMemWrCmdOut.write(first_command); 				// issue the first command
-	}
-	else if(!rxMemWrDataIn.empty() && reading_data && !second_write && !extra_word){
-		rxMemWrDataIn.read(currWord);
-
-		if (rxWrBreakDown){
-			if (count_word_sent == number_of_words_to_send){
-				currWord.keep 	= keep_first_trans;
-				currWord.last 	= 1;
-				second_command.saddr(31,16) 	= input_command.saddr(31,16);
-				second_command.saddr(15,0) 		= 0;										// point to the beginning of the buffer
-				second_command.bbt 				= input_command.bbt - first_command.bbt;	// Recompute the bytes to transfer in the second memory access
-				rxMemWrCmdOut.write(second_command);										// Issue the second command
-				second_write 	= true;
-			}
-			count_word_sent++;
-			prevWord = currWord;
-			rxMemWrDataOut.write(currWord);
-		}
-		else{												// There is not double memory access
-			if (currWord.last){
-				reading_data = false;
-			}
-			rxMemWrDataOut.write(currWord);
-		}
-	}
-	else if(!rxMemWrDataIn.empty() && reading_data && second_write && !extra_word){
-		rxMemWrDataIn.read(currWord);
-		rx_align_two_64bytes_words (currWord, prevWord,	byte_offset, &sendWord, &prevWord);
-
-		if (currWord.last){
-			if (!sendWord.last){		// If the sendWord has not have a last it is means that a extra transaction is needed
-				extra_word = true;
-			}
-			reading_data = false;
-			second_write = false;
-		}
-
-		rxMemWrDataOut.write(sendWord);
-	}
-	else if (extra_word) {
-		extra_word = false;
-		rxMemWrDataOut.write(prevWord);
-	}
-
-}
-
 /** @ingroup rx_engine
  *  The @ref rx_engine is processing the data packets on the receiving path.
  *  When a new packet enters the engine its TCP checksum is tested, afterwards the header is parsed
@@ -1203,6 +1103,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<openStatus>&					openConStatusOut,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
 				stream<appNotification>&			rxEng2rxApp_notification,
+				stream<txApp_client_status>& 		rxEng2txApp_client_notification,
 				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
 				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum)
 {
@@ -1299,9 +1200,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 	rxMetadataHandler(	
 			rxEng_metaDataFifo,
-			sLookup2rxEng_rsp,
-			portTable2rxEng_rsp,
 			rxEng_tupleBuffer,
+			portTable2rxEng_rsp,
+			sLookup2rxEng_rsp,
 			rxEng2sLookup_req,
 			rxEng_metaHandlerEventFifo,
 			rxEng_metaHandlerDropFifo,
@@ -1323,10 +1224,11 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 			rxEng_fsmDropFifo,
 #if (!RX_DDR_BYPASS)
 			rxTcpFsm2wrAccessBreakdown,
-			rx_internalNotificationFifo);
+			rx_internalNotificationFifo,
 #else
-			rxEng2rxApp_notification);
+			rxEng2rxApp_notification,
 #endif
+			rxEng2txApp_client_notification);
 
 
 #if (!RX_DDR_BYPASS)
@@ -1336,7 +1238,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 			rxEng_fsmDropFifo,
 			rxPkgDrop2rxMemWriter);
 
-	rxEngMemWrite(
+	Rx_Data_to_Memory(
 			rxPkgDrop2rxMemWriter, 
 			rxTcpFsm2wrAccessBreakdown, 
 			rxBufferWriteCmd, 

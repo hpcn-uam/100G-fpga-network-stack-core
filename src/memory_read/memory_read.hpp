@@ -61,4 +61,20 @@ void app_MemDataRead_aligner(
 					stream<memDoubleAccess>& 	mem_two_access,
 					stream<axiWord>& 			app_data_aligned);
 
+void Rx_Data_to_Memory(
+					stream<axiWord>& 				rxMemWrDataIn,
+					stream<mmCmd>&					rxMemWrCmdIn,
+					stream<mmCmd>&					rxMemWrCmdOut,
+					stream<axiWord>&				rxMemWrDataOut,
+					stream<ap_uint<1> >&			doubleAccess);
+
+void tx_Data_to_Memory(
+					stream<axiWord>& 				txMemWrDataIn,
+					stream<mmCmd>&					txMemWrCmdIn,
+					stream<mmCmd>&					txMemWrCmdOut,
+#if (TCP_NODELAY)					
+					stream<axiWord>&				txApp2txEng_data_stream,
+#endif
+					stream<axiWord>&				txMemWrDataOut);
+
 #endif

@@ -120,6 +120,9 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 				sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
 				slc_queryCache.write(intQuery);
 				slc_fsmState = LUP_RSP;
+				//std::cout << "LUP_REQ request to look-up for " << std::dec << (toeTuple.dstIp & 0xFF) <<".";
+				//std::cout << ((toeTuple.dstIp >> 8) & 0xFF) << "." << ((toeTuple.dstIp >> 16) & 0xFF) << ".";
+				//std::cout << ((toeTuple.dstIp >> 24) & 0xFF) << ":" << (toeTuple.dstPort(7,0),toeTuple.dstPort(15,8)) << std::endl;
 			}
 			else if (!rxEng2sLooup_req.empty()) {
 				rxEng2sLooup_req.read(query);
@@ -138,12 +141,14 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 			if(!sessionLookup_rsp.empty() && !slc_queryCache.empty()) {
 				sessionLookup_rsp.read(lupReply);
 				slc_queryCache.read(intQuery);
+				//std::cout << "LUP_RSP hit " << lupReply.hit;
 				if (!lupReply.hit && intQuery.allowCreation && !sessionIdFreeList.empty()) {	
 					// If the tuple is not in the memory and it can be created, get a free ID and inserted the tuple into the SmartCAM
 					sessionIdFreeList.read(freeID);
 					sessionInsert_req.write(rtlSessionUpdateRequest(intQuery.tuple, freeID, INSERT, lupReply.source));
 					slc_insertTuples.write(intQuery.tuple);
 					slc_fsmState = UPD_RSP;
+					//std::cout << "\tto  UPD_RSP" << std::endl;
 				}
 				else { 	// Forward the SmartCAM's look-up response to the proper module
 					if (lupReply.source == RX) {
@@ -153,6 +158,7 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 						sLookup2txApp_rsp.write(sessionLookupReply(lupReply.sessionID, lupReply.hit));
 					}
 					slc_fsmState = LUP_REQ;
+					//std::cout << "\tto  LUP_REQ" << std::endl;
 				}
 			}
 			break;
@@ -160,12 +166,15 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 			if (!sessionInsert_rsp.empty() && !slc_insertTuples.empty()) {
 				sessionInsert_rsp.read(insertReply);
 				slc_insertTuples.read(tuple);
+				//std::cout << "UPD_RSP ";
 				//updateReplies.write(sessionLookupReply(insertReply.sessionID, true));
 				if (insertReply.source == RX) {
 					sLookup2rxEng_rsp.write(sessionLookupReply(insertReply.sessionID, true));
+					//std::cout << "source RX " << std::endl;
 				}
 				else {
 					sLookup2txApp_rsp.write(sessionLookupReply(insertReply.sessionID, true));
+					//std::cout << "source NO RX " << std::endl;
 				}
 				reverseTableInsertFifo.write(revLupInsert(insertReply.sessionID, tuple));
 				slc_fsmState = LUP_REQ;

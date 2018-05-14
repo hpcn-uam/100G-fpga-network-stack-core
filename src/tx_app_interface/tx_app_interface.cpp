@@ -36,18 +36,18 @@ void txEventMerger(	stream<event>&	txApp2eventEng_mergeEvent,
 #if (TCP_NODELAY)
 					stream<event>&	tasi_txEventCacheFifo,
 #endif
-					stream<event>&	out)
+					stream<event>&	txApp_merged_event)
 {
 #pragma HLS PIPELINE II=1
 
 	event ev;
 	// Merge Events
 	if (!txApp2eventEng_mergeEvent.empty()) {
-		out.write(txApp2eventEng_mergeEvent.read());
+		txApp_merged_event.write(txApp2eventEng_mergeEvent.read());
 	}
 	else if (!txAppStream2event_mergeEvent.empty()) {
 		txAppStream2event_mergeEvent.read(ev);
-		out.write(ev);
+		txApp_merged_event.write(ev);
 #if (TCP_NODELAY)
 		if (ev.type == TX) {
 			tasi_txEventCacheFifo.write(ev);
@@ -94,15 +94,16 @@ void txAppStatusHandler(stream<mmStatus>&				txBufferWriteStatus,
 				tempLength = event_i.address + event_i.length;
 
 				if (status.okay){
-					if (tempLength.bit(17)){
+					if (tempLength.bit(16)){
 						tash_state =  READ_STATUS_2;
 					}
-#if (!TCP_NODELAY)
 					else {
 						txApp2txSar_app_push.write(txAppTxSarPush(event_i.sessionID, event_i.address+event_i.length)); // App pointer update, pointer is released
 						tash_state =  READ_EV;
-					}
+#if (!TCP_NODELAY)
+						txAppStream2eventEng_setEvent.write(event_i);
 #endif
+					}
 				}
 
 			}
@@ -112,8 +113,9 @@ void txAppStatusHandler(stream<mmStatus>&				txBufferWriteStatus,
 				txBufferWriteStatus.read(status);
 
 				if (status.okay){
-#if (!TCP_NODELAY)
 					txApp2txSar_app_push.write(txAppTxSarPush(event_i.sessionID, event_i.address+event_i.length)); // App pointer update, pointer is released
+#if (!TCP_NODELAY)
+					txAppStream2eventEng_setEvent.write(event_i);
 #endif
 					tash_state =  READ_EV;
 				}
@@ -125,7 +127,6 @@ void txAppStatusHandler(stream<mmStatus>&				txBufferWriteStatus,
 			break;			
 	}
 }
-
 
 void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 					stream<txAppTxSarQuery>&	txApp_upd_req,
@@ -237,7 +238,7 @@ void tx_app_interface(
 #else
 					txApp_eventCacheFifo);
 #endif
-	//txAppEvChecker(txApp_eventCache, txApp_txEventCache, txApp2eventEng_setEvent);
+	
 	txAppStatusHandler(	txBufferWriteStatus,
 #if (TCP_NODELAY)
 						txApp_txEventCache,

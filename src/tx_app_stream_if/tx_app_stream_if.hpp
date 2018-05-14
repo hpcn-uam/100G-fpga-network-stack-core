@@ -29,11 +29,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 
 #include "../toe.hpp"
 #include "../utilities.hpp"
-using namespace hls;
+#include "../memory_read/memory_read.hpp"
 
-static const ap_uint<4> NO_ERROR			= 0;
-static const ap_uint<4> ERROR_NOCONNCECTION		= 1;
-static const ap_uint<4> ERROR_NOSPACE			= 2;
+using namespace hls;
 
 /** @ingroup tx_app_stream_if
  *
