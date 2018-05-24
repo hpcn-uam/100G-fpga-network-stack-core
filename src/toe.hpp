@@ -47,7 +47,7 @@ static const ap_uint<16> MSS=1460; //536
 static const uint16_t MAX_SESSIONS = 10000;
 
 // TCP_NODELAY flag, to disable Nagle's Algorithm
-#define TCP_NODELAY 0
+#define TCP_NODELAY 1
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
 #define RX_DDR_BYPASS 0
@@ -87,24 +87,24 @@ static const ap_uint<32> TIME_30s		= 6;
 static const ap_uint<32> TIME_60s		= 60;
 static const ap_uint<32> TIME_120s		= 120;
 #else
-static const ap_uint<32> TIME_64us		= 1;
-static const ap_uint<32> TIME_128us		= 2;
-static const ap_uint<32> TIME_1ms		= 15;
-static const ap_uint<32> TIME_5ms		= 75;
-static const ap_uint<32> TIME_25ms		= 375;
-static const ap_uint<32> TIME_50ms		= 750;
-static const ap_uint<32> TIME_100ms		= 1515;
-static const ap_uint<32> TIME_250ms		= 3780;
-static const ap_uint<32> TIME_500ms		= 78125;
-static const ap_uint<32> TIME_1s		= 15150;
-static const ap_uint<32> TIME_5s		= 75075;
-static const ap_uint<32> TIME_7s		= 105105;
-static const ap_uint<32> TIME_10s		= 150150;
-static const ap_uint<32> TIME_15s		= 225225;
-static const ap_uint<32> TIME_20s		= 300300;
-static const ap_uint<32> TIME_30s		= 450450;
-static const ap_uint<32> TIME_60s		= 900900;
-static const ap_uint<32> TIME_120s		= 1801801;
+static const ap_uint<32> TIME_64us		= 2;
+static const ap_uint<32> TIME_128us		= 4;
+static const ap_uint<32> TIME_1ms		= 32;
+static const ap_uint<32> TIME_5ms		= 161;
+static const ap_uint<32> TIME_25ms		= 805;
+static const ap_uint<32> TIME_50ms		= 1611;
+static const ap_uint<32> TIME_100ms		= 3222;
+static const ap_uint<32> TIME_250ms		= 8056;
+static const ap_uint<32> TIME_500ms		= 16113;
+static const ap_uint<32> TIME_1s		= 32226;
+static const ap_uint<32> TIME_5s		= 161133;
+static const ap_uint<32> TIME_7s		= 225586;
+static const ap_uint<32> TIME_10s		= 322266;
+static const ap_uint<32> TIME_15s		= 483399;
+static const ap_uint<32> TIME_20s		= 644532;
+static const ap_uint<32> TIME_30s		= 966798;
+static const ap_uint<32> TIME_60s		= 1933596;
+static const ap_uint<32> TIME_120s		= 3867192;
 #endif
 
 
@@ -141,6 +141,16 @@ struct fourTuple
 	fourTuple() {}
 	fourTuple(ap_uint<32> srcIp, ap_uint<32> dstIp, ap_uint<16> srcPort, ap_uint<16> dstPort)
 			  : srcIp(srcIp), dstIp(dstIp), srcPort(srcPort), dstPort(dstPort) {}
+};
+
+struct threeTuple
+{
+	ap_uint<16> myPort;
+	ap_uint<16> theirPort;
+	ap_uint<32> theirIp;
+	threeTuple() {}
+	threeTuple(ap_uint<16> myPort, ap_uint<16> theirPort, ap_uint<32> theirIp)
+			  : myPort(myPort), theirPort(theirPort), theirIp(theirIp) {}
 };
 
 inline bool operator < (fourTuple const& lhs, fourTuple const& rhs) {
@@ -356,10 +366,17 @@ struct txTxSarReply
 	ap_uint<16> min_window;
 	ap_uint<16> app;
 	bool		finReady;
-	bool		finSent;/*
-	ap_uint<16> currLength; 
-	ap_uint<16> Send_Window;
-	ap_uint<16> UsableWindow;*/
+	bool		finSent;
+	ap_uint<16> currLength;
+	ap_uint<16> usedLength;
+	ap_uint<16> UsableWindow;
+
+	bool 		ackd_eq_not_ackd;
+	ap_uint<32> not_ackd_short;
+	bool 		usablewindow_b_mss;
+	ap_uint<32> not_ackd_plus_mss;
+
+	//ap_uint<16> Send_Window;
 	txTxSarReply() {}
 	txTxSarReply(ap_uint<32> ack, ap_uint<32> nack, ap_uint<16> min_window, ap_uint<16> app, bool finReady, bool finSent)
 		:ackd(ack), not_ackd(nack), min_window(min_window), app(app), finReady(finReady), finSent(finSent) {}
@@ -616,7 +633,7 @@ void toe(	// Data & Memory Interface
 			stream<appTxRsp>&						txDataRsp,
 
 			//IP Address Input
-			ap_uint<32>								myIpAddress,
+			ap_uint<32>&							myIpAddress,
 			//statistic
 			ap_uint<16>&							regSessionCount,
 			stream<axiWord>&						tx_pseudo_packet_to_checksum,

@@ -46,13 +46,15 @@ void rx_sar_table(	stream<rxSarRecvd>&			rxEng2rxSar_upd_req,
 					stream<ap_uint<16> >&		txEng2rxSar_req, //read only
 					stream<rxSarEntry>&			rxSar2rxEng_upd_rsp,
 					stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
-					stream<rxSarEntry>&			rxSar2txEng_rsp)
+					stream<rxSarEntry_rsp>&		rxSar2txEng_rsp)
 {
 
 	static rxSarEntry rx_table[MAX_SESSIONS];
-	ap_uint<16> addr;
-	rxSarRecvd in_recvd;
-	rxSarAppd in_appd;
+	ap_uint<16> 	addr;
+	rxSarRecvd 		in_recvd;
+	rxSarAppd 		in_appd;
+	rxSarEntry 		tmp_entry;
+	rxSarEntry_rsp 	response2_metaloader;
 
 #pragma HLS PIPELINE II=1
 
@@ -63,7 +65,12 @@ void rx_sar_table(	stream<rxSarRecvd>&			rxEng2rxSar_upd_req,
 	if(!txEng2rxSar_req.empty())
 	{
 		txEng2rxSar_req.read(addr);
-		rxSar2txEng_rsp.write(rx_table[addr]);
+		tmp_entry = rx_table[addr];
+		response2_metaloader.recvd 			= tmp_entry.recvd;
+		// Copmpute windows size This works even for wrap around
+		// TODO: this only works for fix buffer size
+		response2_metaloader.windowSize     = (tmp_entry.appd - ((ap_uint<16>)tmp_entry.recvd)) - 1; 
+		rxSar2txEng_rsp.write(response2_metaloader);
 	}
 	// Read or Write access from the Rx App I/F to update the application pointer
 	else if(!rxApp2rxSar_upd_req.empty())

@@ -31,7 +31,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #define _MEMMORY_READ_H_
 
 #include "../toe.hpp"
-#include "../utilities.hpp"
+#include "../common_utilities/common_utilities.hpp"
 
 using namespace hls;
 

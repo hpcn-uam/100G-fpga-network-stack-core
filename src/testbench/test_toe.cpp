@@ -32,10 +32,13 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <map>
 #include <string>
 #include "pcap2stream.hpp"
-#include "../utilities.hpp"
+#include "../common_utilities/common_utilities.hpp"
+#include "../../../echo_server_app/src/echo_server_application.hpp"
 #include <iomanip>
 
-#define totalSimCycles 1000000
+#define ECHO_REPLAY 1
+
+#define totalSimCycles 250000
 //#define totalSimCycles 10000
 
 using namespace std;
@@ -215,15 +218,15 @@ void rxApp_sim (
 			case WAIT_DATA:
 				if (!data_session_ID.empty()){
 					data_session_ID.read(current_sessionID);
-					cout << "RX Data from memory to app ID[" << dec << current_sessionID <<"]" << endl;
+					//cout << "RX Data from memory to app ID[" << dec << current_sessionID <<"]" << endl;
 					rx_read_data_fsm = CONSUME_DATA;
 				}
 				break;
 			case CONSUME_DATA:
 				if(!memory_to_rx_app_data.empty()){
 					memory_to_rx_app_data.read(currWord);
-					cout << "RX APP [" << dec << packet << "][" << dec << transaction++ << "]";
-					cout << "\tData " << hex << currWord.data << "\tkeep " << currWord.keep << "\tlast " << currWord.last << endl;
+					//cout << "RX APP [" << dec << packet << "][" << dec << transaction++ << "]";
+					//cout << "\tData " << hex << currWord.data << "\tkeep " << currWord.keep << "\tlast " << currWord.last << endl;
 					if (currWord.last){
 						packet ++;
 						transaction = 0;
@@ -232,7 +235,6 @@ void rxApp_sim (
 				}
 				break;				
 		}
-
 	}
 	else {
 		if (!notifications.empty()){
@@ -251,6 +253,7 @@ void txApp_sim(
 	stream<appTxMeta>& 				txApp_write_request,			// ask for write
 	stream<appTxRsp>&				txApp_data_write_response,		// It tells if the data was accepted by TOE
 	stream<axiWord>& 				txApp_write_Data,				// data to write
+	ap_uint<32>						bytes_to_send,					// amount of bytes to send
 	bool 							test_TX
 	){
 
@@ -261,7 +264,7 @@ void txApp_sim(
 	
 	static txApp_client_status	rx_client_notification;
 	appTxMeta 					write_request;
-	static ap_uint<16> 			bytes2send = 15000;
+	static ap_uint<16> 			bytes2send = (ap_uint<16>)bytes_to_send;
 	static ap_uint<16> 			bytes_sent = 0;
 	static ap_uint<16> 			tmp=0;
 	axiWord 					sendWord=axiWord(0,0,0);
@@ -377,7 +380,6 @@ void txApp_sim(
 				fsm_state = WAIT_CLIENT;
 				break;
 		}
-		
 	}
 }
 
@@ -387,28 +389,34 @@ void sessionLookupStub(
 		stream<rtlSessionUpdateRequest>& 	upd_req, 
 		stream<rtlSessionUpdateReply>& 		upd_rsp) {
 						//stream<ap_uint<14> >& new_id, stream<ap_uint<14> >& fin_id)
-	static map<fourTupleInternal, ap_uint<14> > lookupTable;
+	static map<threeTupleInternal, ap_uint<14> > lookupTable;
 
 	rtlSessionLookupRequest request;
 	rtlSessionUpdateRequest update;
 
-	map<fourTupleInternal, ap_uint<14> >::const_iterator findPos;
+	map<threeTupleInternal, ap_uint<14> >::const_iterator findPos;
 
 	if (!lup_req.empty()) {
 		lup_req.read(request);
-		//cout << "TABLE LUP REQ DST(" << hex  << request.key.theirIp << ":" << dec << byteSwap16(request.key.theirPort) << ")";
-		//cout << "ORG(" << hex  << request.key.myIp << ":" << dec << byteSwap16(request.key.myPort) << ")" << "\ttime: " << simCycleCounter << endl;
+		cout << "TABLE lookup req " << (!request.source ? "RX" : "TX_APP") << "\t";
+		cout << hex  << byteSwap32(request.key.theirIp) << ":" << dec << byteSwap16(request.key.theirPort) << ":" << byteSwap16(request.key.myPort);
 		findPos = lookupTable.find(request.key);
-		if (findPos != lookupTable.end()) //hit
+		if (findPos != lookupTable.end()){ //hit
 			lup_rsp.write(rtlSessionLookupReply(true, findPos->second, request.source));
-		else
+			cout << "\tHIT! ID: " << dec <<findPos->second; 
+		}
+		else {
 			lup_rsp.write(rtlSessionLookupReply(false, request.source));
+			cout << "\tNO HIT! "; 
+		}
+
+		cout << "\ttime: " << simCycleCounter << endl;
 	}
 
 	if (!upd_req.empty()) {	//TODO what if element does not exist
 		upd_req.read(update);
-		//cout << "TABLE LUP UDP DST(" << hex  << update.key.theirIp << ":" << dec << byteSwap16(update.key.theirPort) << ")";
-		//cout << "ORG(" << hex  << update.key.myIp << ":" << dec << byteSwap16(update.key.myPort) << ")" << "with ID: " << update.value << "\ttime: " << simCycleCounter << endl;
+		cout << "TABLE update " << (!update.source ? "RX" : "TX_APP") << " " <<(!update.op ? "INSERT" : "DELETE") << " ID: " << dec << update.value;
+		cout << "\t" << hex  << byteSwap32(update.key.theirIp) << ":"<< dec << byteSwap16(update.key.theirPort) << ":" << byteSwap16(update.key.myPort);
 		if (update.op == INSERT) {	//Is there a check if it already exists?
 			// Read free id
 			//new_id.read(update.value);
@@ -421,6 +429,7 @@ void sessionLookupStub(
 			lookupTable.erase(update.key);
 			upd_rsp.write(rtlSessionUpdateReply(update.value, DELETE, update.source));
 		}
+		cout << "\ttime: " << simCycleCounter << endl;
 	}
 }
 
@@ -489,7 +498,6 @@ void simulateRx(
 }
 
 
-
 void simulateTx(
 		dummyMemory* 		memory, 
 		stream<mmCmd>& 		WriteCmdFifo, 
@@ -531,7 +539,7 @@ void simulateTx(
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
@@ -571,10 +579,11 @@ int main(int argc, char **argv) {
 	stream<bool>						rxApp2portTable_listen_rsp("rxApp2portTable_listen_rsp");
 	stream<appNotification>				rxAppNotification("rxAppNotification");
 	stream<ap_uint<16> >				rxDataRspIDsession("rxDataRspIDsession");
-	stream<axiWord>						rxData_memory_2_app("rxData_memory_2_app");
+	stream<axiWord>						rxData_to_rxApp("rxData_to_rxApp");
 	stream<openStatus>					openConnRsp("openConnRsp");
 	stream<appTxRsp>					txApp_data_write_response("txApp_data_write_response");
 	ap_uint<16>							regSessionCount;
+	static ap_uint<32>							myIP_address=0x0500A8C0;
 	stream<axiWord> 					rxDataOut("rxDataOut");						// This stream contains the data output from the Rx App I/F
   	stream<axiWord>						tx_pseudo_packet_to_checksum("tx_pseudo_packet_to_checksum");
 	stream<ap_uint<16> >				tx_pseudo_packet_res_checksum("tx_pseudo_packet_res_checksum");
@@ -598,11 +607,13 @@ int main(int argc, char **argv) {
 	/* This variable indicates if the TX path is to be tested, thus it remains true in case of Rx only or bidirectional testing
 	* It means TOE working as a server.
 	*/
-	bool			testRxPath		= true;	 
-	bool			testTxPath		= false;
-	static bool		firsts_packets_pace = false;
-	static bool		seconds_packets_pace = false;
+	bool			testRxPath;	 
+	bool			testTxPath;
+	bool			firsts_packets_pace 	= false;
+	bool			seconds_packets_pace 	= false;
 	
+	int 			mode=-1;
+
 
 	stream<axiWord> 					tx_iperf_data("tx_iperf_data");						
   	stream<ap_uint<16> > 				tx_iperf_MetaData("tx_iperf_MetaData");
@@ -615,22 +626,38 @@ int main(int argc, char **argv) {
 	ap_uint<32> 						iperf_ipAddress1 		= 0xC0A80009;
 	ap_uint<32> 						iperf_ipAddress2 		= 0xC0A8000A;
 	ap_uint<32> 						iperf_ipAddress3 		= 0xC0A8000B;
+	ap_uint<32> 						bytes_to_send 			= 20000;
+	char *input_file;
+	char *output_file;
 
-	if (argc < 3) {
-		cout << "[ERROR] missing arguments " __FILE__  << " <INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;
+	if (argc < 4) {
+		cerr << "[ERROR] missing arguments " __FILE__  << " <MODE 0: RX 1: TX><INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;;
+		cerr << "If mode is TX, and optional argument can be provided, and it is the amount of bytes to transfer" << endl;
 		return -1;
 	}
 
 
+	mode = atoi(argv[1]);
+	if (mode==0){
+		testRxPath = true;
+		testTxPath = false;
+	}
+	else if(mode==1){
+		testRxPath = false;
+		testTxPath = true;
 
-	//if (testTxPath == true) { 										// If the Tx Path will be tested then open a session for testing.
-	//	//for (uint8_t i=0;i<noOfTxSessions;++i) {
-	//		ipTuple newTuple = {0x0800A8C0, 5005}; 				// IP address and port to open
-	//		openConnReq.write(newTuple); 							// Write into TOE Tx I/F queue
-	//		cout << "Request to establish a new connection IP: " << hex << newTuple.ip_address << " Port: " << dec << newTuple.ip_port << endl;
-	//	//}
-	//}
+		if (argc == 5){
+			bytes_to_send = atoi(argv[4]);		// get the amount of bytes to send from argument
+		}
+	}
+	else{
+		cerr << "[ERROR] bad mode, it only can be 0 or 1" << endl;
+		return -1;
+	}
 
+	
+	input_file 	= argv[2];
+	output_file = argv[3];
 
 	do  {
 
@@ -643,19 +670,19 @@ int main(int argc, char **argv) {
 				firsts_packets_pace = false;
 			}
 
-			if (simCycleCounter > 800){
+			if (simCycleCounter > 400){
 				seconds_packets_pace = true;
 			}
 
 			if (((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
 				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)){
-				pcap2stream_step(argv[1], false ,ipRxData);
+				pcap2stream_step(input_file, false ,ipRxData);
 			}
 		}
 
 		if (testRxPath){
 			if (((simCycleCounter+1) % 80) ==0){
-				pcap2stream_step(argv[1], false ,ipRxData);
+				pcap2stream_step(input_file, false ,ipRxData);
 			}
 		}
 
@@ -696,11 +723,11 @@ int main(int argc, char **argv) {
 			rxAppNotification,
 			rxEng2txApp_client_notification,
 			rxDataRspIDsession, 
-			rxData_memory_2_app, 		
+			rxData_to_rxApp, 		
 			openConnRsp, 
 			txApp_data_write_response, 	
 
-			0x0500A8C0, 						// 192.168.0.5
+			myIP_address, 						// 192.168.0.5
 			regSessionCount,
 			tx_pseudo_packet_to_checksum,
 			tx_pseudo_packet_res_checksum,
@@ -731,12 +758,13 @@ int main(int argc, char **argv) {
 			iperf_ipAddress3);
 */
 
+#if (!ECHO_REPLAY)
 		rxApp_sim (
 			openConnReq,
 			openConnRsp,
 			closeConnReq,
 			rxDataRspIDsession, 
-			rxData_memory_2_app,
+			rxData_to_rxApp,
 			rxAppNotification,
 			rxApp_request_memory_data,
 			iperf_num_useConn,
@@ -754,9 +782,25 @@ int main(int argc, char **argv) {
 			txApp_write_request,
 			txApp_data_write_response,
 			txApp_write_Data,
+			bytes_to_send,
 			testTxPath
 		);
-
+#else
+		echo_server_application(	
+			rxApp2portTable_listen_req, 
+			rxApp2portTable_listen_rsp,
+			rxAppNotification, 
+			rxApp_request_memory_data,
+			rxDataRspIDsession, 
+			rxData_to_rxApp,
+			openConnReq, 
+			openConnRsp,
+			closeConnReq,
+			txApp_write_request,
+			txApp_write_Data,
+			txApp_data_write_response,
+			rxEng2txApp_client_notification);
+#endif		
 		simulateRx(
 			&rxMemory, 
 			rxBufferWriteCmd, 
@@ -790,18 +834,17 @@ int main(int argc, char **argv) {
 			1);
 
 
-		stream2pcap(argv[2], false, true, ipTxData, false);
+		stream2pcap(output_file, false, true, ipTxData, false);
 
 	} while (simCycleCounter++ < totalSimCycles);
 
-	stream2pcap(argv[2],false,true,ipTxData,true);
+	stream2pcap(output_file,false,true,ipTxData,true);
 
 	cout << "regSessionCount " << dec << regSessionCount << endl; 
 	
 	packet=0;
 	transaction=0;
 		
-
 	return 0;
 
 }

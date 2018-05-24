@@ -30,17 +30,16 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #define _RX_ENGINE_H_
 
 #include "../toe.hpp"
-#include "../utilities.hpp"
-#include "../memory_read/memory_read.hpp"
+#include "../common_utilities/common_utilities.hpp"
+#include "../memory_access/memory_access.hpp"
 
 using namespace hls;
 
 /** @ingroup rx_engine
  *  @TODO check if same as in Tx engine
  */
-struct rxEngineMetaData
+struct rxEng_TCP_MetaData
 {
-	//ap_uint<16> sessionID;
 	ap_uint<32> seqNumb;
 	ap_uint<32> ackNumb;
 	ap_uint<16> winSize;
@@ -53,7 +52,12 @@ struct rxEngineMetaData
 	ap_uint<1>	rst;
 	ap_uint<1>	syn;
 	ap_uint<1>	fin;
-	//ap_uint<16> dstPort;
+};
+
+struct rxEngPktMetaInfo
+{	
+	rxEng_TCP_MetaData 	digest;
+	fourTuple 			tuple;
 };
 
 /** @ingroup rx_engine
@@ -64,9 +68,9 @@ struct rxFsmMetaData
 	ap_uint<16>			sessionID;
 	ap_uint<32>			srcIpAddress;
 	ap_uint<16>			dstIpPort;
-	rxEngineMetaData	meta; //check if all needed
+	rxEng_TCP_MetaData	meta; //check if all needed
 	rxFsmMetaData() {}
-	rxFsmMetaData(ap_uint<16> id, ap_uint<32> ipAddr, ap_uint<16> ipPort, rxEngineMetaData meta)
+	rxFsmMetaData(ap_uint<16> id, ap_uint<32> ipAddr, ap_uint<16> ipPort, rxEng_TCP_MetaData meta)
 				:sessionID(id), srcIpAddress(ipAddr), dstIpPort(ipPort), meta(meta) {}
 };
 

@@ -7,17 +7,18 @@ project = toe_hls
 
 all: build
 
-build: $(project)/solution1/impl/ip/component.xml
+build: $(project)/ultrascale_plus/impl/ip/component.xml
 	@echo -e "\e[94mIP Completed: $(project)\e[39m"
 
 
 clean:
-	rm -rf *.log *.jou file* *.bak synlog.tcl .Xil fsm_encoding.os
+	rm -rf *.log *.jou file* *.bak vivado*.str synlog.tcl .Xil fsm_encoding.os
 
 distclean: clean
 	rm -rf $(project)
 
-$(project)/solution1/impl/ip/component.xml: $(shell find $(SRCDIR) -type f) \
+$(project)/ultrascale_plus/impl/ip/component.xml: current_objective=$(subst $(OBJDIR)/,,$@)
+$(project)/ultrascale_plus/impl/ip/component.xml: $(shell find $(SRCDIR) -type f) \
 											$(TCLDIR)/project_script.tcl
 	rm -rf 	$(project)
 	vivado_hls -f $(TCLDIR)/project_script.tcl -tclargs $(project)

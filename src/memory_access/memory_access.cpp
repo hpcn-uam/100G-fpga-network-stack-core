@@ -27,7 +27,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
-#include "memory_read.hpp"
+#include "memory_access.hpp"
 
 using namespace hls;
 using namespace std;
@@ -136,6 +136,7 @@ void tx_MemDataRead_aligner(
 {
 #pragma HLS INLINE off
 #pragma HLS LATENCY max=1
+#pragma HLS pipeline II=1
 
 	static ap_uint<6>	byte_offset;
 	static bool			breakdownAccess=false;
@@ -355,7 +356,7 @@ void app_MemDataRead_aligner(
  * @param      rxMemWrCmdIn    Internal command to write data into the memory. It does not take into account buffer overflow
  * @param      rxMemWrCmdOut   Command to the data mover. It takes into account buffer overflow. Two write commands when buffer overflows
  * @param      rxMemWrDataOut  Data to memory. If the buffer overflows, the second part of the data has to be realigned
- * @param      doubleAccess    If two memory writes are needed this flag is set, is not is cleared
+ * @param      doubleAccess    If two memory writes are needed this flag is set, if not is cleared
  */
 void Rx_Data_to_Memory(
 					stream<axiWord>& 				rxMemWrDataIn,

@@ -1,4 +1,4 @@
-/************************************************
+/******************************************s interned at the ABB’s Corp******
 Copyright (c) 2016, Xilinx, Inc.
 All rights reserved.
 
@@ -45,4 +45,4 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 				stream<stateQuery>&				txApp2stateTable_upd_req,
 				stream<event>&					txApp2eventEng_setEvent,
 				stream<openStatus>&				rtTimer2txApp_notification,
-				ap_uint<32>						myIpAddress);
+				ap_uint<32>&					myIpAddress);

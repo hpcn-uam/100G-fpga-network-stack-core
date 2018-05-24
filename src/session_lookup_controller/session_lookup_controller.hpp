@@ -67,28 +67,49 @@ struct fourTupleInternal
 
 	bool operator<(const fourTupleInternal& other) const
 	{
-		if (myIp < other.myIp)
-		{
+		if (myIp < other.myIp) {
 			return true;
 		}
-		else if (myIp == other.myIp)
-		{
-			if (theirIp < other.theirIp)
-			{
+		else if (myIp == other.myIp) {
+			if (theirIp < other.theirIp) {
 				return true;
 			}
-			else if(theirIp == other.theirIp)
-			{
-				if (myPort < other.myPort)
-				{
+			else if(theirIp == other.theirIp) {
+				if (myPort < other.myPort) {
 					return true;
 				}
-				else if (myPort == other.myPort)
-				{
-					if (theirPort < other.theirPort)
-					{
+				else if (myPort == other.myPort) {
+					if (theirPort < other.theirPort) {
 						return true;
 					}
+				}
+			}
+		}
+		return false;
+	}
+};
+
+struct threeTupleInternal
+{
+	ap_uint<16>	myPort;
+	ap_uint<16> theirPort;
+	ap_uint<32> theirIp;
+	threeTupleInternal() {}
+	threeTupleInternal(ap_uint<16> myPort, ap_uint<16> theirPort, ap_uint<32> theirIp)
+	: myPort(myPort), theirPort(theirPort), theirIp(theirIp) {}
+
+	bool operator<(const threeTupleInternal& other) const
+	{
+		if (theirIp < other.theirIp) {
+			return true;
+		}
+		else if (theirIp == other.theirIp) {
+			if (myPort < other.myPort) {
+				return true;
+			}
+			else if (myPort == other.myPort) {
+				if (theirPort < other.theirPort) {
+					return true;
 				}
 			}
 		}
@@ -101,11 +122,11 @@ struct fourTupleInternal
  */
 struct sessionLookupQueryInternal
 {
-	fourTupleInternal	tuple;
+	threeTupleInternal	tuple;
 	bool				allowCreation;
 	lookupSource		source;
 	sessionLookupQueryInternal() {}
-	sessionLookupQueryInternal(fourTupleInternal tuple, bool allowCreation, lookupSource src)
+	sessionLookupQueryInternal(threeTupleInternal tuple, bool allowCreation, lookupSource src)
 			:tuple(tuple), allowCreation(allowCreation), source(src) {}
 };
 
@@ -115,28 +136,28 @@ struct sessionLookupQueryInternal
 struct rtlSessionLookupRequest
 {
 	lookupSource		source;
-	fourTupleInternal	key;
+	threeTupleInternal	key;
 	rtlSessionLookupRequest() {}
-	rtlSessionLookupRequest(fourTupleInternal tuple, lookupSource src)
+	rtlSessionLookupRequest(threeTupleInternal tuple, lookupSource src)
 				:key(tuple), source(src) {}
 };
 
 /** @ingroup session_lookup_controller
  *
  */
-struct rtlSessionUpdateRequest
+struct rtlSessionUpdateRequest // todo
 {
 	lookupSource		source;
 	lookupOp			op;
 	ap_uint<14>			value;
-	fourTupleInternal	key;
+	threeTupleInternal	key;
 	/*ap_uint<14>			value;
 	lookupOp			op;
 	lookupSource		source;*/
 	rtlSessionUpdateRequest() {}
 	/*rtlSessionUpdateRequest(fourTupleInternal key, lookupSource src)
 				:key(key), value(0), op(INSERT), source(src) {}*/
-	rtlSessionUpdateRequest(fourTupleInternal key, ap_uint<14> value, lookupOp op, lookupSource src)
+	rtlSessionUpdateRequest(threeTupleInternal key, ap_uint<14> value, lookupOp op, lookupSource src)
 			:key(key), value(value), op(op), source(src) {}
 };
 
@@ -177,9 +198,9 @@ struct rtlSessionUpdateReply
 struct revLupInsert
 {
 	ap_uint<16>			key;
-	fourTupleInternal	value;
+	threeTupleInternal	value;
 	revLupInsert() {};
-	revLupInsert(ap_uint<16> key, fourTupleInternal value)
+	revLupInsert(ap_uint<16> key, threeTupleInternal value)
 			:key(key), value(value) {}
 };
 
@@ -201,4 +222,5 @@ void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 								//stream<rtlSessionUpdateRequest>&	sessionDelete_req,
 								stream<rtlSessionUpdateReply>&		sessionUpdate_rsp,
 								//ap_uint<16>&						relSessionCount,
-								ap_uint<16>&						regSessionCount);
+								ap_uint<16>&						regSessionCount,
+								ap_uint<32>&						myIpAddress);

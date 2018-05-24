@@ -62,6 +62,8 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	rxTxSarQuery 	tst_rxEngUpdate;
 	txAppTxSarPush 	push;
 	ap_uint<16> 	minWindow;
+	txSarEntry 		tmp_entry_read;
+	txTxSarReply 	tmp_replay;
 
 	// TX Engine
 	if (!txEng2txSar_upd_req.empty()) {
@@ -93,19 +95,37 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			}
 		}
 		else {// Read
-			
-			if (tx_table[tst_txEngUpdate.sessionID].cong_window < tx_table[tst_txEngUpdate.sessionID].recv_window) {
-				minWindow = tx_table[tst_txEngUpdate.sessionID].cong_window;
+			tmp_entry_read = tx_table[tst_txEngUpdate.sessionID];
+
+			if (tmp_entry_read.cong_window < tmp_entry_read.recv_window) {
+				minWindow = tmp_entry_read.cong_window;
 			}
 			else {
-				minWindow = tx_table[tst_txEngUpdate.sessionID].recv_window;
+				minWindow = tmp_entry_read.recv_window;
 			}
-			txSar2txEng_upd_rsp.write(txTxSarReply(	tx_table[tst_txEngUpdate.sessionID].ackd,
-													tx_table[tst_txEngUpdate.sessionID].not_ackd,
-													minWindow,
-													tx_table[tst_txEngUpdate.sessionID].app,
-													tx_table[tst_txEngUpdate.sessionID].finReady,
-													tx_table[tst_txEngUpdate.sessionID].finSent));
+
+			tmp_replay.ackd			= tmp_entry_read.ackd;
+			tmp_replay.not_ackd		= tmp_entry_read.not_ackd;
+			tmp_replay.min_window	= minWindow;		
+			tmp_replay.app			= tmp_entry_read.app;
+			tmp_replay.finReady		= tmp_entry_read.finReady;
+			tmp_replay.finSent		= tmp_entry_read.finSent;	
+			tmp_replay.currLength	= tmp_entry_read.app - tmp_entry_read.not_ackd(15,0);	
+			tmp_replay.usedLength	= tmp_entry_read.not_ackd(15,0) - tmp_entry_read.ackd;	
+			
+			tmp_replay.ackd_eq_not_ackd	= (tmp_entry_read.ackd == tmp_entry_read.not_ackd);	
+			tmp_replay.not_ackd_plus_mss	= tmp_entry_read.not_ackd + MSS;	
+			
+			if (minWindow > tmp_replay.usedLength){
+				tmp_replay.UsableWindow	= minWindow - tmp_replay.usedLength;
+			}
+			else{
+				tmp_replay.UsableWindow	= 0;
+			}
+
+			tmp_replay.not_ackd_short = tmp_entry_read.not_ackd + tmp_replay.currLength;
+
+			txSar2txEng_upd_rsp.write(tmp_replay);
 		}
 	}
 	// TX App Stream If

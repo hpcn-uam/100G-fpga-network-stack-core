@@ -66,7 +66,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 				stream<stateQuery>&				txApp2stateTable_upd_req,
 				stream<event>&					txApp2eventEng_setEvent,
 				stream<openStatus>&				rtTimer2txApp_notification,
-				ap_uint<32>						myIpAddress)
+				ap_uint<32>&					myIpAddress)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1

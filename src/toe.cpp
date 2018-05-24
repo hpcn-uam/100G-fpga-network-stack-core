@@ -46,7 +46,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 
 #include "rx_app_stream_if/rx_app_stream_if.hpp"
 #include "tx_app_interface/tx_app_interface.hpp"
-#include "memory_read/memory_read.hpp"
+#include "memory_access/memory_access.hpp"
 
 
 ap_uint<16> byteSwap16(ap_uint<16> inputVector) {
@@ -117,16 +117,16 @@ void timerWrapper(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetransmitT
 	//#pragma HLS PIPELINE II=1
 	
 	static stream<ap_uint<16> > closeTimer2stateTable_releaseState("closeTimer2stateTable_releaseState");
-	#pragma HLS stream variable=closeTimer2stateTable_releaseState		depth=2
+	#pragma HLS STREAM variable=closeTimer2stateTable_releaseState		depth=2
 
 	static stream<ap_uint<16> > rtTimer2stateTable_releaseState("rtTimer2stateTable_releaseState");
-	#pragma HLS stream variable=rtTimer2stateTable_releaseState			depth=2
+	#pragma HLS STREAM variable=rtTimer2stateTable_releaseState			depth=2
 
 	static stream<event> rtTimer2eventEng_setEvent("rtTimer2eventEng_setEvent");
-	#pragma HLS stream variable=rtTimer2eventEng_setEvent		depth=2
+	#pragma HLS STREAM variable=rtTimer2eventEng_setEvent		depth=2
 
 	static stream<event> probeTimer2eventEng_setEvent("probeTimer2eventEng_setEvent");
-	#pragma HLS stream variable=probeTimer2eventEng_setEvent	depth=2
+	#pragma HLS STREAM variable=probeTimer2eventEng_setEvent	depth=2
 
 	// Merge Events, Order: rtTimer has to be before probeTimer
 	stream_merger(
@@ -206,10 +206,10 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 #if (!RX_DDR_BYPASS)
 
 	static stream<mmCmd>			rxAppStreamIf2memAccessBreakdown("rxAppStreamIf2memAccessBreakdown");
-	#pragma HLS stream variable=rxAppStreamIf2memAccessBreakdown	depth=16
+	#pragma HLS STREAM variable=rxAppStreamIf2memAccessBreakdown	depth=16
 
 	static stream<memDoubleAccess>		rxAppDoubleAccess("rxAppDoubleAccess");
-	#pragma HLS stream variable=rxAppDoubleAccess					depth=16
+	#pragma HLS STREAM variable=rxAppDoubleAccess					depth=16
 
 	rx_app_stream_if(
 					appRxDataReq, 
@@ -230,7 +230,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 #else
 
 	static stream<ap_uint<1> >		rxBufferReadCmd("rxBufferReadCmd");
-	#pragma HLS stream variable=rxBufferReadCmd					depth=4
+	#pragma HLS STREAM variable=rxBufferReadCmd					depth=4
 
 	rx_app_stream_if(
 					appRxDataReq,
@@ -272,17 +272,17 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  *  @param[out]		sessionLookup_req		: four-tuple to ID request
  *  @param[out]		sessionUpdate_req		: four-tuple insertion/delete request
  *  @param[in]		rxApp2portTable_listen_req
- *  @param[in]		rxDataReq
+ *  @param[in]		rxApp_readRequest
  *  @param[in]		openConnReq
  *  @param[in]		closeConnReq
  *  @param[in]		txDataReqMeta
  *  @param[in]		txApp_Data2send
  *  @param[out]		portTable2rxApp_listen_rsp
- *  @param[out]		notification
- *  @param[out]		rxDataRspIDsession
+ *  @param[out]		rxAppNotification
+ *  @param[out]		rxApp_readRequest_RspID
  *  @param[out]		rxDataRsp
  *  @param[out]		openConnRsp
- *  @param[out]		txDataRsp
+ *  @param[out]		txAppDataRsp
  *  @param[in]		myIpAddress							: FPGA IP address
  *  @param[out]		regSessionCount						: Number of connections
  *  @param[out]		tx_pseudo_packet_to_checksum		: TX pseudo TCP packet
@@ -313,22 +313,22 @@ void toe(	// Data & Memory Interface
 			// Application Interface
 			stream<ap_uint<16> >&					rxApp2portTable_listen_req,
 			// This is disabled for the time being, due to complexity concerns
-			stream<appReadRequest>&					rxDataReq,
+			stream<appReadRequest>&					rxApp_readRequest,
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
 			stream<appTxMeta>&					   	txDataReqMeta,
 			stream<axiWord>&						txApp_Data2send,
 
 			stream<bool>&							portTable2rxApp_listen_rsp, //TODO add port number
-			stream<appNotification>&				notification,
+			stream<appNotification>&				rxAppNotification,
 			stream<txApp_client_status>& 			rxEng2txApp_client_notification,
-			stream<ap_uint<16> >&					rxDataRspIDsession,
+			stream<ap_uint<16> >&					rxApp_readRequest_RspID,
 			stream<axiWord>&						rxDataRsp,
 			stream<openStatus>&						openConnRsp,
-			stream<appTxRsp>&						txDataRsp,
+			stream<appTxRsp>&						txAppDataRsp,
 
 			//IP Address Input
-			ap_uint<32>								myIpAddress,
+			ap_uint<32>&							myIpAddress,
 			//statistic
 			ap_uint<16>&							regSessionCount,
 			stream<axiWord>&						tx_pseudo_packet_to_checksum,
@@ -382,7 +382,7 @@ void toe(	// Data & Memory Interface
 // SmartCam Interface
 #pragma HLS INTERFACE axis off port=sessionLookup_rsp name=s_axis_session_lup_rsp 
 #pragma HLS INTERFACE axis off port=sessionUpdate_rsp name=s_axis_session_upd_rsp
-#pragma HLS INTERFACE axis off port=sessionLookup_req name=m_axis_session_lup_req
+#pragma HLS INTERFACE axis register both port=sessionLookup_req name=m_axis_session_lup_req
 #pragma HLS INTERFACE axis off port=sessionUpdate_req name=m_axis_session_upd_req 
 
 #pragma HLS DATA_PACK variable=sessionLookup_rsp
@@ -395,14 +395,14 @@ void toe(	// Data & Memory Interface
 #pragma HLS INTERFACE axis off port=rxApp2portTable_listen_req name=s_axis_listen_port_req 
 //#pragma HLS resource core=AXI4Stream variable=appClosePortIn metadata="-bus_bundle s_axis_close_port"
 
-#pragma HLS INTERFACE axis off port=notification name=m_axis_notification
-#pragma HLS INTERFACE axis off port=rxDataReq name=s_axis_rx_data_req 
+#pragma HLS INTERFACE axis off port=rxAppNotification name=m_axis_notification
+#pragma HLS INTERFACE axis off port=rxApp_readRequest name=s_axis_rx_data_req 
 
 #pragma HLS INTERFACE axis off port=rxEng2txApp_client_notification name=m_axis_tx_app_notification
 #pragma HLS DATA_PACK variable=rxEng2txApp_client_notification
 
 
-#pragma HLS INTERFACE axis off port=rxDataRspIDsession name=m_axis_rx_data_rsp_IDsession
+#pragma HLS INTERFACE axis off port=rxApp_readRequest_RspID name=m_axis_rx_data_rsp_IDsession
 #pragma HLS INTERFACE axis off port=rxDataRsp name=m_axis_rx_data_rsp 
 
 #pragma HLS INTERFACE axis off port=openConnReq name=s_axis_open_conn_req
@@ -411,211 +411,211 @@ void toe(	// Data & Memory Interface
 
 #pragma HLS INTERFACE axis off port=txDataReqMeta name=s_axis_tx_data_req_metadata
 #pragma HLS INTERFACE axis off port=txApp_Data2send name=s_axis_tx_data_req 
-#pragma HLS INTERFACE axis off port=txDataRsp name=m_axis_tx_data_rsp 
-#pragma HLS DATA_PACK variable=notification
-#pragma HLS DATA_PACK variable=rxDataReq
+#pragma HLS INTERFACE axis off port=txAppDataRsp name=m_axis_tx_App_data_rsp 
+#pragma HLS DATA_PACK variable=rxAppNotification
+#pragma HLS DATA_PACK variable=rxApp_readRequest
 #pragma HLS DATA_PACK variable=openConnReq
 #pragma HLS DATA_PACK variable=openConnRsp
 #pragma HLS DATA_PACK variable=txDataReqMeta
-#pragma HLS DATA_PACK variable=txDataRsp
+#pragma HLS DATA_PACK variable=txAppDataRsp
 
-#pragma HLS INTERFACE ap_none register port=myIpAddress
-#pragma HLS INTERFACE ap_vld port=regSessionCount
+#pragma HLS INTERFACE ap_stable register port=myIpAddress name=myIpAddress
+#pragma HLS INTERFACE ap_none register port=regSessionCount
 
 	/*
 	 * FIFOs
 	 */
 	// Session Lookup
 	static stream<sessionLookupQuery>		rxEng2sLookup_req("rxEng2sLookup_req");
-	#pragma HLS stream variable=rxEng2sLookup_req			depth=4
+	#pragma HLS STREAM variable=rxEng2sLookup_req			depth=4
 	#pragma HLS DATA_PACK variable=rxEng2sLookup_req
 
 	static stream<sessionLookupReply>		sLookup2rxEng_rsp("sLookup2rxEng_rsp");
-	#pragma HLS stream variable=sLookup2rxEng_rsp			depth=4
+	#pragma HLS STREAM variable=sLookup2rxEng_rsp			depth=4
 	#pragma HLS DATA_PACK variable=sLookup2rxEng_rsp
 
 	static stream<fourTuple>				txApp2sLookup_req("txApp2sLookup_req");
-	#pragma HLS stream variable=txApp2sLookup_req			depth=4
+	#pragma HLS STREAM variable=txApp2sLookup_req			depth=4
 	#pragma HLS DATA_PACK variable=txApp2sLookup_req
 
 	static stream<sessionLookupReply>		sLookup2txApp_rsp("sLookup2txApp_rsp");
-	#pragma HLS stream variable=sLookup2txApp_rsp			depth=4
+	#pragma HLS STREAM variable=sLookup2txApp_rsp			depth=4
 	#pragma HLS DATA_PACK variable=sLookup2txApp_rsp
 
 	static stream<ap_uint<16> >				txEng2sLookup_rev_req("txEng2sLookup_rev_req");
-	#pragma HLS stream variable=txEng2sLookup_rev_req		depth=4
+	#pragma HLS STREAM variable=txEng2sLookup_rev_req		depth=4
 
 	static stream<fourTuple>				sLookup2txEng_rev_rsp("sLookup2txEng_rev_rsp");
-	#pragma HLS stream variable=sLookup2txEng_rev_rsp		depth=4
+	#pragma HLS STREAM variable=sLookup2txEng_rev_rsp		depth=4
 	#pragma HLS DATA_PACK variable=sLookup2txEng_rev_rsp
 
 	// State Table
 	static stream<stateQuery>			rxEng2stateTable_upd_req("rxEng2stateTable_upd_req");
-	#pragma HLS stream variable=rxEng2stateTable_upd_req			depth=2
+	#pragma HLS STREAM variable=rxEng2stateTable_upd_req			depth=2
 	#pragma HLS DATA_PACK variable=rxEng2stateTable_upd_req
 
 	static stream<sessionState>			stateTable2rxEng_upd_rsp("stateTable2rxEng_upd_rsp");
-	#pragma HLS stream variable=stateTable2rxEng_upd_rsp			depth=2
+	#pragma HLS STREAM variable=stateTable2rxEng_upd_rsp			depth=2
 
 	static stream<stateQuery>			txApp2stateTable_upd_req("txApp2stateTable_upd_req");
-	#pragma HLS stream variable=txApp2stateTable_upd_req			depth=2
+	#pragma HLS STREAM variable=txApp2stateTable_upd_req			depth=2
 	#pragma HLS DATA_PACK variable=txApp2stateTable_upd_req
 
 	static stream<sessionState>			stateTable2txApp_upd_rsp("stateTable2txApp_upd_rsp");
-	#pragma HLS stream variable=stateTable2txApp_upd_rsp			depth=2
+	#pragma HLS STREAM variable=stateTable2txApp_upd_rsp			depth=2
 
 	static stream<ap_uint<16> >			txApp2stateTable_req("txApp2stateTable_req");
-	#pragma HLS stream variable=txApp2stateTable_req				depth=2
+	#pragma HLS STREAM variable=txApp2stateTable_req				depth=2
 	//#pragma HLS DATA_PACK variable=txApp2stateTable_req
 
 	static stream<sessionState>			stateTable2txApp_rsp("stateTable2txApp_rsp");
-	#pragma HLS stream variable=stateTable2txApp_rsp				depth=2
+	#pragma HLS STREAM variable=stateTable2txApp_rsp				depth=2
 
 	static stream<ap_uint<16> >			stateTable2sLookup_releaseSession("stateTable2sLookup_releaseSession");
-	#pragma HLS stream variable=stateTable2sLookup_releaseSession	depth=2
+	#pragma HLS STREAM variable=stateTable2sLookup_releaseSession	depth=2
 
 	// RX Sar Table
 	static stream<rxSarRecvd>			rxEng2rxSar_upd_req("rxEng2rxSar_upd_req");
-	#pragma HLS stream variable=rxEng2rxSar_upd_req		depth=2
+	#pragma HLS STREAM variable=rxEng2rxSar_upd_req		depth=2
 	#pragma HLS DATA_PACK variable=rxEng2rxSar_upd_req
 
 	static stream<rxSarEntry>			rxSar2rxEng_upd_rsp("rxSar2rxEng_upd_rsp");
-	#pragma HLS stream variable=rxSar2rxEng_upd_rsp		depth=2
+	#pragma HLS STREAM variable=rxSar2rxEng_upd_rsp		depth=2
 	#pragma HLS DATA_PACK variable=rxSar2rxEng_upd_rsp
 
 	static stream<rxSarAppd>			rxApp2rxSar_upd_req("rxApp2rxSar_upd_req");
-	#pragma HLS stream variable=rxApp2rxSar_upd_req		depth=2
+	#pragma HLS STREAM variable=rxApp2rxSar_upd_req		depth=2
 	#pragma HLS DATA_PACK variable=rxApp2rxSar_upd_req
 
 	static stream<rxSarAppd>			rxSar2rxApp_upd_rsp("rxSar2rxApp_upd_rsp");
-	#pragma HLS stream variable=rxSar2rxApp_upd_rsp		depth=2
+	#pragma HLS STREAM variable=rxSar2rxApp_upd_rsp		depth=2
 	#pragma HLS DATA_PACK variable=rxSar2rxApp_upd_rsp
 
 	static stream<ap_uint<16> >			txEng2rxSar_req("txEng2rxSar_req");
-	#pragma HLS stream variable=txEng2rxSar_req			depth=2
+	#pragma HLS STREAM variable=txEng2rxSar_req			depth=2
 
-	static stream<rxSarEntry>		    rxSar2txEng_rsp("rxSar2txEng_rsp");
-	#pragma HLS stream variable=rxSar2txEng_rsp			depth=2
+	static stream<rxSarEntry_rsp>		rxSar2txEng_rsp("rxSar2txEng_rsp");
+	#pragma HLS STREAM variable=rxSar2txEng_rsp			depth=2
 	#pragma HLS DATA_PACK variable=rxSar2txEng_rsp
 
 	// TX Sar Table
 	static stream<txTxSarQuery>			txEng2txSar_upd_req("txEng2txSar_upd_req");
-	#pragma HLS stream variable=txEng2txSar_upd_req		depth=2
+	#pragma HLS STREAM variable=txEng2txSar_upd_req		depth=2
 	#pragma HLS DATA_PACK variable=txEng2txSar_upd_req
 	
 	static stream<txTxSarReply>			txSar2txEng_upd_rsp("txSar2txEng_upd_rsp");
-	#pragma HLS stream variable=txSar2txEng_upd_rsp		depth=2
+	#pragma HLS STREAM variable=txSar2txEng_upd_rsp		depth=2
 	#pragma HLS DATA_PACK variable=txSar2txEng_upd_rsp
 
 	//static stream<txAppTxSarQuery>		txApp2txSar_upd_req("txApp2txSar_upd_req");
 	//static stream<txAppTxSarReply>		txSar2txApp_upd_rsp("txSar2txApp_upd_rsp");
 	static stream<rxTxSarQuery>			rxEng2txSar_upd_req("rxEng2txSar_upd_req");
-	#pragma HLS stream variable=rxEng2txSar_upd_req		depth=2
+	#pragma HLS STREAM variable=rxEng2txSar_upd_req		depth=2
 	#pragma HLS DATA_PACK variable=rxEng2txSar_upd_req
 	
 	static stream<rxTxSarReply>			txSar2rxEng_upd_rsp("txSar2rxEng_upd_rsp");
-	#pragma HLS stream variable=txSar2rxEng_upd_rsp		depth=2
+	#pragma HLS STREAM variable=txSar2rxEng_upd_rsp		depth=2
 	#pragma HLS DATA_PACK variable=txSar2rxEng_upd_rsp
 
 	static stream<txSarAckPush>			txSar2txApp_ack_push("txSar2txApp_ack_push");
-	#pragma HLS stream variable=txSar2txApp_ack_push	depth=2
+	#pragma HLS STREAM variable=txSar2txApp_ack_push	depth=2
 	#pragma HLS DATA_PACK variable=txSar2txApp_ack_push
 
 	static stream<txAppTxSarPush>		txApp2txSar_push("txApp2txSar_push");
-	#pragma HLS stream variable=txApp2txSar_push		depth=2
+	#pragma HLS STREAM variable=txApp2txSar_push		depth=2
 	#pragma HLS DATA_PACK variable=txApp2txSar_push
-	//#pragma HLS stream variable=txApp2txSar_upd_req		depth=2
-	//#pragma HLS stream variable=txSar2txApp_upd_rsp		depth=2
+	//#pragma HLS STREAM variable=txApp2txSar_upd_req		depth=2
+	//#pragma HLS STREAM variable=txSar2txApp_upd_rsp		depth=2
 	//#pragma HLS DATA_PACK variable=txApp2txSar_upd_req
 	//#pragma HLS DATA_PACK variable=txSar2txApp_upd_rsp
 
 	// Retransmit Timer
 	static stream<rxRetransmitTimerUpdate>		rxEng2timer_clearRetransmitTimer("rxEng2timer_clearRetransmitTimer");
-	#pragma HLS stream variable=rxEng2timer_clearRetransmitTimer depth=2
+	#pragma HLS STREAM variable=rxEng2timer_clearRetransmitTimer depth=2
 	#pragma HLS DATA_PACK variable=rxEng2timer_clearRetransmitTimer
 	
 	static stream<txRetransmitTimerSet>			txEng2timer_setRetransmitTimer("txEng2timer_setRetransmitTimer");
-	#pragma HLS stream variable=txEng2timer_setRetransmitTimer depth=2
+	#pragma HLS STREAM variable=txEng2timer_setRetransmitTimer depth=2
 	#pragma HLS DATA_PACK variable=txEng2timer_setRetransmitTimer
 	// Probe Timer
 	static stream<ap_uint<16> >					rxEng2timer_clearProbeTimer("rxEng2timer_clearProbeTimer");
 
 	static stream<ap_uint<16> >					txEng2timer_setProbeTimer("txEng2timer_setProbeTimer");
-	#pragma HLS stream variable=txEng2timer_setProbeTimer depth=2
+	#pragma HLS STREAM variable=txEng2timer_setProbeTimer depth=2
 	// Close Timer
 	static stream<ap_uint<16> >					rxEng2timer_setCloseTimer("rxEng2timer_setCloseTimer");
-	#pragma HLS stream variable=rxEng2timer_setCloseTimer depth=2
+	#pragma HLS STREAM variable=rxEng2timer_setCloseTimer depth=2
 	// Timer Session release Fifos
 	static stream<ap_uint<16> >					timer2stateTable_releaseState("timer2stateTable_releaseState");
-	#pragma HLS stream variable=timer2stateTable_releaseState			depth=2
+	#pragma HLS STREAM variable=timer2stateTable_releaseState			depth=2
 
 	// Event Engine
 	static stream<extendedEvent>			rxEng2eventEng_setEvent("rxEng2eventEng_setEvent");
-	#pragma HLS stream variable=rxEng2eventEng_setEvent				depth=512
+	#pragma HLS STREAM variable=rxEng2eventEng_setEvent				depth=512
 	#pragma HLS DATA_PACK variable=rxEng2eventEng_setEvent
 	
 	static stream<event>					txApp2eventEng_setEvent("txApp2eventEng_setEvent");
-	#pragma HLS stream variable=txApp2eventEng_setEvent			depth=4
+	#pragma HLS STREAM variable=txApp2eventEng_setEvent			depth=4
 	#pragma HLS DATA_PACK variable=txApp2eventEng_setEvent
 
 	//static stream<event>					appStreamEventFifo("appStreamEventFifo");
 	//static stream<event>					retransmitEventFifo("retransmitEventFifo");
 	static stream<event>					timer2eventEng_setEvent("timer2eventEng_setEvent");
-	#pragma HLS stream variable=timer2eventEng_setEvent			depth=4 //TODO maybe reduce to 2, there should be no evil cycle
+	#pragma HLS STREAM variable=timer2eventEng_setEvent			depth=4 //TODO maybe reduce to 2, there should be no evil cycle
 	#pragma HLS DATA_PACK variable=timer2eventEng_setEvent
 
 	static stream<extendedEvent>			eventEng2ackDelay_event("eventEng2ackDelay_event");
-	#pragma HLS stream variable=eventEng2ackDelay_event				depth=4
+	#pragma HLS STREAM variable=eventEng2ackDelay_event				depth=4
 	#pragma HLS DATA_PACK variable=eventEng2ackDelay_event
 
 	static stream<extendedEvent>			eventEng2txEng_event("eventEng2txEng_event");
-	#pragma HLS stream variable=eventEng2txEng_event				depth=16
+	#pragma HLS STREAM variable=eventEng2txEng_event				depth=16
 	#pragma HLS DATA_PACK variable=eventEng2txEng_event
 
 	// Application Interface
 	static stream<openStatus>				conEstablishedFifo("conEstablishedFifo");
-	#pragma HLS stream variable=conEstablishedFifo depth=4
+	#pragma HLS STREAM variable=conEstablishedFifo depth=4
 	#pragma HLS DATA_PACK variable=conEstablishedFifo
 
 	static stream<appNotification> 			rxEng2rxApp_notification("rxEng2rxApp_notification");
-	#pragma HLS stream variable=rxEng2rxApp_notification		depth=4
+	#pragma HLS STREAM variable=rxEng2rxApp_notification		depth=4
 	#pragma HLS DATA_PACK variable=rxEng2rxApp_notification
 
 	static stream<appNotification>			timer2rxApp_notification("timer2rxApp_notification");
-	#pragma HLS stream variable=timer2rxApp_notification		depth=4
+	#pragma HLS STREAM variable=timer2rxApp_notification		depth=4
 	#pragma HLS DATA_PACK variable=timer2rxApp_notification
 
 	static stream<openStatus>				timer2txApp_notification("timer2txApp_notification");
-	#pragma HLS stream variable=timer2txApp_notification		depth=4
+	#pragma HLS STREAM variable=timer2txApp_notification		depth=4
 	#pragma HLS DATA_PACK variable=timer2txApp_notification
 
 	// Port Table
 	static stream<ap_uint<16> >				rxEng2portTable_check_req("rxEng2portTable_check_req");
-	#pragma HLS stream variable=rxEng2portTable_check_req			depth=4
+	#pragma HLS STREAM variable=rxEng2portTable_check_req			depth=4
 
 	static stream<bool>						portTable2rxEng_check_rsp("portTable2rxEng_check_rsp");
-	#pragma HLS stream variable=portTable2rxEng_check_rsp			depth=4
+	#pragma HLS STREAM variable=portTable2rxEng_check_rsp			depth=4
 
 	//static stream<ap_uint<1> >				txApp2portTable_port_req("txApp2portTable_port_req");
 	static stream<ap_uint<16> >				portTable2txApp_free_port("portTable2txApp_free_port");
-	#pragma HLS stream variable=portTable2txApp_free_port			depth=4
+	#pragma HLS STREAM variable=portTable2txApp_free_port			depth=4
 
 	static stream<ap_uint<16> >				sLookup2portTable_releasePort("sLookup2portTable_releasePort");
-	#pragma HLS stream variable=sLookup2portTable_releasePort		depth=4
+	#pragma HLS STREAM variable=sLookup2portTable_releasePort		depth=4
 
-	//#pragma HLS stream variable=txApp2portTable_port_req			depth=4
+	//#pragma HLS STREAM variable=txApp2portTable_port_req			depth=4
 
    	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
-   	#pragma HLS stream variable=txApp2txEng_data_stream   depth=2048
+   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=2048
 
 	static stream<ap_uint<1> > ackDelayFifoReadCount("ackDelayFifoReadCount");
-	#pragma HLS stream variable=ackDelayFifoReadCount		depth=2
+	#pragma HLS STREAM variable=ackDelayFifoReadCount		depth=2
 
 	static stream<ap_uint<1> > ackDelayFifoWriteCount("ackDelayFifoWriteCount");
-	#pragma HLS stream variable=ackDelayFifoWriteCount		depth=2
+	#pragma HLS STREAM variable=ackDelayFifoWriteCount		depth=2
 
 	static stream<ap_uint<1> > txEngFifoReadCount("txEngFifoReadCount");
-	#pragma HLS stream variable=txEngFifoReadCount		depth=2
+	#pragma HLS STREAM variable=txEngFifoReadCount depth=2
 	
 	/*
 	 * Data Structures
@@ -634,7 +634,8 @@ void toe(	// Data & Memory Interface
 					sessionLookup_rsp,
 					sessionUpdate_req,
 					sessionUpdate_rsp,
-					regSessionCount);
+					regSessionCount,
+					myIpAddress);
 	// State Table
 	state_table(	rxEng2stateTable_upd_req,
 					txApp2stateTable_upd_req,
@@ -745,16 +746,16 @@ void toe(	// Data & Memory Interface
 	/*
 	 * Application Interfaces
 	 */
-	 rxAppWrapper(	rxDataReq,
+	 rxAppWrapper(	rxApp_readRequest,
 			 	 	rxSar2rxApp_upd_rsp,
 			 	 	rxEng2rxApp_notification,
 			 	 	timer2rxApp_notification,
-			 	 	rxDataRspIDsession,
+			 	 	rxApp_readRequest_RspID,
 			 	 	rxApp2rxSar_upd_req,
 #if !(RX_DDR_BYPASS)
 			 	 	rxBufferReadCmd,
 #endif
-			 	 	notification,
+			 	 	rxAppNotification,
 			 	 	rxBufferReadData,
 					rxDataRsp);
 
@@ -773,7 +774,7 @@ void toe(	// Data & Memory Interface
 					stateTable2txApp_upd_rsp,					
 					conEstablishedFifo,
 					
-					txDataRsp,
+					txAppDataRsp,
 					txApp2stateTable_req,
 					//txApp2txSar_upd_req,
 					txBufferWriteCmd,

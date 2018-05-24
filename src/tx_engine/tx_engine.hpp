@@ -28,8 +28,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 ************************************************/
 
 #include "../toe.hpp"
-#include "../utilities.hpp"
-#include "../memory_read/memory_read.hpp"
+#include "../common_utilities/common_utilities.hpp"
+#include "../memory_access/memory_access.hpp"
 
 using namespace hls;
 
@@ -91,7 +91,7 @@ struct twoTuple
  *  complete packet is then streamed out of the @ref tx_engine.
  */
 void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
-				stream<rxSarEntry>&			    rxSar2txEng_rsp,
+				stream<rxSarEntry_rsp>&			rxSar2txEng_rsp,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
 				stream<axiWord>&				txBufferReadData_unaligned,
 #if (TCP_NODELAY)
