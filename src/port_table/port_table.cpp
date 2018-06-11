@@ -42,10 +42,10 @@ using namespace hls;
  *  @param[out]		portTable2rxApp_listen_rsp
  *  @param[out]		pt_portCheckListening_rsp_fifo
  */
-void listening_port_table(	stream<ap_uint<16> >&	rxApp2portTable_listen_req,
-							stream<ap_uint<15> >&	pt_portCheckListening_req_fifo,
-							stream<bool>&			portTable2rxApp_listen_rsp,
-							stream<bool>&			pt_portCheckListening_rsp_fifo)
+void listening_port_table(	stream<ap_uint<16> >&		rxApp2portTable_listen_req,
+							stream<ap_uint<15> >&		pt_portCheckListening_req_fifo,
+							stream<listenPortStatus>&	portTable2rxApp_listen_rsp,
+							stream<bool>&				pt_portCheckListening_rsp_fifo)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -54,18 +54,26 @@ void listening_port_table(	stream<ap_uint<16> >&	rxApp2portTable_listen_req,
 	#pragma HLS RESOURCE variable=listeningPortTable core=RAM_T2P_BRAM
 	#pragma HLS DEPENDENCE variable=listeningPortTable inter false
 
-	ap_uint<16> currPort;
-	ap_uint<15> checkPort15;
+	ap_uint<16> 		currPort;
+	ap_uint<15> 		checkPort15;
+	listenPortStatus 	listen_rsp;
 
-	if (!rxApp2portTable_listen_req.empty()) {//check range, TODO make sure currPort is not equal in 2 consecutive cycles
+	if (!rxApp2portTable_listen_req.empty()) {		//check range, TODO make sure currPort is not equal in 2 consecutive cycles
 		rxApp2portTable_listen_req.read(currPort);
-		if (!listeningPortTable[currPort(14, 0)] && currPort < 32768) {
-			listeningPortTable[currPort] = true;
-			portTable2rxApp_listen_rsp.write(true);
+		
+		listen_rsp.wrong_port_number = !(currPort < 32768);
+		listen_rsp.port_number 		 = currPort;
+
+		if ((listeningPortTable[currPort(14, 0)] == false) && (currPort < 32768)) {
+			listeningPortTable[currPort(14, 0)] = true;
+			listen_rsp.already_open 	= false;
+			listen_rsp.open_successfully 	= true;
 		}
 		else {
-			portTable2rxApp_listen_rsp.write(false);
+			listen_rsp.already_open 	= true;
+			listen_rsp.open_successfully 	= false;
 		}
+		portTable2rxApp_listen_rsp.write(listen_rsp);
 	}
 	else if (!pt_portCheckListening_req_fifo.empty()) {
 		pt_portCheckListening_req_fifo.read(checkPort15);
@@ -102,6 +110,7 @@ void free_port_table(	stream<ap_uint<16> >&	sLookup2portTable_releasePort,
 	//#pragma HLS STREAM variable=pt_freePortsFifo depth=8
 
 	static ap_uint<15>	pt_cursor = 0;
+	#pragma HLS RESET variable=pt_cursor
 
 	ap_uint<16>			currPort;
 	ap_uint<16>			freePort;
@@ -236,31 +245,24 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
 				//stream<ap_uint<1> >&		txApp2portTable_port_req,
 				stream<ap_uint<16> >&		sLookup2portTable_releasePort,
 				stream<bool>&				portTable2rxEng_check_rsp,
-				stream<bool>&				portTable2rxApp_listen_rsp,
+				stream<listenPortStatus>&	portTable2rxApp_listen_rsp,
 				stream<ap_uint<16> >&		portTable2txApp_port_rsp)
 {
 //#pragma HLS DATAFLOW
 #pragma HLS INLINE
-
-#pragma HLS DATA_PACK variable=rxEng2portTable_check_req
-#pragma HLS DATA_PACK variable=rxApp2portTable_listen_req
-#pragma HLS DATA_PACK variable=sLookup2portTable_releasePort
-#pragma HLS DATA_PACK variable=portTable2rxEng_check_rsp
-#pragma HLS DATA_PACK variable=portTable2rxApp_listen_rsp
-#pragma HLS DATA_PACK variable=portTable2txApp_port_rsp
 
 	/*
 	 * Fifos necessary for multiplexing Check requests
 	 */
 	static stream<ap_uint<15> >	pt_portCheckListening_req_fifo("pt_portCheckListening_req_fifo");
 	static stream<ap_uint<15> >	pt_portCheckUsed_req_fifo("pt_portCheckUsed_req_fifo");
-	#pragma HLS STREAM variable=pt_portCheckListening_req_fifo depth=2
-	#pragma HLS STREAM variable=pt_portCheckUsed_req_fifo depth=2
+	#pragma HLS STREAM variable=pt_portCheckListening_req_fifo depth=8
+	#pragma HLS STREAM variable=pt_portCheckUsed_req_fifo depth=8
 
 	static stream<bool> pt_portCheckListening_rsp_fifo("pt_portCheckListening_rsp_fifo");
 	static stream<bool> pt_portCheckUsed_rsp_fifo("pt_portCheckUsed_rsp_fifo");
-	#pragma HLS STREAM variable=pt_portCheckListening_rsp_fifo depth=2
-	#pragma HLS STREAM variable=pt_portCheckUsed_rsp_fifo depth=2
+	#pragma HLS STREAM variable=pt_portCheckListening_rsp_fifo depth=8
+	#pragma HLS STREAM variable=pt_portCheckUsed_rsp_fifo depth=8
 
 	static stream<bool> pt_dstFifo("pt_dstFifo");
 	#pragma HLS STREAM variable=pt_dstFifo depth=4

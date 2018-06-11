@@ -135,30 +135,11 @@ struct sessionLookupQueryInternal
  */
 struct rtlSessionLookupRequest
 {
-	lookupSource		source;
 	threeTupleInternal	key;
+	lookupSource		source;
 	rtlSessionLookupRequest() {}
 	rtlSessionLookupRequest(threeTupleInternal tuple, lookupSource src)
 				:key(tuple), source(src) {}
-};
-
-/** @ingroup session_lookup_controller
- *
- */
-struct rtlSessionUpdateRequest // todo
-{
-	lookupSource		source;
-	lookupOp			op;
-	ap_uint<14>			value;
-	threeTupleInternal	key;
-	/*ap_uint<14>			value;
-	lookupOp			op;
-	lookupSource		source;*/
-	rtlSessionUpdateRequest() {}
-	/*rtlSessionUpdateRequest(fourTupleInternal key, lookupSource src)
-				:key(key), value(0), op(INSERT), source(src) {}*/
-	rtlSessionUpdateRequest(threeTupleInternal key, ap_uint<14> value, lookupOp op, lookupSource src)
-			:key(key), value(value), op(op), source(src) {}
 };
 
 /** @ingroup session_lookup_controller
@@ -168,30 +149,48 @@ struct rtlSessionLookupReply
 {
 	//bool				hit;
 	//ap_uint<14>			sessionID;
-	lookupSource		source;
-	ap_uint<14>			sessionID;
+	threeTupleInternal	key;
+	ap_uint<16>			sessionID;
 	bool				hit;
+	lookupSource		source;
 	rtlSessionLookupReply() {}
 	rtlSessionLookupReply(bool hit, lookupSource src)
 			:hit(hit), sessionID(0), source(src) {}
-	rtlSessionLookupReply(bool hit, ap_uint<14> id, lookupSource src)
+	rtlSessionLookupReply(bool hit, ap_uint<16> id, lookupSource src)
 			:hit(hit), sessionID(id), source(src) {}
 };
 
 /** @ingroup session_lookup_controller
  *
  */
+struct rtlSessionUpdateRequest // todo
+{
+	ap_uint<16>			value;
+	threeTupleInternal	key;
+	lookupOp			op;
+	lookupSource		source;
+
+	rtlSessionUpdateRequest() {}
+	rtlSessionUpdateRequest(threeTupleInternal key, ap_uint<16> value, lookupOp op, lookupSource src)
+			:key(key), value(value), op(op), source(src) {}
+};
+
+
+/** @ingroup session_lookup_controller
+ *
+ */
 struct rtlSessionUpdateReply
 {
-	lookupSource		source;
+	ap_uint<16>			sessionID;
+	threeTupleInternal	key;
 	lookupOp			op;
-	ap_uint<14>			sessionID;
-	//lookupOp			op;
-	//lookupSource		source;
+	lookupSource		source;
+	bool				success;
+
 	rtlSessionUpdateReply() {}
 	rtlSessionUpdateReply(lookupOp op, lookupSource src)
 			:op(op), source(src) {}
-	rtlSessionUpdateReply(ap_uint<14> id, lookupOp op, lookupSource src)
+	rtlSessionUpdateReply(ap_uint<16> id, lookupOp op, lookupSource src)
 			:sessionID(id), op(op), source(src) {}
 };
 

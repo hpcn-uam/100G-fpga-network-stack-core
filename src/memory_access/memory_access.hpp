@@ -27,8 +27,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
-#ifndef _MEMMORY_READ_H_
-#define _MEMMORY_READ_H_
+#ifndef _MEMMORY_ACCESS_HPP_
+#define _MEMMORY_ACCESS_HPP_
 
 #include "../toe.hpp"
 #include "../common_utilities/common_utilities.hpp"

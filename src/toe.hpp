@@ -126,11 +126,12 @@ struct my_axis {
 	ap_uint<D/8>	keep;
 	ap_uint<1>		last;
 	my_axis() {}
-	my_axis(ap_uint<64>	 data, ap_uint<8> keep, ap_uint<1> last)
+	my_axis(ap_uint<D>	 data, ap_uint<D/8> keep, ap_uint<1> last)
 				: data(data), keep(keep), last(last) {}
 };
 
 typedef my_axis<ETH_INTERFACE_WIDTH> axiWord;
+
 
 struct fourTuple
 {
@@ -586,58 +587,62 @@ struct memDoubleAccess
 		: double_access(double_access), offset(offset) {}
 };
 
+struct listenPortStatus
+{	
+	bool 			open_successfully;
+	bool 			wrong_port_number;
+	bool			already_open;
+	ap_uint<16>		port_number;
+	
+};
+
 ap_uint<16> byteSwap16(ap_uint<16> inputVector);
 ap_uint<32> byteSwap32(ap_uint<32> inputVector);
 
 
 void toe(	// Data & Memory Interface
-			stream<axiWord>&						ipRxData,
+			stream<axiWord>&						ipRxData,				
 #if (!RX_DDR_BYPASS)
 			stream<mmStatus>&						rxBufferWriteStatus,
 			stream<mmCmd>&							rxBufferWriteCmd,
 			stream<mmCmd>&							rxBufferReadCmd,
 #endif
 			stream<mmStatus>&						txBufferWriteStatus,
-			stream<axiWord>&						rxBufferReadData,
-			stream<axiWord>&						txBufferReadData,
-			stream<axiWord>&						ipTxData,
+			stream<axiWord>&						rxBufferReadData,				
+			stream<axiWord>&						txBufferReadData,				
+			stream<axiWord>&						ipTxData,						
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
-			stream<axiWord>&						rxBufferWriteData,
-			stream<axiWord>&						txBufferWriteData,
+			stream<axiWord>&						rxBufferWriteData,				
+			stream<axiWord>&						txBufferWriteData,				
 			// SmartCam Interface
 			stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 			stream<rtlSessionUpdateReply>&			sessionUpdate_rsp,
-			//stream<ap_uint<14> >&					readFinSessionId,
 			stream<rtlSessionLookupRequest>&		sessionLookup_req,
 			stream<rtlSessionUpdateRequest>&		sessionUpdate_req,
-			//stream<rtlSessionUpdateRequest>&		sessionInsert_req,
-			//stream<rtlSessionUpdateRequest>&		sessionDelete_req,
-			//stream<ap_uint<14> >&					writeNewSessionId,
 			// Application Interface
-			stream<ap_uint<16> >&					listenPortReq,
+			stream<ap_uint<16> >&					listenPortRequest,
 			// This is disabled for the time being, due to complexity concerns
-			//stream<ap_uint<16> >&					appClosePortIn,
-			stream<appReadRequest>&					rxDataReq,
+			stream<appReadRequest>&					rxApp_readRequest,
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
 			stream<appTxMeta>&					   	txDataReqMeta,
-			stream<axiWord>&						txDataReq,
+			stream<axiWord>&						txApp_Data2send, 				
 
-			stream<bool>&							listenPortRsp,
-			stream<appNotification>&				notification,
-			stream<txApp_client_status>& 			rxEng2txApp_client_notification,
-			stream<ap_uint<16> >&					rxDataRspMeta,
-			stream<axiWord>&						rxDataRsp,
+			stream<listenPortStatus>&				listenPortResponse, 				
+			stream<appNotification>&				rxAppNotification,
+			stream<txApp_client_status>& 			rxEng2txAppNewClientNoty,
+			stream<ap_uint<16> >&					rxApp_readRequest_RspID,
+			stream<axiWord>&						rxDataRsp,						
 			stream<openStatus>&						openConnRsp,
-			stream<appTxRsp>&						txDataRsp,
+			stream<appTxRsp>&						txAppDataRsp,
 
 			//IP Address Input
 			ap_uint<32>&							myIpAddress,
 			//statistic
 			ap_uint<16>&							regSessionCount,
-			stream<axiWord>&						tx_pseudo_packet_to_checksum,
+			stream<axiWord>&						tx_pseudo_packet_to_checksum,	
 			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum,
-			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,
+			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,  
 			stream<ap_uint<16> >&					rxEng_pseudo_packet_res_checksum);
 #endif

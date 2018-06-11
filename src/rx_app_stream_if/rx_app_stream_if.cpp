@@ -64,7 +64,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 
 	switch (rasi_fsmState) {
 		case 0:
-			if (!appRxDataReq.empty() && !rxApp2rxSar_upd_req.full()) {
+			if (!appRxDataReq.empty()) {
 				appRxDataReq.read(app_read_request);
 				if (app_read_request.length != 0) { 	// Make sure length is not 0, otherwise Data Mover will hang up
 					// Get app pointer
@@ -75,7 +75,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 			}
 			break;
 		case 1:
-			if (!rxSar2rxApp_upd_rsp.empty() && !appRxDataRspIDsession.full() && !rxBufferReadCmd.full() && !rxApp2rxSar_upd_req.full()) {
+			if (!rxSar2rxApp_upd_rsp.empty()) {
 				rxSar2rxApp_upd_rsp.read(rxSar);
 				appRxDataRspIDsession.write(rxSar.sessionID);
 #if (!RX_DDR_BYPASS)

@@ -934,13 +934,13 @@ void txEng_payload_stitcher(
  *  @param[in]		txEng_tcp_level_packet
  *  @param[in]		ipChecksumFifoIn
  *  @param[in]		tcpChecksumFifoIn
- *  @param[out]		dataOut
+ *  @param[out]		DataOut
  */
 void txEng_ip_pkt_stitcher(	
 					stream<axiWord>& 		txEng_ipHeaderBufferIn,
 					stream<axiWord>& 		txEng_tcp_level_packet,
 					stream<ap_uint<16> >& 	txEng_tcpChecksumFifoIn,
-					stream<axiWord>& 		ipTxDataOut)
+					stream<axiWord>& 		DataOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
@@ -979,7 +979,7 @@ void txEng_ip_pkt_stitcher(
 
 		prevWord = payload;
 		//cout << "IP Stitcher 0: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		ipTxDataOut.write(sendWord);
+		DataOut.write(sendWord);
 	}
 	else if (!txEng_tcp_level_packet.empty() && writing_payload){
 		txEng_tcp_level_packet.read(payload);
@@ -1000,7 +1000,7 @@ void txEng_ip_pkt_stitcher(
 		
 		prevWord = payload;
 		//cout << "IP Stitcher 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		ipTxDataOut.write(sendWord);
+		DataOut.write(sendWord);
 	}
 	else if (writing_extra){
 		sendWord.data(159,  0) = prevWord.data(511,352);
@@ -1008,7 +1008,7 @@ void txEng_ip_pkt_stitcher(
 		sendWord.last 	= 1;
 		writing_extra   = false;
 		//cout << "IP Stitcher Extra  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		ipTxDataOut.write(sendWord);
+		DataOut.write(sendWord);
 	}
 
 }

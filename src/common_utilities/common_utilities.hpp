@@ -2,9 +2,7 @@
 #ifndef _UTILITIES_HPP_DEFINED_
 #define _UTILITIES_HPP_DEFINED_
 
-
-#include "ap_int.h"
-#include "../toe.hpp"
+//#include "../toe.hpp"
 
 ap_uint<7> keep2len(ap_uint<64> keepValue);
 
@@ -15,17 +13,15 @@ void tx_align_two_64bytes_words (
 			axiWord 	currWord,
 			axiWord 	prevWord,
 			ap_uint<6>	byte_offset,
-
-			axiWord* 	SendWord,
-			axiWord* 	next_prev_word
+			axiWord& 	SendWord
 	);
 
 void rx_align_two_64bytes_words (
 			axiWord 	currWord,
-			axiWord* 	prevWord,
+			axiWord 	prevWord,
+	
 			ap_uint<6>	byte_offset,
-
-			axiWord* 	SendWord
+			axiWord& 	SendWord
 	);
 
 void DataBroadcast(

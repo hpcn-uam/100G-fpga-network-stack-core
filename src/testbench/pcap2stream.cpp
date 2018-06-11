@@ -196,6 +196,7 @@ void pcap2stream(
 void pcap2stream_step(
 				char 								*file2load, 		// pcapfilename
 				bool 								ethernet,			// 0: No ethernet in the packet, 1: ethernet include
+				bool& 								end_of_data,
 				stream<axiWord>&					output_data			// output data
 	){
 
@@ -220,6 +221,10 @@ void pcap2stream_step(
 				input_data.read(currWord);
 				output_data.write(currWord);
 			} while (!currWord.last);
+			end_of_data = false;
+		}
+		else {
+			end_of_data = true;
 		}
 	}
 

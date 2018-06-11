@@ -36,7 +36,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "../../../echo_server_app/src/echo_server_application.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 1
+#define ECHO_REPLAY 0
 
 #define totalSimCycles 250000
 //#define totalSimCycles 10000
@@ -249,7 +249,7 @@ void rxApp_sim (
 void txApp_sim(
 	stream<ap_uint<16> >& 			rxApp2portTable_listen_req,		// notify which ports are open to listen
 	stream<txApp_client_status>& 	rxEng2txApp_client_notification,
-	stream<bool>& 					rxApp2portTable_listen_rsp,		// TOE response to listen to new port
+	stream<listenPortStatus>& 		rxApp2portTable_listen_rsp,		// TOE response to listen to new port
 	stream<appTxMeta>& 				txApp_write_request,			// ask for write
 	stream<appTxRsp>&				txApp_data_write_response,		// It tells if the data was accepted by TOE
 	stream<axiWord>& 				txApp_write_Data,				// data to write
@@ -258,9 +258,11 @@ void txApp_sim(
 	){
 
 	enum tx_data_states {WAIT_CLIENT, SEND_COMMAND, WAIT_RESPONSE, SEND_DATA, IDLE};
-	static bool 		listenDone 	= false;
+	static listenPortStatus 		listen_rsp;
+	static bool				 		listenDone = false;
 	static ap_uint<1> 	listenFsm 	= 0;
 	static tx_data_states fsm_state = WAIT_CLIENT;
+	static int packet_coutner = 0;
 	
 	static txApp_client_status	rx_client_notification;
 	appTxMeta 					write_request;
@@ -279,7 +281,8 @@ void txApp_sim(
 				break;
 			case 1:
 				if (!rxApp2portTable_listen_rsp.empty()) {
-					rxApp2portTable_listen_rsp.read(listenDone);
+					rxApp2portTable_listen_rsp.read(listen_rsp);
+					listenDone = listen_rsp.open_successfully;
 					cout << "Port 15000 opened " << dec << listenDone << endl;
 					listenFsm++;
 				}
@@ -329,7 +332,7 @@ void txApp_sim(
 				if (fsm_state == WAIT_RESPONSE) {
 					txApp_write_request.write(write_request);
 					cout << "A TX data transfer has been programmed ID: " << dec << rx_client_notification.sessionID;
-					cout << "\tlength: " << write_request.length << "\ttime: " << simCycleCounter << endl;
+					cout << "\tlength: " << write_request.length << "\tpacket number :" << packet_coutner++ << "\ttime: " << simCycleCounter << endl;
 				}
 
 				break;
@@ -398,25 +401,25 @@ void sessionLookupStub(
 
 	if (!lup_req.empty()) {
 		lup_req.read(request);
-		cout << "TABLE lookup req " << (!request.source ? "RX" : "TX_APP") << "\t";
-		cout << hex  << byteSwap32(request.key.theirIp) << ":" << dec << byteSwap16(request.key.theirPort) << ":" << byteSwap16(request.key.myPort);
+		//cout << "TABLE lookup req " << (!request.source ? "RX" : "TX_APP") << "\t";
+		//cout << hex  << byteSwap32(request.key.theirIp) << ":" << dec << byteSwap16(request.key.theirPort) << ":" << byteSwap16(request.key.myPort);
 		findPos = lookupTable.find(request.key);
 		if (findPos != lookupTable.end()){ //hit
 			lup_rsp.write(rtlSessionLookupReply(true, findPos->second, request.source));
-			cout << "\tHIT! ID: " << dec <<findPos->second; 
+			//cout << "\tHIT! ID: " << dec <<findPos->second; 
 		}
 		else {
 			lup_rsp.write(rtlSessionLookupReply(false, request.source));
-			cout << "\tNO HIT! "; 
+			//cout << "\tNO HIT! "; 
 		}
 
-		cout << "\ttime: " << simCycleCounter << endl;
+		//cout << "\ttime: " << simCycleCounter << endl;
 	}
 
 	if (!upd_req.empty()) {	//TODO what if element does not exist
 		upd_req.read(update);
-		cout << "TABLE update " << (!update.source ? "RX" : "TX_APP") << " " <<(!update.op ? "INSERT" : "DELETE") << " ID: " << dec << update.value;
-		cout << "\t" << hex  << byteSwap32(update.key.theirIp) << ":"<< dec << byteSwap16(update.key.theirPort) << ":" << byteSwap16(update.key.myPort);
+		//cout << "TABLE update " << (!update.source ? "RX" : "TX_APP") << " " <<(!update.op ? "INSERT" : "DELETE") << " ID: " << dec << update.value;
+		//cout << "\t" << hex  << byteSwap32(update.key.theirIp) << ":"<< dec << byteSwap16(update.key.theirPort) << ":" << byteSwap16(update.key.myPort);
 		if (update.op == INSERT) {	//Is there a check if it already exists?
 			// Read free id
 			//new_id.read(update.value);
@@ -429,7 +432,7 @@ void sessionLookupStub(
 			lookupTable.erase(update.key);
 			upd_rsp.write(rtlSessionUpdateReply(update.value, DELETE, update.source));
 		}
-		cout << "\ttime: " << simCycleCounter << endl;
+		//cout << "\ttime: " << simCycleCounter << endl;
 	}
 }
 
@@ -522,7 +525,7 @@ void simulateTx(
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		//cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
@@ -533,20 +536,20 @@ void simulateTx(
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
-		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		//cout << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
 		BufferOut.write(outWord);
 		if (outWord.last)
 			stx_read = false;
-		//cout << "Tx  READ app2mem[" << dec << setw(3) << mem2tx_word++ << "] data: " << hex << setw(130) << outWord.data << "\tkeep: " << setw(18) << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		cout << "Tx  READ app2mem[" << dec << setw(3) << mem2tx_word++ << "] data: " << hex << setw(130) << outWord.data << "\tkeep: " << setw(18) << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 }
 
@@ -576,7 +579,7 @@ int main(int argc, char **argv) {
 	stream<ap_uint<16> >				closeConnReq("closeConnReq");
 	stream<appTxMeta>				    txApp_write_request("txApp_write_request");
 	stream<axiWord>						txApp_write_Data("txApp_write_Data");
-	stream<bool>						rxApp2portTable_listen_rsp("rxApp2portTable_listen_rsp");
+	stream<listenPortStatus>			rxApp2portTable_listen_rsp("rxApp2portTable_listen_rsp");
 	stream<appNotification>				rxAppNotification("rxAppNotification");
 	stream<ap_uint<16> >				rxDataRspIDsession("rxDataRspIDsession");
 	stream<axiWord>						rxData_to_rxApp("rxData_to_rxApp");
@@ -627,8 +630,10 @@ int main(int argc, char **argv) {
 	ap_uint<32> 						iperf_ipAddress2 		= 0xC0A8000A;
 	ap_uint<32> 						iperf_ipAddress3 		= 0xC0A8000B;
 	ap_uint<32> 						bytes_to_send 			= 20000;
-	char *input_file;
-	char *output_file;
+	
+	char 								*input_file;
+	char 								*output_file;
+	bool 								end_of_data=false;
 
 	if (argc < 4) {
 		cerr << "[ERROR] missing arguments " __FILE__  << " <MODE 0: RX 1: TX><INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;;
@@ -674,15 +679,16 @@ int main(int argc, char **argv) {
 				seconds_packets_pace = true;
 			}
 
-			if (((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
-				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)){
-				pcap2stream_step(input_file, false ,ipRxData);
+			if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
+				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
+				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
+				cout << "Packet goes in time:" << simCycleCounter << endl;
 			}
 		}
 
 		if (testRxPath){
-			if (((simCycleCounter+1) % 80) ==0){
-				pcap2stream_step(input_file, false ,ipRxData);
+			if ((((simCycleCounter+1) % 80) ==0) && (end_of_data==false)){
+				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
 			}
 		}
 

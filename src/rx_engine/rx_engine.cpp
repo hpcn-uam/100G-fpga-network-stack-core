@@ -33,78 +33,78 @@ using namespace hls;
 using namespace std;
 
 void combine_words(
-					axiWord currentWord, 
-					axiWord previousWord, 
-					ap_uint<4> ip_headerlen,
-					axiWord* sendWord){
+					axiWord 	currentWord, 
+					axiWord 	previousWord, 
+					ap_uint<4> 	ip_headerlen,
+					axiWord& 	sendWord){
 
 #pragma HLS INLINE
 	switch(ip_headerlen) {
 		case 5:
-			sendWord->data( 447,   0) 	= previousWord.data(511,  64);
-			sendWord->keep(  55,   0) 	= previousWord.keep( 63,   8);
-			sendWord->data( 511, 448) 	= currentWord.data(  63,   0);
-			sendWord->keep(  63,  56)	= currentWord.keep(   7,   0);
+			sendWord.data( 447,   0) 	= previousWord.data(511,  64);
+			sendWord.keep(  55,   0) 	= previousWord.keep( 63,   8);
+			sendWord.data( 511, 448) 	= currentWord.data(  63,   0);
+			sendWord.keep(  63,  56)	= currentWord.keep(   7,   0);
 			break;
 		case 6:
-			sendWord->data( 415,   0) 	= previousWord.data(511,  96);
-			sendWord->keep(  51,   0) 	= previousWord.keep( 63,  12);
-			sendWord->data( 511, 416) 	= currentWord.data(  95,   0);
-			sendWord->keep(  63,  52)	= currentWord.keep(  11,   0);
+			sendWord.data( 415,   0) 	= previousWord.data(511,  96);
+			sendWord.keep(  51,   0) 	= previousWord.keep( 63,  12);
+			sendWord.data( 511, 416) 	= currentWord.data(  95,   0);
+			sendWord.keep(  63,  52)	= currentWord.keep(  11,   0);
 			break;
 		case 7:
-			sendWord->data( 383,   0) 	= previousWord.data(511, 128);
-			sendWord->keep(  47,   0) 	= previousWord.keep( 63,  16);
-			sendWord->data( 511, 384) 	= currentWord.data( 127,   0);
-			sendWord->keep(  63,  48)	= currentWord.keep(  15,   0);
+			sendWord.data( 383,   0) 	= previousWord.data(511, 128);
+			sendWord.keep(  47,   0) 	= previousWord.keep( 63,  16);
+			sendWord.data( 511, 384) 	= currentWord.data( 127,   0);
+			sendWord.keep(  63,  48)	= currentWord.keep(  15,   0);
 			break;
 		case 8:
-			sendWord->data( 351,   0) 	= previousWord.data(511, 160);
-			sendWord->keep(  43,   0) 	= previousWord.keep( 63,  20);
-			sendWord->data( 511, 352) 	= currentWord.data( 159,   0);
-			sendWord->keep(  63,  44)	= currentWord.keep(  19,   0);
+			sendWord.data( 351,   0) 	= previousWord.data(511, 160);
+			sendWord.keep(  43,   0) 	= previousWord.keep( 63,  20);
+			sendWord.data( 511, 352) 	= currentWord.data( 159,   0);
+			sendWord.keep(  63,  44)	= currentWord.keep(  19,   0);
 			break;
 		case 9:
-			sendWord->data( 319,   0) 	= previousWord.data(511, 192);
-			sendWord->keep(  39,   0) 	= previousWord.keep( 63,  36);
-			sendWord->data( 511, 320) 	= currentWord.data( 191,   0);
-			sendWord->keep(  63,  40)	= currentWord.keep(  23,   0);
+			sendWord.data( 319,   0) 	= previousWord.data(511, 192);
+			sendWord.keep(  39,   0) 	= previousWord.keep( 63,  36);
+			sendWord.data( 511, 320) 	= currentWord.data( 191,   0);
+			sendWord.keep(  63,  40)	= currentWord.keep(  23,   0);
 			break;
 		case 10:
-			sendWord->data( 287,   0) 	= previousWord.data(511, 224);
-			sendWord->keep(  35,   0) 	= previousWord.keep( 63,  28);
-			sendWord->data( 511, 288) 	= currentWord.data( 223,   0);
-			sendWord->keep(  63,  36)	= currentWord.keep(  27,   0);
+			sendWord.data( 287,   0) 	= previousWord.data(511, 224);
+			sendWord.keep(  35,   0) 	= previousWord.keep( 63,  28);
+			sendWord.data( 511, 288) 	= currentWord.data( 223,   0);
+			sendWord.keep(  63,  36)	= currentWord.keep(  27,   0);
 			break;
 		case 11:
-			sendWord->data( 255,   0) 	= previousWord.data(511, 256);
-			sendWord->keep(  31,   0) 	= previousWord.keep( 63,  32);
-			sendWord->data( 511, 256) 	= currentWord.data( 255,   0);
-			sendWord->keep(  63,  32)	= currentWord.keep(  31,   0);
+			sendWord.data( 255,   0) 	= previousWord.data(511, 256);
+			sendWord.keep(  31,   0) 	= previousWord.keep( 63,  32);
+			sendWord.data( 511, 256) 	= currentWord.data( 255,   0);
+			sendWord.keep(  63,  32)	= currentWord.keep(  31,   0);
 			break;
 		case 12:
-			sendWord->data( 223,   0) 	= previousWord.data(511, 288);
-			sendWord->keep(  27,   0) 	= previousWord.keep( 63,  36);
-			sendWord->data( 511, 224) 	= currentWord.data( 287,   0);
-			sendWord->keep(  63,  28)	= currentWord.keep(  35,   0);
+			sendWord.data( 223,   0) 	= previousWord.data(511, 288);
+			sendWord.keep(  27,   0) 	= previousWord.keep( 63,  36);
+			sendWord.data( 511, 224) 	= currentWord.data( 287,   0);
+			sendWord.keep(  63,  28)	= currentWord.keep(  35,   0);
 			break;
 		case 13:
-			sendWord->data( 191,   0) 	= previousWord.data(511, 320);
-			sendWord->keep(  23,   0) 	= previousWord.keep( 63,  40);
-			sendWord->data( 511, 192) 	= currentWord.data( 319,   0);
-			sendWord->keep(  63,  24)	= currentWord.keep(  39,   0);
+			sendWord.data( 191,   0) 	= previousWord.data(511, 320);
+			sendWord.keep(  23,   0) 	= previousWord.keep( 63,  40);
+			sendWord.data( 511, 192) 	= currentWord.data( 319,   0);
+			sendWord.keep(  63,  24)	= currentWord.keep(  39,   0);
 			break;
 		case 14:
-			sendWord->data( 159,   0) 	= previousWord.data(511, 352);
-			sendWord->keep(  19,   0) 	= previousWord.keep( 63,  44);
-			sendWord->data( 511, 160) 	= currentWord.data( 351,   0);
-			sendWord->keep(  63,  20)	= currentWord.keep(  43,   0);
+			sendWord.data( 159,   0) 	= previousWord.data(511, 352);
+			sendWord.keep(  19,   0) 	= previousWord.keep( 63,  44);
+			sendWord.data( 511, 160) 	= currentWord.data( 351,   0);
+			sendWord.keep(  63,  20)	= currentWord.keep(  43,   0);
 			break;
 		case 15:
-			sendWord->data( 127,   0) 	= previousWord.data(511, 384);
-			sendWord->keep(  15,   0) 	= previousWord.keep( 63,  48);
-			sendWord->data( 511, 128) 	= currentWord.data( 383,   0);
-			sendWord->keep(  63,  16)	= currentWord.keep(  47,   0);
+			sendWord.data( 127,   0) 	= previousWord.data(511, 384);
+			sendWord.keep(  15,   0) 	= previousWord.keep( 63,  48);
+			sendWord.data( 511, 128) 	= currentWord.data( 383,   0);
+			sendWord.keep(  63,  16)	= currentWord.keep(  47,   0);
 			break;
 		default:
 			cout << "Error the offset is not valid" << endl;
@@ -200,7 +200,7 @@ void rxEngPseudoHeaderInsert(
 					currWord.data = 0;
 					currWord.keep = 0;
 
-				 	combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+				 	combine_words( currWord, prevWord, ip_headerlen, sendWord);
 					
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
 					sendWord.data( 63 ,0) 	= (ip_dst,ip_src);
@@ -220,7 +220,7 @@ void rxEngPseudoHeaderInsert(
 				break;
 			case (TCP_PAYLOAD) :
 				IpLevelPacket.read(currWord);
-				combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+				combine_words( currWord, prevWord, ip_headerlen, sendWord);
 				if (pseudo_header){
 					pseudo_header = false;
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
@@ -253,7 +253,7 @@ void rxEngPseudoHeaderInsert(
 		extra_word 	  = false;
 		currWord.data = 0;
 		currWord.keep = 0;
-		combine_words( currWord, prevWord, ip_headerlen, &sendWord);
+		combine_words( currWord, prevWord, ip_headerlen, sendWord);
 		sendWord.last 			= 1;
 		TCP_PseudoPacket_i.write(sendWord);
 		TCP_PseudoPacket_c.write(sendWord);
@@ -566,7 +566,7 @@ void rxEngTcpFSM(
 
 	enum fsmStateType {LOAD, TRANSITION};
 	static fsmStateType fsm_state = LOAD;
-
+//#pragma HLS RESET variable=fsm_state 			// TODO MR check if valid
 	static rxFsmMetaData fsm_meta;
 	static bool fsm_txSarRequest = false;
 
@@ -627,9 +627,9 @@ void rxEngTcpFSM(
 							}
 							else {
 								// Notify probeTimer about new ACK
-								//if (fsm_meta.meta.ackNumb == txSar.nextByte){				//MR TODO: check that is correct for all cases  Only notify probe timer if ACK is the expected
+								if (fsm_meta.meta.ackNumb == txSar.nextByte){				//MR TODO: This solve the unexpected retramnsmissio but why?
 									rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
-								//}
+								}
 								// Check for SlowStart & Increase Congestion Window
 								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
 									txSar.cong_window += MSS;

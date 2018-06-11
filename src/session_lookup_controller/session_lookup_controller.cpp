@@ -44,6 +44,7 @@ void sessionIdManager(	stream<ap_uint<14> >&		new_id,
 #pragma HLS INLINE off
 
 	static ap_uint<14> counter = 0;
+#pragma HLS RESET variable=counter 
 	ap_uint<14> sessionID;
 
 	if (!fin_id.empty()) {
@@ -75,16 +76,17 @@ void sessionIdManager(	stream<ap_uint<14> >&		new_id,
  *  @param[out]		sLookup2portTable_releasePort
  *  @TODO document more
  */
-void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
-						stream<rtlSessionUpdateReply>&			sessionInsert_rsp,
-						stream<sessionLookupQuery>&				rxEng2sLooup_req,
-						stream<fourTuple>&						txApp2sLookup_req,
-						stream<ap_uint<14> >&					sessionIdFreeList,
-						stream<rtlSessionLookupRequest>&		sessionLookup_req, // TODO
-						stream<sessionLookupReply>&				sLookup2rxEng_rsp,
-						stream<sessionLookupReply>&				sLookup2txApp_rsp,
-						stream<rtlSessionUpdateRequest>&		sessionInsert_req,	// todo
-						stream<revLupInsert>&					reverseTableInsertFifo)
+void lookupReplyHandler(
+		stream<rtlSessionLookupReply>&			sessionLookup_rsp,
+		stream<rtlSessionUpdateReply>&			sessionInsert_rsp,
+		stream<sessionLookupQuery>&				rxEng2sLooup_req,
+		stream<fourTuple>&						txApp2sLookup_req,
+		stream<ap_uint<14> >&					sessionIdFreeList,
+		stream<rtlSessionLookupRequest>&		sessionLookup_req, // TODO
+		stream<sessionLookupReply>&				sLookup2rxEng_rsp,
+		stream<sessionLookupReply>&				sLookup2txApp_rsp,
+		stream<rtlSessionUpdateRequest>&		sessionInsert_req,	// todo
+		stream<revLupInsert>&					reverseTableInsertFifo)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -101,6 +103,7 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 	sessionLookupQueryInternal 	intQuery;
 	rtlSessionLookupReply 		lupReply;
 	rtlSessionUpdateReply 		insertReply;
+	rtlSessionLookupRequest		lookupRequest;
 	ap_uint<16> 				sessionID;
 	ap_uint<14> 				freeID = 0;
 
@@ -113,11 +116,13 @@ void lookupReplyHandler(stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 				txApp2sLookup_req.read(toeTuple);
 				intQuery.tuple.theirIp = toeTuple.dstIp;
 				intQuery.tuple.theirPort = toeTuple.dstPort;
-				//intQuery.tuple.myIp = toeTuple.srcIp;
 				intQuery.tuple.myPort = toeTuple.srcPort;
 				intQuery.allowCreation = true;
 				intQuery.source = TX_APP;
-				sessionLookup_req.write(rtlSessionLookupRequest(intQuery.tuple, intQuery.source));
+				lookupRequest.key 		= intQuery.tuple;
+				lookupRequest.source 	= TX_APP;
+				
+				sessionLookup_req.write(lookupRequest);
 				slc_queryCache.write(intQuery);
 				slc_fsmState = LUP_RSP;
 				//std::cout << "LUP_REQ request to look-up for " << std::dec << (toeTuple.dstIp & 0xFF) <<".";

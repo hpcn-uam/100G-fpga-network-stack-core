@@ -48,5 +48,5 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
 				//stream<ap_uint<1> >&		txApp2portTable_port_req,
 				stream<ap_uint<16> >&		sLookup2portTable_releasePort,
 				stream<bool>&				portTable2rxEng_check_rsp,
-				stream<bool>&				portTable2rxApp_listen_rsp,
+				stream<listenPortStatus>&	portTable2rxApp_listen_rsp,
 				stream<ap_uint<16> >&		portTable2txApp_port_rsp);

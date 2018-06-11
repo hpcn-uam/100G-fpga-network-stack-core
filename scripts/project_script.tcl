@@ -30,7 +30,7 @@ open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado
 create_clock -period 3.1 -name default
 set_clock_uncertainty 0.2
-config_rtl -disable_start_propagation
+
 csynth_design
 
 export_design -rtl verilog -format ip_catalog

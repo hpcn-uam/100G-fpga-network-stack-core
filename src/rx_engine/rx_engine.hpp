@@ -26,11 +26,11 @@ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABI
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
 ************************************************/
+
 #ifndef _RX_ENGINE_H_
 #define _RX_ENGINE_H_
 
 #include "../toe.hpp"
-#include "../common_utilities/common_utilities.hpp"
 #include "../memory_access/memory_access.hpp"
 
 using namespace hls;
@@ -104,8 +104,5 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
 				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum);
 
-void rxTCP_pseudoheader_insert(
-								stream<axiWord>&			dataIn,
-								stream<axiWord>&			dataOut);
 
 #endif
