@@ -49,9 +49,11 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 	enum tai_states {READ_REQUEST, READ_META};
 	static tai_states tai_state = READ_REQUEST;
 
-	static appTxMeta tasi_writeMeta;
-	static ap_uint<16> tasi_maxWriteLength = 0;
-	static txAppTxSarReply tasi_writeSar;
+	static appTxMeta 		tasi_writeMeta;
+	txAppTxSarReply 		writeSar;
+	ap_uint<16> 			maxWriteLength;
+	ap_uint<16> 			usedLength;
+	ap_uint<16> 			usableWindow;
 
 	sessionState state;
 
@@ -69,32 +71,37 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 	case READ_META:
 		if (!txSar2txApp_upd_rsp.empty() && !stateTable2txApp_rsp.empty()) {
 			stateTable2txApp_rsp.read(state);
-			txSar2txApp_upd_rsp.read(tasi_writeSar);
-			tasi_maxWriteLength = (tasi_writeSar.ackd - tasi_writeSar.mempt) - 1;
+			txSar2txApp_upd_rsp.read(writeSar);
+			maxWriteLength = (writeSar.ackd - writeSar.mempt) - 1;
+#if (TCP_NODELAY)
+			usedLength 		= ((ap_uint<16>) writeSar.mempt - writeSar.ackd);
+			if (writeSar.min_window > usedLength) {
+				usableWindow = writeSar.min_window - usedLength;
+			}
+			else {
+				usableWindow 	= 0;
+			}
+#endif
+			//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
 			if (state != ESTABLISHED) {
 				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOCONNCECTION)); // Notify app about fail
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNCECTION)); // Notify app about fail
 			}
-			else if(tasi_writeMeta.length > tasi_maxWriteLength)
-			{
-				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, ERROR_NOSPACE)); // Notify app about fail
-			}
-#if (TCP_NODELAY)
-			else if(tasi_writeMeta.length > 1460)	// TODO Replace with MSS
-			{
-				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, 1460, ERROR_OVERFLOW_MSS)); // Notify app about fail
-			}
-#endif			
+#if (!TCP_NODELAY)
+			else if(tasi_writeMeta.length > maxWriteLength) {
+#else
+			else if(tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length) {
+#endif
+				//tasi_writeToBufFifo.write(pkgPushMeta(true));
+				// Notify app about fail
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOSPACE));
+			}	
 			else {
 				// TODO there seems some redundancy
-				tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, tasi_writeSar.mempt, tasi_writeMeta.length));
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, tasi_maxWriteLength, NO_ERROR));
-				//tasi_eventCacheFifo.write(eventMeta(tasi_writeSessionID, tasi_writeSar.mempt, pkgLen));
-				//std::cout << "tasi_writeSar.mempt: " << std::dec << tasi_writeSar.mempt << std::endl;
-				txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, tasi_writeSar.mempt, tasi_writeMeta.length));
-				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, tasi_writeSar.mempt+tasi_writeMeta.length)); // TODO: maybe is too early to update TX sar because data is not in the memory yet
+				tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, NO_ERROR));
+				txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
+				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, writeSar.mempt+tasi_writeMeta.length));
 			}
 			tai_state = READ_REQUEST;
 		}
@@ -127,6 +134,7 @@ void tasi_pkg_dropper (
 
 	if (!tasi_writeToBufFifo.empty() && !reading_data){
 		tasi_writeToBufFifo.read(tasi_pushMeta);
+		//std::cout << "PACKAGE DROPPER waiting for data DROP " << (tasi_pushMeta.drop ? "YES": " NO")<< std::endl;
 
 		if (!tasi_pushMeta.drop){
 			pkgAddr(31, 30) = 0x01;

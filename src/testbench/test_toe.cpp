@@ -38,7 +38,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 
 #define ECHO_REPLAY 0
 
-#define totalSimCycles 250000
+#define totalSimCycles 500000
 //#define totalSimCycles 10000
 
 using namespace std;
@@ -173,10 +173,10 @@ void rxApp_sim (
 					openTuple.ip_port 		= 5001;
 					openConnection.write(openTuple);
 
-					cout << "RX app request to establish a new connection socket " << dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
-					cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
-					cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port;
-					cout << endl;
+					//cout << "RX app request to establish a new connection socket " << dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
+					//cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
+					//cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port;
+					//cout << endl;
 					concurrent_sessions++;
 
 				}
@@ -190,10 +190,10 @@ void rxApp_sim (
 					if (!openConStatus.empty()){
 						openConStatus.read(connection_status);
 						if (connection_status.success){
-							cout << "Connection [" << dec << connection_status.sessionID << "] successfully opened." << endl;
+							//cout << "Connection [" << dec << connection_status.sessionID << "] successfully opened." << endl;
 						}
 						else {
-							cout << "Connection [" << dec << connection_status.sessionID << "] could not be opened." << endl;
+							//cout << "Connection [" << dec << connection_status.sessionID << "] could not be opened." << endl;
 						}
 						concurrent_sessions++;
 						if (concurrent_sessions == connection_to_establish) {
@@ -239,9 +239,9 @@ void rxApp_sim (
 	else {
 		if (!notifications.empty()){
 			notifications.read(rx_app_notification);
-			cout << "RX notification sessionID: " << dec << rx_app_notification.sessionID;
-			cout << "\tlength: " << rx_app_notification.length << "\t" << "\tipAddress: " << hex <<  rx_app_notification.ipAddress;
-			cout << "\tdst port: " << dec << rx_app_notification.dstPort << "\tclosed: " << rx_app_notification.closed << endl;
+			//cout << "RX notification sessionID: " << dec << rx_app_notification.sessionID;
+			//cout << "\tlength: " << rx_app_notification.length << "\t" << "\tipAddress: " << hex <<  rx_app_notification.ipAddress;
+			//cout << "\tdst port: " << dec << rx_app_notification.dstPort << "\tclosed: " << rx_app_notification.closed << endl;
 		}			
 	}
 }
@@ -257,20 +257,25 @@ void txApp_sim(
 	bool 							test_TX
 	){
 
-	enum tx_data_states {WAIT_CLIENT, SEND_COMMAND, WAIT_RESPONSE, SEND_DATA, IDLE};
+	enum tx_data_states {WAIT_CLIENT, SEND_COMMAND, WAIT_RESPONSE, SEND_DATA, IDLE, WAIT_CYCLES};
 	static listenPortStatus 		listen_rsp;
 	static bool				 		listenDone = false;
 	static ap_uint<1> 	listenFsm 	= 0;
 	static tx_data_states fsm_state = WAIT_CLIENT;
-	static int packet_coutner = 0;
 	
 	static txApp_client_status	rx_client_notification;
+	static int 					bytes2send = (int)bytes_to_send;
+	static ap_uint<32> 			bytes_sent = 0;
+	static int 					segment_num = 0;
+	static ap_uint<32> 			tmp=0;
+	static int					cycle_counter = 0;
+	static int 					data_transfer_num = 0;
+	static int					write_request_length_r;
+	
 	appTxMeta 					write_request;
-	static ap_uint<16> 			bytes2send = (ap_uint<16>)bytes_to_send;
-	static ap_uint<16> 			bytes_sent = 0;
-	static ap_uint<16> 			tmp=0;
 	axiWord 					sendWord=axiWord(0,0,0);
 	appTxRsp 					write_request_response;
+	int 						transfer;
 
 	if (test_TX){
 		if (!listenDone) { 				// Open Port 15000
@@ -300,7 +305,7 @@ void txApp_sim(
 					cout << "\t\t max transfer size: " << rx_client_notification.max_transfer_size;
 					cout << "\t\tTCP_NODELAY: " << (rx_client_notification.tcp_nodelay ? "Yes" : "No");
 					cout << "\t\tBuffer empty: " << (rx_client_notification.buffer_empty ? "Yes" : "No") << endl;
-
+					segment_num = 0;
 					fsm_state = SEND_COMMAND;
 
 				}
@@ -313,12 +318,10 @@ void txApp_sim(
 					if (bytes2send > rx_client_notification.max_transfer_size){
 						write_request.length 	= rx_client_notification.max_transfer_size;
 						bytes_sent				= rx_client_notification.max_transfer_size;
-						bytes2send 				-= rx_client_notification.max_transfer_size;
 					}
 					else if (bytes2send > 0){
 						write_request.length 	= bytes2send;
 						bytes_sent				= bytes2send;
-						bytes2send 				= 0;
 					}
 					else {
 						fsm_state = IDLE;
@@ -329,26 +332,32 @@ void txApp_sim(
 					bytes_sent				= bytes2send;
 				}
 
+				write_request_length_r = write_request.length ;
+
 				if (fsm_state == WAIT_RESPONSE) {
 					txApp_write_request.write(write_request);
-					cout << "A TX data transfer has been programmed ID: " << dec << rx_client_notification.sessionID;
-					cout << "\tlength: " << write_request.length << "\tpacket number :" << packet_coutner++ << "\ttime: " << simCycleCounter << endl;
+					cout << "A TX data transfer nº " << dec << setw(3) << data_transfer_num <<" has  been programmed ID: " << dec << rx_client_notification.sessionID;
+					cout << "\tlength: " << write_request.length  << "\tSegment [" << setw(4) << segment_num << "," << setw(4) << segment_num + write_request.length;
+					cout << "]\ttime: " << simCycleCounter << endl;
 				}
 
 				break;
 			case WAIT_RESPONSE:	
 				if (!txApp_data_write_response.empty()){
 					txApp_data_write_response.read(write_request_response);
-					cout << "Response length: " << dec << write_request_response.length;
-					cout << "\tremaining space: " << write_request_response.remaining_space;
-					cout << "\terror: " <<  write_request_response.error;
+					cout << "Response for transfer " << dec << setw(3) << data_transfer_num << " length : " << dec << write_request_response.length;
+					cout << "\tremaining space: " << write_request_response.remaining_space << "\terror: " <<  write_request_response.error;
 					cout << "\ttime: "  << simCycleCounter << endl;
 
-					if (write_request_response.error){
-						fsm_state = WAIT_CLIENT;
+					if (write_request_response.error != 0){
+						cycle_counter 	= 0;
+						fsm_state 		= WAIT_CYCLES;
 					}
 					else{
+						bytes2send 				-= rx_client_notification.max_transfer_size;
 						fsm_state = SEND_DATA;
+						data_transfer_num++;
+						segment_num += write_request_length_r;
 					}
 				}
 				break;
@@ -357,16 +366,17 @@ void txApp_sim(
 					if (i < bytes_sent){
 						sendWord.data((i*8)+7,i*8) = tmp(((i%2)*8)+7,(i%2)*8);
 						sendWord.keep.bit(i)=1;
+						transfer = i;
+						if ((i%2) !=0 )
+							tmp++;
 					}
 					else {
 						sendWord.data((i*8)+7,i*8) = 0;	
 						sendWord.keep.bit(i)=0;
 						sendWord.last = 1;
 					}
-					if ((i%2) !=0 )
-						tmp++;
 				}
-				bytes_sent-=64;
+				bytes_sent -= 64;
 				if (sendWord.last){
 					if (rx_client_notification.tcp_nodelay){
 						fsm_state = SEND_COMMAND;
@@ -382,6 +392,13 @@ void txApp_sim(
 			case IDLE:
 				fsm_state = WAIT_CLIENT;
 				break;
+			case WAIT_CYCLES:
+				cycle_counter++;
+				if (cycle_counter==100){
+					cycle_counter = 0;
+					fsm_state = SEND_COMMAND;
+				}
+			break;	
 		}
 	}
 }
@@ -536,7 +553,7 @@ void simulateTx(
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
-		cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
@@ -549,7 +566,7 @@ void simulateTx(
 		BufferOut.write(outWord);
 		if (outWord.last)
 			stx_read = false;
-		cout << "Tx  READ app2mem[" << dec << setw(3) << mem2tx_word++ << "] data: " << hex << setw(130) << outWord.data << "\tkeep: " << setw(18) << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		//cout << "Tx  READ app2mem[" << dec << setw(3) << mem2tx_word++ << "] data: " << hex << setw(130) << outWord.data << "\tkeep: " << setw(18) << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 }
 
@@ -634,6 +651,7 @@ int main(int argc, char **argv) {
 	char 								*input_file;
 	char 								*output_file;
 	bool 								end_of_data=false;
+	int 								packet_in_counter = 0;
 
 	if (argc < 4) {
 		cerr << "[ERROR] missing arguments " __FILE__  << " <MODE 0: RX 1: TX><INPUT_PCAP_FILE> <OUTPUT_PCAP_FILE> " << endl;;
@@ -682,7 +700,7 @@ int main(int argc, char **argv) {
 			if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
 				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
 				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
-				cout << "Packet goes in time:" << simCycleCounter << endl;
+				cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
 			}
 		}
 

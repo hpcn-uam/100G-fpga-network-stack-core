@@ -166,11 +166,11 @@ void tx_MemDataRead_aligner(
 				txEng_isDDRbypass.read(bypass_ddr_i);
 				cout << endl << "Reading bypass port" ;
 				if (bypass_ddr_i){
-					cout << "it says bypass memory" ;	
+					cout << " it says bypass memory" ;	
 					tmra_fsm_state = NO_USE_DDR;
 				}
 				else {
-					cout << "it says use memory" ;	
+					cout << " it says use memory" ;	
 					tmra_fsm_state = READ_ACCESS;
 				}
 				cout << endl << endl;
@@ -183,6 +183,7 @@ void tx_MemDataRead_aligner(
 
 				byte_offset			= mem_double_access.offset;
 				if (mem_double_access.double_access){
+					cout << " DOUBLE ACCESS" ;	
 					tmra_fsm_state = FWD_BREAKDOWN_0;
 				}
 				else {

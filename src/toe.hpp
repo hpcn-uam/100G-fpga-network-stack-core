@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
 #ifndef _TOE_HPP_DEFINED_
@@ -52,8 +52,10 @@ static const uint16_t MAX_SESSIONS = 10000;
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
 #define RX_DDR_BYPASS 0
 
+// FAST_RETRANSMIT flag, to enable TCP fast recovery/retransmit mechanism
+#define FAST_RETRANSMIT 0
 
-
+#define CLOCK_PERIOD 0.003103
 
 #define noOfTxSessions 1 // Number of Tx Sessions to open for testing
 extern uint32_t packetCounter;
@@ -87,24 +89,24 @@ static const ap_uint<32> TIME_30s		= 6;
 static const ap_uint<32> TIME_60s		= 60;
 static const ap_uint<32> TIME_120s		= 120;
 #else
-static const ap_uint<32> TIME_64us		= 2;
-static const ap_uint<32> TIME_128us		= 4;
-static const ap_uint<32> TIME_1ms		= 32;
-static const ap_uint<32> TIME_5ms		= 161;
-static const ap_uint<32> TIME_25ms		= 805;
-static const ap_uint<32> TIME_50ms		= 1611;
-static const ap_uint<32> TIME_100ms		= 3222;
-static const ap_uint<32> TIME_250ms		= 8056;
-static const ap_uint<32> TIME_500ms		= 16113;
-static const ap_uint<32> TIME_1s		= 32226;
-static const ap_uint<32> TIME_5s		= 161133;
-static const ap_uint<32> TIME_7s		= 225586;
-static const ap_uint<32> TIME_10s		= 322266;
-static const ap_uint<32> TIME_15s		= 483399;
-static const ap_uint<32> TIME_20s		= 644532;
-static const ap_uint<32> TIME_30s		= 966798;
-static const ap_uint<32> TIME_60s		= 1933596;
-static const ap_uint<32> TIME_120s		= 3867192;
+static const ap_uint<32> TIME_64us		= (       64.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_128us		= (      128.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_1ms		= (     1000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_5ms		= (     5000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_25ms		= (    25000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_50ms		= (    50000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_100ms		= (   100000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_250ms		= (   250000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_500ms		= (   500000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_1s		= (  1000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_5s		= (  5000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_7s		= (  7000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_10s		= ( 10000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_15s		= ( 15000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_20s		= ( 20000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_30s		= ( 30000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_60s		= ( 60000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
+static const ap_uint<32> TIME_120s		= (120000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
 #endif
 
 
@@ -249,6 +251,7 @@ struct txSarEntry
 	ap_uint<16> slowstart_threshold;
 	ap_uint<16> app;
 	ap_uint<2>	count;
+	bool		fastRetransmitted;
 	bool		finReady;
 	bool		finSent;
 	bool 		use_cong_window;
@@ -261,12 +264,13 @@ struct rxTxSarQuery
 	ap_uint<16> recv_window;
 	ap_uint<16>	cong_window;
 	ap_uint<2>  count;
+	bool		fastRetransmitted;
 	ap_uint<1> write;
 	rxTxSarQuery () {}
 	rxTxSarQuery(ap_uint<16> id)
-				:sessionID(id), ackd(0), recv_window(0), count(0), write(0) {}
-	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<16> recv_win, ap_uint<16> cong_win, ap_uint<2> count)
-				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), write(1) {}
+				:sessionID(id), ackd(0), recv_window(0), count(0), fastRetransmitted(false), write(0) {}
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<16> recv_win, ap_uint<16> cong_win, ap_uint<2> count, bool fastRetransmitted)
+				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1) {}
 };
 
 struct txTxSarQuery
@@ -324,9 +328,10 @@ struct rxTxSarReply
 	ap_uint<16>	cong_window;
 	ap_uint<16> slowstart_threshold;
 	ap_uint<2>	count;
+	bool		fastRetransmitted;
 	rxTxSarReply() {}
-	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<16> cong_win, ap_uint<16> sstresh, ap_uint<2> count)
-			:prevAck(ack), nextByte(next), cong_window(cong_win), slowstart_threshold(sstresh), count(count) {}
+	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<16> cong_win, ap_uint<16> sstresh, ap_uint<2> count, bool fastRetransmitted)
+			:prevAck(ack), nextByte(next), cong_window(cong_win), slowstart_threshold(sstresh), count(count), fastRetransmitted(fastRetransmitted) {}
 };
 
 struct txAppTxSarReply
@@ -334,9 +339,17 @@ struct txAppTxSarReply
 	ap_uint<16> sessionID;
 	ap_uint<16> ackd;
 	ap_uint<16> mempt;
+#if (TCP_NODELAY)
+	ap_uint<16> min_window;
+#endif	
 	txAppTxSarReply() {}
+#if !(TCP_NODELAY)
 	txAppTxSarReply(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> pt)
-			:sessionID(id), ackd(ackd), mempt(pt) {}
+		:sessionID(id), ackd(ackd), mempt(pt) {}
+#else
+	txAppTxSarReply(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> pt, ap_uint<16> min_window)
+		:sessionID(id), ackd(ackd), mempt(pt), min_window(min_window) {}
+#endif
 };
 
 struct txAppTxSarPush
@@ -352,12 +365,22 @@ struct txSarAckPush
 {
 	ap_uint<16> sessionID;
 	ap_uint<16> ackd;
+#if (TCP_NODELAY)
+	ap_uint<16> min_window;
+#endif	
 	ap_uint<1>	init;
 	txSarAckPush() {}
+#if !(TCP_NODELAY)
 	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd)
-			:sessionID(id), ackd(ackd), init(0) {}
+		:sessionID(id), ackd(ackd), init(0) {}
 	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<1> init)
-			:sessionID(id), ackd(ackd), init(init) {}
+		:sessionID(id), ackd(ackd), init(init) {}
+#else
+	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> min_window)
+		:sessionID(id), ackd(ackd), min_window(min_window), init(0) {}
+	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> min_window, ap_uint<1> init)
+		:sessionID(id), ackd(ackd), min_window(min_window), init(init) {}
+#endif
 };
 
 struct txTxSarReply

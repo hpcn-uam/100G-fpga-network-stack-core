@@ -623,13 +623,16 @@ void rxEngTcpFSM(
 						if (tcpState == ESTABLISHED || tcpState == SYN_RECEIVED || tcpState == FIN_WAIT_1 || tcpState == CLOSING || tcpState == LAST_ACK) {
 							// Check if new ACK arrived
 							if (fsm_meta.meta.ackNumb == txSar.prevAck && txSar.prevAck != txSar.nextByte) {
-								txSar.count++; // Not new ACK has arrived increase counter
+								// Not new ACK increase counter only if it does not contain data
+								if (fsm_meta.meta.length == 0) {
+									txSar.count++;
+								}
 							}
 							else {
 								// Notify probeTimer about new ACK
-								if (fsm_meta.meta.ackNumb == txSar.nextByte){				//MR TODO: This solve the unexpected retramnsmissio but why?
+								//if (fsm_meta.meta.ackNumb == txSar.nextByte) //{				//MR TODO: This solve the unexpected retramnsmissio but why?
 									rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
-								}
+								//}
 								// Check for SlowStart & Increase Congestion Window
 								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
 									txSar.cong_window += MSS;
@@ -638,11 +641,12 @@ void rxEngTcpFSM(
 									txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
 								}
 								txSar.count = 0;
+								txSar.fastRetransmitted = false;
 							}
 							// TX SAR
 							if ((txSar.prevAck <= fsm_meta.meta.ackNumb && fsm_meta.meta.ackNumb <= txSar.nextByte)
 									|| ((txSar.prevAck <= fsm_meta.meta.ackNumb || fsm_meta.meta.ackNumb <= txSar.nextByte) && txSar.nextByte < txSar.prevAck)) {
-								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count)));
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count, ((txSar.count == 3) || txSar.fastRetransmitted))));
 							}
 
 							// Check if packet contains payload
@@ -669,10 +673,14 @@ void rxEngTcpFSM(
 									dropDataFifoOut.write(true);
 								}
 							}
-							if (txSar.count == 3) {
+#if FAST_RETRANSMIT							
+							if ((txSar.count == 3) && !txSar.fastRetransmitted) {
 								rxEng2eventEng_setEvent.write(event(RT, fsm_meta.sessionID));
 							}
 							else if (fsm_meta.meta.length != 0) { // Send ACK
+#else				
+							if (fsm_meta.meta.length != 0) {
+#endif				
 								rxEng2eventEng_setEvent.write(event(ACK, fsm_meta.sessionID));
 							}
 							
@@ -723,8 +731,7 @@ void rxEngTcpFSM(
 							// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
 							// Initialize receive window
-							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0))); //TODO maybe include count check
-							// Set SYN_ACK event
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //TODO maybe include count check SYN_ACK event
 							rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID));
 							// Change State to SYN_RECEIVED
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, SYN_RECEIVED, 1));
@@ -760,7 +767,7 @@ void rxEngTcpFSM(
 							if (fsm_meta.meta.ackNumb == txSar.nextByte) { // SYN-ACK is correct
 								
 								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1)); //initialize rx_sar, SEQ + phantom byte, last '1' for appd init
-								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0))); //CHANGE this was added //TODO maybe include count check
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //CHANGE this was added //TODO maybe include count check
 								rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID)); 				// set ACK event
 								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); 	// Update TCP FSM to ESTABLISHED now data can be transfer 
 
@@ -785,7 +792,7 @@ void rxEngTcpFSM(
 						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
 						// Check state and if FIN in order, Current out of order FINs are not accepted
 						if ((tcpState == ESTABLISHED || tcpState == FIN_WAIT_1 || tcpState == FIN_WAIT_2) && (rxSar.recvd == fsm_meta.meta.seqNumb)) {
-							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count))); //TODO include count check
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count, txSar.fastRetransmitted))); //TODO include count check
 
 							// +1 for phantom byte, there might be data too
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1, 1)); //diff to ACK
