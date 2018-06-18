@@ -85,7 +85,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 			//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
 			if (state != ESTABLISHED) {
 				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNCECTION)); // Notify app about fail
+				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail
 			}
 #if (!TCP_NODELAY)
 			else if(tasi_writeMeta.length > maxWriteLength) {
@@ -139,7 +139,7 @@ void tasi_pkg_dropper (
 		if (!tasi_pushMeta.drop){
 			pkgAddr(31, 30) = 0x01;
 			pkgAddr(29, 16) = tasi_pushMeta.sessionID(13, 0);
-			pkgAddr(15, 0) = tasi_pushMeta.address;
+			pkgAddr(15, 0)  = tasi_pushMeta.address;
 
 			txBufferWriteCmd.write(mmCmd(pkgAddr, tasi_pushMeta.length));
 		}
@@ -160,178 +160,6 @@ void tasi_pkg_dropper (
 
 }
 
-/** @ingroup tx_app_stream_if
- *  In case the @tasi_metaLoader decides to write the packet to the memory,
- *  it writes the memory command and pushes the data to the DataMover,
- *  otherwise the packet is dropped.
- */
-void tasi_pkg_pusher(	stream<axiWord>& 				tasi_pkgBuffer,
-						stream<pkgPushMeta>&			tasi_writeToBufFifo,
-						stream<mmCmd>&					txBufferWriteCmd,
-#if (!TCP_NODELAY)
-						stream<axiWord>&				txBufferWriteData)
-
-#else
-						stream<axiWord>&				txBufferWriteData,
-						stream<axiWord>&				txApp2txEng_data_stream)
-#endif
-{
-#pragma HLS pipeline II=1 enable_flush
-#pragma HLS INLINE off
-
-	static ap_uint<3> tasiPkgPushState = 0;
-	static pkgPushMeta tasi_pushMeta;
-	static mmCmd txAppTempCmd = mmCmd(0, 0);
-	static ap_uint<16> txAppBreakTemp = 0;
-	static uint8_t lengthBuffer = 0;
-	static ap_uint<3> accessResidue = 0;
-	static bool txAppBreakdown = false;
-	static axiWord pushWord = axiWord(0, 0xFF, 0);
-
-	static uint16_t txAppPktCounter = 0;
-	static uint32_t txAppWordCounter = 0;
-
-
-	switch (tasiPkgPushState) {
-	case 0:
-		if (!tasi_writeToBufFifo.empty() && !txBufferWriteCmd.full()) {
-			tasi_writeToBufFifo.read(tasi_pushMeta);
-			if (!tasi_pushMeta.drop) {
-				ap_uint<32> pkgAddr;
-				pkgAddr(31, 30) = 0x01;
-				pkgAddr(29, 16) = tasi_pushMeta.sessionID(13, 0);
-				pkgAddr(15, 0) = tasi_pushMeta.address;
-				txAppTempCmd = mmCmd(pkgAddr, tasi_pushMeta.length);
-				mmCmd tempCmd = txAppTempCmd;
-				if ((txAppTempCmd.saddr.range(15, 0) + txAppTempCmd.bbt) > 65536) {
-					txAppBreakTemp = 65536 - txAppTempCmd.saddr;
-					txAppTempCmd.bbt -= txAppBreakTemp;
-					tempCmd = mmCmd(txAppTempCmd.saddr, txAppBreakTemp);
-					txAppBreakdown = true;
-				}
-				else
-				{
-					txAppBreakTemp = txAppTempCmd.bbt;
-				}
-				txBufferWriteCmd.write(tempCmd);
-			}
-			tasiPkgPushState = 1;
-		}
-		break;
-	case 1:
-		if (!tasi_pkgBuffer.empty()) {
-			tasi_pkgBuffer.read(pushWord);
-#if (TCP_NODELAY)
-			txApp2txEng_data_stream.write(pushWord);
-#endif
-			axiWord outputWord = pushWord;
-			ap_uint<4> byteCount = keep2len(pushWord.keep);
-			if (!tasi_pushMeta.drop)
-			{
-				if (txAppBreakTemp > 8)
-				{
-					txAppBreakTemp -= 8;
-				}
-				else
-				{
-					if (txAppBreakdown == true) {				/// Changes are to go in here
-						if (txAppTempCmd.saddr.range(15, 0) % 8 != 0) // If the word is not perfectly aligned then there is some magic to be worked.
-						{
-							outputWord.keep = len2Keep(txAppBreakTemp);
-						}
-						outputWord.last = 1;
-						tasiPkgPushState = 2;
-						accessResidue = byteCount - txAppBreakTemp;
-						lengthBuffer = txAppBreakTemp;	// Buffer the number of bits consumed.
-					}
-					else
-						tasiPkgPushState = 0;
-				}
-				txAppWordCounter++;
-				txBufferWriteData.write(outputWord);
-			} // if drop
-			else {
-				if (pushWord.last == 1)
-				{
-					tasiPkgPushState = 0;
-				}
-			}
-		}
-		break;
-	case 2:
-		if (!txBufferWriteCmd.full()) {
-			if (txAppTempCmd.saddr.range(15, 0) % 8 == 0)
-				tasiPkgPushState = 3;
-			//else if (txAppTempCmd.bbt +  accessResidue > 8 || accessResidue > 0)
-			else if (txAppTempCmd.bbt - accessResidue > 0)
-				tasiPkgPushState = 4;
-			else
-				tasiPkgPushState = 5;
-			txAppTempCmd.saddr.range(15, 0) = 0;
-			txAppBreakTemp = txAppTempCmd.bbt;
-			txBufferWriteCmd.write(mmCmd(txAppTempCmd.saddr, txAppBreakTemp));
-			txAppBreakdown = false;
-
-		}
-		break;
-	case 3:	// This is the non-realignment state
-		if (!tasi_pkgBuffer.empty() /* && !txBufferWriteData.full()*/) {
-			tasi_pkgBuffer.read(pushWord);
-#if (TCP_NODELAY)
-			txApp2txEng_data_stream.write(pushWord);
-#endif
-			if (!tasi_pushMeta.drop) {
-				txAppWordCounter++;
-				txBufferWriteData.write(pushWord);
-			}
-			if (pushWord.last == 1)
-				tasiPkgPushState = 0;
-		}
-		break;
-	case 4: // We go into this state when we need to realign things
-		if (!tasi_pkgBuffer.empty() /* && !txBufferWriteData.full()*/) {
-			axiWord outputWord = axiWord(0, 0xFF, 0);
-			outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-			pushWord = tasi_pkgBuffer.read();
-#if (TCP_NODELAY)
-			txApp2txEng_data_stream.write(pushWord);
-#endif
-			outputWord.data.range(63, (8-lengthBuffer)*8) = pushWord.data.range((lengthBuffer * 8), 0 );
-
-			if (!tasi_pushMeta.drop) {
-				if (pushWord.last == 1) {
-					if (txAppBreakTemp - accessResidue > lengthBuffer)	{ // In this case there's residue to be handled
-						txAppBreakTemp -=8;
-						tasiPkgPushState = 5;
-					}
-					else {
-						tasiPkgPushState = 0;
-						outputWord.keep = len2Keep(txAppBreakTemp);
-						outputWord.last = 1;
-					}
-				}
-				else
-					txAppBreakTemp -= 8;
-				txBufferWriteData.write(outputWord);
-			}
-			else {
-				if (pushWord.last == 1)
-					tasiPkgPushState = 0;
-			}
-		}
-		break;
-	case 5:
-//		if (!txBufferWriteData.full()) {
-			if (!tasi_pushMeta.drop) {
-				axiWord outputWord = axiWord(0, len2Keep(txAppBreakTemp), 1);
-				outputWord.data.range(((8-lengthBuffer)*8) - 1, 0) = pushWord.data.range(63, lengthBuffer*8);
-				txBufferWriteData.write(outputWord);
-				tasiPkgPushState = 0;
-			}
-//		}
-		break;
-	} //switch
-}
 /** @ingroup tx_app_stream_if
  *  This application interface is used to transmit data streams of established connections.
  *  The application sends the Session-ID on through @p writeMetaDataIn and the data stream
@@ -376,20 +204,21 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 	static stream<mmCmd> tasi_command_accepted("tasi_command_accepted");
 	#pragma HLS DATA_PACK variable=tasi_command_accepted
 
-	tasi_metaLoader(	appTxDataReqMetaData,
-						stateTable2txApp_rsp,
-						txSar2txApp_upd_rsp,
-						appTxDataRsp,
-						txApp2stateTable_req,
-						txApp2txSar_upd_req,
-						tasi_writeToBufFifo,
-						txAppStream2eventEng_setEvent);
+	tasi_metaLoader(	
+			appTxDataReqMetaData,
+			stateTable2txApp_rsp,
+			txSar2txApp_upd_rsp,
+			appTxDataRsp,
+			txApp2stateTable_req,
+			txApp2txSar_upd_req,
+			tasi_writeToBufFifo,
+			txAppStream2eventEng_setEvent);
 
 	tasi_pkg_dropper (
-		tasi_writeToBufFifo,
-		appTxDataReq,
-		tasi_app_data_accepted,
-		tasi_command_accepted);
+			tasi_writeToBufFifo,
+			appTxDataReq,
+			tasi_app_data_accepted,
+			tasi_command_accepted);
 
 
 	tx_Data_to_Memory(

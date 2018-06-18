@@ -36,9 +36,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "../../../echo_server_app/src/echo_server_application.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 0
+#define ECHO_REPLAY 1
 
-#define totalSimCycles 500000
+#define totalSimCycles 100000
 //#define totalSimCycles 10000
 
 using namespace std;
@@ -475,45 +475,66 @@ void simulateRx(
 	static bool stx_readCmd = false;
 	static ap_uint<16> wrBufferWriteCounter = 0;
 	static ap_uint<16> wrBufferReadCounter = 0;
+	static int write_command_number = 0;
+	static int read_command_number = 0;
+	static int write_packet_number = 0;
+	static int write_transaction_number = 0;
+	static int read_packet_number = 0;
+	static int read_transaction_number = 0;
+
+	ap_uint<17> address_comparator;	
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		wrBufferWriteCounter = cmd.bbt;
 		stx_write = true;
-		//cout << "Rx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << "Rx WRITE command [" << setw(3) << write_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		address_comparator = cmd.saddr + cmd.bbt;
+		if (address_comparator.bit(16)){
+			cout << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl;
+		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
-		//cerr << dec << rxMemCounter << " - " << hex << inWord.data << " " << inWord.keep << " " << inWord.last << endl;
-		//rxMemCounter++;;
+
+		//cout << "Rx WRITE [" << dec << setw(3) << write_packet_number << "][" << setw(2) << write_transaction_number++ << "]";
+		//cout <<"\tdata: " << setw(130) << hex << inWord.data << "\tkeep: " << setw(18) << inWord.keep; 
+		//cout << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+
 		memory->writeWord(inWord);
 		if (wrBufferWriteCounter < (ETH_INTERFACE_WIDTH/8) + 1) {
-			//fake_txBuffer.write(inWord); // RT hack
 			stx_write = false;
+			write_packet_number++;
+			write_transaction_number = 0;
 			status.okay = 1;
 			WriteStatusFifo.write(status);
 		}
 		else
 			wrBufferWriteCounter -= (ETH_INTERFACE_WIDTH/8);
-		//cout << "Rx WRITE data: " << hex << inWord.data << "\tkeep: " << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		wrBufferReadCounter = cmd.bbt;
 		stx_read = true;
-		//cout << "Rx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << endl;
+		cout << "Rx  READ command [" << setw(3) << read_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
 		BufferOut.write(outWord);
-		rxMemCounterRd++;;
-		if (wrBufferReadCounter < (ETH_INTERFACE_WIDTH/8)+1)
+
+		//cout << "Rx READ [" << dec << setw(3) << read_packet_number << "][" << setw(2) << read_transaction_number++ << "]";
+		//cout <<"\tdata: " << setw(130) << hex << outWord.data << "\tkeep: " << setw(18) << outWord.keep; 
+		//cout << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
+
+		if (wrBufferReadCounter < (ETH_INTERFACE_WIDTH/8)+1) {
 			stx_read = false;
+			read_packet_number++;
+			read_transaction_number = 0;
+		}
 		else
 			wrBufferReadCounter -= (ETH_INTERFACE_WIDTH/8);
-		//cout << "Rx READ data: " << hex << outWord.data << "\tkeep: " << outWord.keep << "\tlast: " << outWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 }
 
@@ -537,12 +558,17 @@ void simulateTx(
 
 	static int app2mem_word=0;
 	static int mem2tx_word=0;
+	ap_uint<17> address_comparator;	
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		address_comparator = cmd.saddr + cmd.bbt;
+		if (address_comparator.bit(16)){
+			cout << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl;
+		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
@@ -559,7 +585,7 @@ void simulateTx(
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
+		//cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
@@ -705,8 +731,11 @@ int main(int argc, char **argv) {
 		}
 
 		if (testRxPath){
-			if ((((simCycleCounter+1) % 80) ==0) && (end_of_data==false)){
-				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
+			if (!(simCycleCounter > 11500 && simCycleCounter < 15000)) {
+				if ((((simCycleCounter+1) % 120) ==0) && (end_of_data==false)){
+					pcap2stream_step(input_file, false ,end_of_data, ipRxData);
+					cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
+				}
 			}
 		}
 

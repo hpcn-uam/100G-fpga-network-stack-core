@@ -61,13 +61,13 @@ void app_ReadMemAccessBreakdown(
 			outputMemAccess.write(tempCmd);
 			memAccessBreakdown.write(double_access);
 			//txPktCounter++;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << std::hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << endl;
 		}
 	}
 	else if (appBreakdown == true) {
 		if (!outputMemAccess.full()) {
 			appTempCmd.saddr.range(15, 0) = 0;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << std::hex << " - " << appTempCmd.saddr << " - " << appTempCmd.bbt - appBreakTemp << std::endl;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << appTempCmd.saddr << " - " << appTempCmd.bbt - appBreakTemp << endl;
 			outputMemAccess.write(mmCmd(appTempCmd.saddr, appTempCmd.bbt - appBreakTemp));
 			appBreakdown = false;
 		}
@@ -102,13 +102,13 @@ void tx_ReadMemAccessBreakdown(
 			outputMemAccess.write(tempCmd);
 			memAccessBreakdown.write(double_access);
 			//txPktCounter++;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << std::hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << std::endl;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << endl;
 		}
 	}
 	else if (txEngBreakdown == true) {
 		if (!outputMemAccess.full()) {
 			txEngTempCmd.saddr.range(15, 0) = 0;
-			//std::cerr << std::dec << "MemCmd: " << cycleCounter << " - " << std::hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.bbt - txEngBreakTemp << std::endl;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.bbt - txEngBreakTemp << endl;
 			outputMemAccess.write(mmCmd(txEngTempCmd.saddr, txEngTempCmd.bbt - txEngBreakTemp));
 			txEngBreakdown = false;
 		}
@@ -117,190 +117,99 @@ void tx_ReadMemAccessBreakdown(
 
 
 
-/** @ingroup tx_engine
- *  It gets data from the memory which can be split into two burst.
- *  The main drawback is aligned the end of the first burst with the beginning
- *  of the second burst, because, it implies a 64 to 1 multiplexer.
+/* This function is in charge of reading the data coming from the memory and sending to the application.
+ * The application request blocks of L bytes, but, since the buffer is implemented  as a circular buffer, 
+ * the overflow arises. That means that a requested block may come as two blocks (beats), once in a while.
+ * Because the memory has to be read twice to fulfil the L bytes. In that cases the function will be notified
+ * by @MemoryDoubleAccess that the requested data is composed of two input beats. 
+ * The main problem is that the alignment between the end of the first beat with the start
+ * of the second beat is different to the rest of alignment in the second beat. The following image shows an 
+ * example.
+ *   
+ *   ------------------------------------------------------------------
+ * 0 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * 1 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * .
+ * .
+ * . ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * . ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * M                                          ||||||||||||||||||||||||| 	last=1  wordM
+ *   ------------------------------------------------------------------
+ *  
+ *  Second BEAT
+ *  
+ *   ------------------------------------------------------------------
+ * 0 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * 1 ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * .
+ * .
+ * . ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * . ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+ * N                   |||||||||||||||||||||||||||||||||||||||||||||||| 	last=1
+ *   ------------------------------------------------------------------
+ *
+ * If you notice, the first transaction of second beat must be placed in the MSB of the output word.
+ * Whereas the remaining bytes of the first transaction of the second beat must be placed in the LSB of following output word
+ * To clarify the following image shows the output word after merge, lets denote the offset as 'k' expressed in bits, wordM the last
+ * transaction of the first beat and wordS_0 the first transaction of the second beat.
+ * 
+ * 
+ *   ------------------------------------------------------------------
+ *   |           wordS_0(511-k,0)             |      wordM(k-1,0)     |	
+ *   ------------------------------------------------------------------
+ * Now the wordS_0 has (512-k)-bit to output, then, the following word must have the following pattern
+ * 
+ *   ------------------------------------------------------------------
+ *   |           wordS_1(511-k,0)             | wordS_0(511-1,512-k)  |	
+ *   ------------------------------------------------------------------
+ *   
+ * As you can see the multiplexation is different and must be treated carefully. 
+ * 
+ * The same concept is applied to tx_MemDataRead_aligner
+ * 
+ *  
+ *
  */
-
-void tx_MemDataRead_aligner(
-					stream<axiWord>& 			DtaInNoAlig,
-					stream<memDoubleAccess>& 	mem_two_access,
-#if (TCP_NODELAY)
-					stream<bool>&				txEng_isDDRbypass,
-					stream<axiWord>&			txAppDataIn,
-#endif					
-					stream<axiWord>& 			DataOut)
-{
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-	
-	enum tmra_states {READ_ACCESS , FWD_NO_BREAKDOWN , FWD_BREAKDOWN_0, FWD_BREAKDOWN_1, FWD_EXTRA
-
-#if (TCP_NODELAY)
-		, NO_USE_DDR , READ_BYPASS
-#endif
-	};
-#if (TCP_NODELAY)	
-	const tmra_states INITIAL_STATE = READ_BYPASS;
-#else	
-	const tmra_states INITIAL_STATE = READ_ACCESS;
-#endif
-	static tmra_states tmra_fsm_state = INITIAL_STATE;
-
-	static ap_uint<6>	byte_offset;
-
-	static axiWord 		prevWord;
-	
-	memDoubleAccess 	mem_double_access;
-	axiWord 			currWord;
-	axiWord 			sendWord;
-
-	bool 				bypass_ddr_i;
-
-
-	switch (tmra_fsm_state){
-#if (TCP_NODELAY)	
-		case READ_BYPASS: 
-			if (!txEng_isDDRbypass.empty()){
-				txEng_isDDRbypass.read(bypass_ddr_i);
-				cout << endl << "Reading bypass port" ;
-				if (bypass_ddr_i){
-					cout << " it says bypass memory" ;	
-					tmra_fsm_state = NO_USE_DDR;
-				}
-				else {
-					cout << " it says use memory" ;	
-					tmra_fsm_state = READ_ACCESS;
-				}
-				cout << endl << endl;
-			}
-			break;
-#endif				
-		case READ_ACCESS:
-			if (!mem_two_access.empty()){
-				mem_two_access.read(mem_double_access);
-
-				byte_offset			= mem_double_access.offset;
-				if (mem_double_access.double_access){
-					cout << " DOUBLE ACCESS" ;	
-					tmra_fsm_state = FWD_BREAKDOWN_0;
-				}
-				else {
-					tmra_fsm_state = FWD_NO_BREAKDOWN;
-				}
-			}
-			break;
-		case FWD_NO_BREAKDOWN:
-			if (!DtaInNoAlig.empty()){
-				DtaInNoAlig.read(currWord);
-				DataOut.write(currWord);
-
-				if (currWord.last){
-					tmra_fsm_state = INITIAL_STATE;
-				}
-			}
-			break;
-		case FWD_BREAKDOWN_0:
-			if (!DtaInNoAlig.empty()){
-				DtaInNoAlig.read(currWord);
-
-				if (currWord.last){
-					if (byte_offset == 0){			// This mean that the last has all byte valid
-						DataOut.write(currWord);
-					}
-					tmra_fsm_state = FWD_BREAKDOWN_1;
-				} 
-				else {
-					DataOut.write(currWord);
-				}
-				prevWord = currWord;
-			}
-			break;
-		case FWD_BREAKDOWN_1:
-			if (!DtaInNoAlig.empty()){
-				DtaInNoAlig.read(currWord);
-				tx_align_two_64bytes_words(currWord,prevWord,byte_offset,sendWord);
-
-				if (currWord.last){
-					if (sendWord.last){
-						tmra_fsm_state = INITIAL_STATE;
-					}
-					else {
-						tmra_fsm_state = FWD_EXTRA;
-					}
-				}
-
-				DataOut.write(sendWord);
-				prevWord = currWord;
-			}
-			break;
-		case FWD_EXTRA:
-			tx_align_two_64bytes_words(axiWord(0,0,1),prevWord,byte_offset,sendWord);
-			//sendWord.last = 1;
-			DataOut.write(sendWord);
-			tmra_fsm_state = INITIAL_STATE;
-	
-			break;
-#if (TCP_NODELAY)			
-		case NO_USE_DDR			:
-			if (!txAppDataIn.empty()){
-				txAppDataIn.read(currWord);
-				DataOut.write(currWord);
-
-				if (currWord.last){
-					tmra_fsm_state = READ_BYPASS;
-				}
-				
-			}
-			break;
-#endif			
-	}
-
-}
-
-
-/** @
- *  It gets data from the memory which can be split into two burst.
- *  The main drawback is aligned the end of the first burst with the beginning
- *  of the second burst, because, it implies a 64 to 1 multiplexer.
- */
-
 
 void app_MemDataRead_aligner(
 					stream<axiWord>& 			DtaInNoAlig,
-					stream<memDoubleAccess>& 	mem_two_access,
+					stream<memDoubleAccess>& 	MemoryDoubleAccess,
 					stream<axiWord>& 			DataOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1	
 	
-	enum amdra_fsm_states {READ_ACCESS , FWD_NO_BREAKDOWN , FWD_BREAKDOWN_0, FWD_BREAKDOWN_1, FWD_EXTRA};
+	enum amdra_fsm_states {READ_ACCESS , NO_BREAKDOWN , BREAKDOWN_BLOCK_0, BREAKDOWN_ALIGNED, 
+						   FIRST_MERGE, BREAKDOWN_BLOCK_1, EXTRA_DATA};
 	static amdra_fsm_states amdra_state = READ_ACCESS;
 
-	static ap_uint<6>	byte_offset;
+	static ap_uint<6>	offset_block0;
+	static ap_uint<6>	offset_block1;
 
 	static axiWord 		prevWord;
 	
 	memDoubleAccess 	mem_double_access;
 	axiWord 			currWord;
 	axiWord 			sendWord;
+	bool 				write_word = true;
 
 	switch (amdra_state){
 		case READ_ACCESS:
-			if (!mem_two_access.empty()){
-				mem_two_access.read(mem_double_access);
+			if (!MemoryDoubleAccess.empty()){
+				MemoryDoubleAccess.read(mem_double_access);
+				offset_block0	= mem_double_access.offset;
+				offset_block1	= 64 - mem_double_access.offset;
 
-				byte_offset			= mem_double_access.offset;
 				if (mem_double_access.double_access){
-					amdra_state = FWD_BREAKDOWN_0;
+					amdra_state = BREAKDOWN_BLOCK_0;
 				}
 				else {
-					amdra_state = FWD_NO_BREAKDOWN;
+					amdra_state = NO_BREAKDOWN;
 				}
 			}
 			break;
-		case FWD_NO_BREAKDOWN:
+		case NO_BREAKDOWN:
+		case BREAKDOWN_ALIGNED:
 			if (!DtaInNoAlig.empty()){
 				DtaInNoAlig.read(currWord);
 				DataOut.write(currWord);
@@ -310,49 +219,264 @@ void app_MemDataRead_aligner(
 				}
 			}
 			break;
-		case FWD_BREAKDOWN_0:
+		case BREAKDOWN_BLOCK_0:
 			if (!DtaInNoAlig.empty()){
 				DtaInNoAlig.read(currWord);
 
+				sendWord.data = currWord.data;
+				sendWord.keep = currWord.keep;
+				sendWord.last = 0;
 				if (currWord.last){
-					if (byte_offset == 0){			// This mean that the last has all byte valid
-						DataOut.write(currWord);
+					//cout << "BYTE OFFSET0 " << dec << offset_block0 << "BYTE OFFSET1 " << offset_block1 << endl << endl;
+					if (offset_block0 == 0){				// The current word has to be written because every bit is useful
+						amdra_state = BREAKDOWN_ALIGNED;
 					}
-					amdra_state = FWD_BREAKDOWN_1;
+					else {									// This mean that the last not has all byte valid
+						write_word = false;
+						amdra_state = FIRST_MERGE;
+					}
 				} 
-				else {
-					DataOut.write(currWord);
+
+				//cout << "BREAKDOWN_BLOCK_0 current data: " << setw(130) << hex << currWord.data << "\tkeep: " << setw(18) << currWord.keep; 
+				//cout << "\tlast: " << currWord.last << endl;
+
+				if (write_word){
+					DataOut.write(sendWord);
+					//cout << "BREAKDOWN_BLOCK_0 sent    data: " << setw(130) << hex << sendWord.data << "\tkeep: " << setw(18) << sendWord.keep; 
+					//cout << "\tlast: " << sendWord.last << endl << endl;
 				}
 				prevWord = currWord;
 			}
 			break;
-		case FWD_BREAKDOWN_1:
+		case FIRST_MERGE :	// Always the input word is unaligned otherwise there is a bug
 			if (!DtaInNoAlig.empty()){
 				DtaInNoAlig.read(currWord);
-				tx_align_two_64bytes_words(currWord,prevWord,byte_offset,sendWord);
-
+				align_words_from_memory(currWord,prevWord,offset_block0,sendWord);
+				sendWord.last = 0;
+				
 				if (currWord.last){
-					if (sendWord.last){
+					if (currWord.keep.bit(offset_block1)){
+						amdra_state = EXTRA_DATA;
+					}
+					else{
+						sendWord.last = 1;
 						amdra_state = READ_ACCESS;
 					}
+				}
+				else {
+					amdra_state = BREAKDOWN_BLOCK_1;
+				}
+				//cout << "FIRST_MERGE      current data: " << setw(130) << hex << currWord.data << "\tkeep: " << setw(18) << currWord.keep; 
+				//cout << "\tlast: " << currWord.last << endl;
+				//cout << "FIRST_MERGE      sent    data: " << setw(130) << hex << sendWord.data << "\tkeep: " << setw(18) << sendWord.keep; 
+				//cout << "\tlast: " << sendWord.last << endl<< endl;
+				prevWord = currWord;
+				DataOut.write(sendWord);
+			}	
+		break;
+		case BREAKDOWN_BLOCK_1: // Always the input word is unaligned otherwise there is a bug
+			if (!DtaInNoAlig.empty()){
+				DtaInNoAlig.read(currWord);
+				align_words_to_memory(currWord,prevWord,offset_block1,sendWord);
+
+				sendWord.last = 0;
+				if (currWord.last){
+					if (currWord.keep.bit(offset_block1)){
+						amdra_state = EXTRA_DATA;
+					}
 					else {
-						amdra_state = FWD_EXTRA;
+						sendWord.last = 1;
+						amdra_state = READ_ACCESS;
 					}
 				}
-
-				DataOut.write(sendWord);
+				//cout << "BREAKDOWN_BLOCK_1 current data: " << setw(130) << hex << currWord.data << "\tkeep: " << setw(18) << currWord.keep; 
+				//cout << "\tlast: " << currWord.last << endl;
+				//cout << "BREAKDOWN_BLOCK_1 send    data: " << setw(130) << hex << sendWord.data << "\tkeep: " << setw(18) << sendWord.keep; 
+				//cout << "\tlast: " << sendWord.last << endl << endl;
+				
 				prevWord = currWord;
+				DataOut.write(sendWord);
 			}
 			break;
-		case FWD_EXTRA:
-			tx_align_two_64bytes_words(axiWord(0,0,1),prevWord,byte_offset,sendWord);
-			//sendWord.last = 1;
+		case EXTRA_DATA:
+			align_words_to_memory(axiWord(0,0,1),prevWord,offset_block1,sendWord);
+			sendWord.last = 1;
 			DataOut.write(sendWord);
+			//cout << "EXTRA_DATA               data: " << setw(130) << hex << sendWord.data << "\tkeep: " << setw(18) << sendWord.keep; 
+			//cout << "\tlast: " << sendWord.last << endl;
 			amdra_state = READ_ACCESS;
 			break;
 	}
 
 }
+
+/** @ingroup tx_engine
+ *  See app_MemDataRead_aligner description
+ */
+
+void tx_MemDataRead_aligner(
+					stream<axiWord>& 			DtaInNoAlig,
+					stream<memDoubleAccess>& 	MemoryDoubleAccess,
+#if (TCP_NODELAY)
+					stream<bool>&				txEng_isDDRbypass,
+					stream<axiWord>&			txAppDataIn,
+#endif					
+					stream<axiWord>& 			DataOut)
+{
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+	
+	enum tmra_states {READ_ACCESS , NO_BREAKDOWN , BREAKDOWN_BLOCK_0, BREAKDOWN_ALIGNED, 
+		              FIRST_MERGE, BREAKDOWN_BLOCK_1, EXTRA_DATA
+#if (TCP_NODELAY)
+		, NO_USE_DDR , READ_BYPASS
+#endif
+	};
+
+#if (TCP_NODELAY)	
+	const tmra_states INITIAL_STATE = READ_BYPASS;
+#else	
+	const tmra_states INITIAL_STATE = READ_ACCESS;
+#endif
+	static tmra_states tmra_fsm_state = INITIAL_STATE;
+
+	static ap_uint<6>	offset_block0;
+	static ap_uint<6>	offset_block1;
+
+	static axiWord 		prevWord;
+	
+	memDoubleAccess 	mem_double_access;
+	axiWord 			currWord;
+	axiWord 			sendWord;
+
+	bool 				bypass_ddr_i;
+	bool 				write_word = true;
+
+	switch (tmra_fsm_state){
+#if (TCP_NODELAY)	
+		case READ_BYPASS: 
+			if (!txEng_isDDRbypass.empty()){
+				txEng_isDDRbypass.read(bypass_ddr_i);
+				if (bypass_ddr_i){
+					tmra_fsm_state = NO_USE_DDR;
+				}
+				else {
+					tmra_fsm_state = READ_ACCESS;
+				}
+			}
+			break;
+		case NO_USE_DDR			:
+			if (!txAppDataIn.empty()){
+				txAppDataIn.read(currWord);
+				DataOut.write(currWord);
+				if (currWord.last){
+					tmra_fsm_state = READ_BYPASS;
+				}
+			}
+			break;
+#endif			
+		case READ_ACCESS:
+			if (!MemoryDoubleAccess.empty()){
+				MemoryDoubleAccess.read(mem_double_access);
+				offset_block0	= mem_double_access.offset;
+				offset_block1	= 64 - mem_double_access.offset;
+				
+				if (mem_double_access.double_access){
+					tmra_fsm_state = BREAKDOWN_BLOCK_0;
+				}
+				else {
+					tmra_fsm_state = NO_BREAKDOWN;
+				}
+			}
+			break;
+		case NO_BREAKDOWN:
+		case BREAKDOWN_ALIGNED:
+			if (!DtaInNoAlig.empty()){
+				DtaInNoAlig.read(currWord);
+				DataOut.write(currWord);
+
+				if (currWord.last){
+					tmra_fsm_state = INITIAL_STATE;
+				}
+			}
+			break;
+		case BREAKDOWN_BLOCK_0:
+			if (!DtaInNoAlig.empty()){
+				DtaInNoAlig.read(currWord);
+
+				sendWord.data = currWord.data;
+				sendWord.keep = currWord.keep;
+				sendWord.last = 0;
+				if (currWord.last){
+					if (offset_block0 == 0){				// The current word has to be written because every bit is useful
+						tmra_fsm_state = BREAKDOWN_ALIGNED;
+					}
+					else {									// This mean that the last not has all byte valid
+						write_word = false;
+						tmra_fsm_state = FIRST_MERGE;
+					}
+				} 
+				if (write_word){
+					DataOut.write(sendWord);
+				}
+
+				prevWord = currWord;
+			}
+			break;
+		case FIRST_MERGE :	// Always the input word is unaligned otherwise there is a bug
+			if (!DtaInNoAlig.empty()){
+				DtaInNoAlig.read(currWord);
+				align_words_from_memory(currWord,prevWord,offset_block0,sendWord);
+				sendWord.last = 0;
+
+				if (currWord.last){
+					if (currWord.keep.bit(offset_block1)){
+						tmra_fsm_state = EXTRA_DATA;
+					}
+					else{
+						sendWord.last = 1;
+						tmra_fsm_state = INITIAL_STATE;
+					}
+				}
+				else {
+					tmra_fsm_state = BREAKDOWN_BLOCK_1;
+				}
+				prevWord = currWord;
+				DataOut.write(sendWord);
+			}
+			break;
+		case BREAKDOWN_BLOCK_1: // Always the input word is unaligned otherwise there is a bug
+			if (!DtaInNoAlig.empty()){
+				DtaInNoAlig.read(currWord);
+				align_words_to_memory(currWord,prevWord,offset_block1,sendWord);
+
+				sendWord.last = 0;
+				if (currWord.last){
+					if (currWord.keep.bit(offset_block1)){
+						tmra_fsm_state = EXTRA_DATA;
+					}
+					else{
+						sendWord.last = 1;
+						tmra_fsm_state = INITIAL_STATE;
+					}
+				}
+
+				prevWord = currWord;
+				DataOut.write(sendWord);
+			}
+			break;
+		case EXTRA_DATA:
+			align_words_to_memory(axiWord(0,0,1),prevWord,offset_block1,sendWord);
+			sendWord.last = 1;
+
+			DataOut.write(sendWord);
+			tmra_fsm_state = INITIAL_STATE;
+			break;
+	}
+
+}
+
+
 
 void Rx_Data_to_Memory(
 					stream<axiWord>& 				DataIn,
@@ -385,14 +509,14 @@ void Rx_Data_to_Memory(
 
 	switch (data2mem_state) {
 		case WAIT_CMD :
-			if (!CmdIn.empty() && !CmdOut.full() && !doubleAccess.full()){
+			if (!CmdIn.empty()){
 
 				CmdIn.read(input_command);
 
-				buffer_overflow 	= input_command.saddr(15, 0) + input_command.bbt; // Compute the address of the last byte to write
+				buffer_overflow 	= input_command.saddr(15, 0) + input_command.bbt; 	// Compute the address of the last byte to write
 				
-				if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
-					command_i.bbt 		= 65536 - input_command.bbt;	// Compute how much bytes are needed in the first transaction
+				if (buffer_overflow.bit(16)){											// The remaining buffer space is not enough. An address overflow has to be done
+					command_i.bbt 		= 65536 - input_command.saddr(15,0);			// Compute how much bytes are needed in the first transaction
 					command_i.saddr 	= input_command.saddr;
 					byte_offset 		= command_i.bbt.range(5,0);	// Determines the position of the MSB in the last word
 					bytes_first_command = command_i.bbt;
@@ -405,22 +529,23 @@ void Rx_Data_to_Memory(
 					}
 					count_word_sent 	= 1;
 					rxWrBreakDown 		= true;
-					//data2mem_state = FWD_BREAKDOWN_0;
+					//cout << "BREAKDOWN byte_offset: " << dec << byte_offset;
+					//cout << "\tcommand address " << hex << command_i.saddr << "\tbtt " << dec << command_i.bbt << endl; 
+					data2mem_state = FWD_BREAKDOWN_0;
 				}
 				else {
 					rxWrBreakDown 		= false;
 					command_i 			= input_command;
+					data2mem_state 	= FWD_NO_BREAKDOWN;
 				}
 				
-				data2mem_state 	= FWD_NO_BREAKDOWN;
-
 				doubleAccess.write(rxWrBreakDown);					// Notify if there are two memory access
 				CmdOut.write(command_i); 					// issue the first command
 
 			}
 			break;
 		case FWD_NO_BREAKDOWN :
-			if (!DataIn.empty() /*&& !DataOut.full()*/){
+			if (!DataIn.empty()){
  				DataIn.read(currWord);
  				sendWord.data = currWord.data;
  				sendWord.keep = currWord.keep;
@@ -433,17 +558,24 @@ void Rx_Data_to_Memory(
 			}
 			break;
 		case FWD_BREAKDOWN_0 :
-			if (!DataIn.empty() /*&& !DataOut.full()*/) {
+			if (!DataIn.empty()) {
 				DataIn.read(currWord);
 				if (count_word_sent == number_of_words_to_send){
-					sendWord.data = currWord.data;
+					sendWord.data   = currWord.data;
 					sendWord.keep 	= len2Keep(byte_offset);						// Get the keep of the last transaction of the first memory offset;
 					sendWord.last 	= 1;
 					command_i.saddr(31,16) 	= input_command.saddr(31,16);
 					command_i.saddr(15,0) 		= 0;										// point to the beginning of the buffer
 					command_i.bbt 				= input_command.bbt - bytes_first_command;	// Recompute the bytes to transfer in the second memory access
 					CmdOut.write(command_i);										// Issue the second command
-					data2mem_state = FWD_BREAKDOWN_1;
+					
+					if (currWord.last){					// The second part of the memory write has less than 64 bytes
+						//cout << "CORNER CASE!!!!\tbtt: " << dec << command_i.bbt << endl;
+						data2mem_state = FWD_EXTRA;
+					}
+					else {
+						data2mem_state = FWD_BREAKDOWN_1;
+					}
 				}
 				else
 					sendWord = currWord;
@@ -454,15 +586,17 @@ void Rx_Data_to_Memory(
 			}
 			break;
 		case FWD_BREAKDOWN_1 :
-			if (!DataIn.empty() /*&& !DataOut.full()*/) {
+			if (!DataIn.empty()) {
 				DataIn.read(currWord);
-				rx_align_two_64bytes_words (currWord, prevWord, byte_offset, sendWord);
+				align_words_to_memory (currWord, prevWord, byte_offset, sendWord);
 
+				sendWord.last = 0;
 				if (currWord.last){
-					if (currWord.keep.bit(64-byte_offset) && byte_offset!=0){ // TODO try to improve dependence
+					if (currWord.keep.bit(byte_offset) && byte_offset!=0){
 						data2mem_state = FWD_EXTRA;
 					}
 					else {
+						sendWord.last = 1;
 						data2mem_state = WAIT_CMD;
 					}
 				}
@@ -471,13 +605,10 @@ void Rx_Data_to_Memory(
 			}
 			break;
 		case FWD_EXTRA :
-//			if (!DataOut.full()){
-				sendWord.data = prevWord.data;
-				sendWord.keep = prevWord.keep;
-				sendWord.last = 1;
-				DataOut.write(sendWord);
-				data2mem_state = WAIT_CMD;
-//			}
+			align_words_to_memory (axiWord(0,0,0), prevWord, byte_offset, sendWord);
+			sendWord.last = 1;
+			DataOut.write(sendWord);
+			data2mem_state = WAIT_CMD;
 			break;
 	}
 
@@ -502,102 +633,150 @@ void tx_Data_to_Memory(
 					stream<axiWord>&				data2app,
 #endif
 					stream<axiWord>&				DataOut)
+
 {
+
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 
-	axiWord 			currWord;
-	axiWord				sendWord;
-	static axiWord		prevWord;
-	mmCmd 				input_command;
-	ap_uint<32>			saddr;
+	enum data2mem_fsm {WAIT_CMD, FWD_NO_BREAKDOWN, FWD_BREAKDOWN_0, FWD_BREAKDOWN_1, FWD_EXTRA};
+	static data2mem_fsm data2mem_state = WAIT_CMD;
+
+	static ap_uint<6>		byte_offset;
+	static ap_uint<10>		number_of_words_to_send;
+	static ap_uint<10>		count_word_sent=1;
+	static mmCmd 			input_command;
+	static ap_uint<23> 		bytes_first_command;
+	static mmCmd 			command_i;
+
+	bool 				rxWrBreakDown;
 	ap_uint<17> 		buffer_overflow;
-	mmCmd 				first_command;
-	mmCmd 				second_command;
 
-	static ap_uint<6>	byte_offset;
-	static ap_uint<10>	number_of_words_to_send;
-	static ap_uint<64> 	keep_first_trans;
-	static ap_uint<10>	count_word_sent=1;
+	axiWord 			currWord;
+	axiWord 			sendWord;
+	static axiWord 			prevWord;
+	static int					transaction = 0; // deleteme
 
-	static bool rxWrBreakDown 	= false;
-	static bool reading_data 	= false;
-	static bool second_write 	= false;
-	static bool extra_word	 	= false;
+	switch (data2mem_state) {
+		case WAIT_CMD :
+			if (!CmdIn.empty()){
 
-	if (!CmdIn.empty() && !reading_data && !extra_word){
-		CmdIn.read(input_command);
+				CmdIn.read(input_command);
 
-		saddr 				= input_command.saddr;
-		buffer_overflow 	= input_command.saddr.range(15, 0) + input_command.bbt; // Compute the address of the last byte to write
-		reading_data 		= true;
-		if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
-			// TODO: I think is enough with putting a last and the correct keep to determine the end of the first transaction. TEST IT!
-			first_command.bbt 	= 65536 - input_command.bbt;	// Compute how much bytes are needed in the first transaction
-			first_command.saddr = input_command.saddr;
-			rxWrBreakDown = true;
-			byte_offset 		= first_command.bbt.range(5,0);	// Determines the position of the MSB in the last word
+				buffer_overflow 	= input_command.saddr(15, 0) + input_command.bbt; // Compute the address of the last byte to write
+				
+				if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
+					command_i.bbt 		= 65536 - input_command.saddr(15,0);	// Compute how much bytes are needed in the first transaction
+					//cout << "COMMAND BREAKDOWN input_command.bbt " << dec << input_command.bbt << "\tcommand_i.bbt " << command_i.bbt << endl;
+					command_i.saddr 	= input_command.saddr;
+					byte_offset 		= command_i.bbt.range(5,0);	// Determines the position of the MSB in the last word
+					bytes_first_command = command_i.bbt;
 
-			if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
-				number_of_words_to_send = first_command.bbt.range(15,6) + 1;
+					if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
+						number_of_words_to_send = command_i.bbt.range(15,6) + 1;
+					}
+					else {
+						number_of_words_to_send = command_i.bbt.range(15,6);
+					}
+					count_word_sent 	= 1;
+					rxWrBreakDown 		= true;
+					data2mem_state = FWD_BREAKDOWN_0;
+					transaction = 0; // deleteme
+				}
+				else {
+					rxWrBreakDown 		= false;
+					command_i 			= input_command;
+					data2mem_state 	= FWD_NO_BREAKDOWN;
+				}
+				
+				CmdOut.write(command_i); 					// issue the first command
+
 			}
-			else {
-				number_of_words_to_send = first_command.bbt.range(15,6);
-			}
-			keep_first_trans 	= len2Keep(byte_offset);			// Get the keep of the last transaction of the first memory offset
-			count_word_sent 	= 1;
-		}
-		else{
-			first_command = input_command;
-		}
+			break;
+		case FWD_NO_BREAKDOWN :
+			if (!DataIn.empty()){
+ 				DataIn.read(currWord);
+ 				sendWord.data = currWord.data;
+ 				sendWord.keep = currWord.keep;
+ 				sendWord.last = currWord.last;
 
-		CmdOut.write(first_command); 				// issue the first command
-	}
-	else if(!DataIn.empty() && reading_data && !second_write && !extra_word){
-		DataIn.read(currWord);
+				if (currWord.last){
+					data2mem_state = WAIT_CMD;
+				}
 #if (TCP_NODELAY)
-			data2app.write(currWord);
-#endif
-		if (rxWrBreakDown){
-			if (count_word_sent == number_of_words_to_send){
-				currWord.keep 	= keep_first_trans;
-				currWord.last 	= 1;
-				second_command.saddr(31,16) 	= input_command.saddr(31,16);
-				second_command.saddr(15,0) 		= 0;										// point to the beginning of the buffer
-				second_command.bbt 				= input_command.bbt - first_command.bbt;	// Recompute the bytes to transfer in the second memory access
-				CmdOut.write(second_command);										// Issue the second command
-				second_write 	= true;
+				data2app.write(currWord);
+#endif 				
+				DataOut.write(sendWord);
 			}
-			count_word_sent++;
-			prevWord = currWord;
-			DataOut.write(currWord);
-		}
-		else{												// There is not double memory access
-			if (currWord.last){
-				reading_data = false;
-			}
-			DataOut.write(currWord);
-		}
-	}
-	else if(!DataIn.empty() && reading_data && second_write && !extra_word){
-		DataIn.read(currWord);
-#if (TCP_NODELAY)
-			data2app.write(currWord);
-#endif		
-		rx_align_two_64bytes_words (currWord, prevWord, byte_offset, sendWord);
+			break;
+		case FWD_BREAKDOWN_0 :
+			if (!DataIn.empty()) {
+				DataIn.read(currWord);
+				sendWord.last 	= 0;
+				if (count_word_sent == number_of_words_to_send){
+					sendWord.data = currWord.data;
+					sendWord.keep 	= len2Keep(byte_offset);								// Get the keep of the last transaction of the first memory offset;
+					sendWord.last 	= 1;
+					command_i.saddr(31,16) 	= input_command.saddr(31,16);
+					command_i.saddr(15,0) 		= 0;										// point to the beginning of the buffer
+					command_i.bbt 				= input_command.bbt - bytes_first_command;	// Recompute the bytes to transfer in the second memory access
+					CmdOut.write(command_i);												// Issue the second command
+					if (currWord.last) {													// The second part of the memory write has less than 64 bytes
+						data2mem_state = FWD_EXTRA;
+					} 
+					else {
+						data2mem_state = FWD_BREAKDOWN_1;
+					}
+				}
+				else
+					sendWord = currWord;
 
-		if (currWord.last){
-			if (currWord.keep.bit(64-byte_offset) && byte_offset!=0){ // TODO try to improve dependence
-				extra_word = true;
+				//cout << "TX APP to mem FWD_BREAKDOWN_0[ " << dec << setw(2)  << transaction++ <<  " ] DATA: " << setw(130) << hex <<  sendWord.data;
+				//cout << "\tkeep " << setw(30) << sendWord.keep  << "\tlast " << sendWord.last << endl;
+
+				count_word_sent++;
+				prevWord = currWord;
+#if (TCP_NODELAY)
+				data2app.write(currWord);
+#endif 				
+				DataOut.write(sendWord);
 			}
-			reading_data = false;
-			second_write = false;
-		}
-		DataOut.write(sendWord);
-	}
-	else if (extra_word) {
-		extra_word = false;
-		DataOut.write(prevWord);
+			break;
+		case FWD_BREAKDOWN_1 :
+			if (!DataIn.empty()) {
+				DataIn.read(currWord);
+				align_words_to_memory (currWord, prevWord, byte_offset, sendWord);
+
+				sendWord.last = 0;
+				if (currWord.last){
+					if (currWord.keep.bit(byte_offset) && byte_offset!=0){
+						data2mem_state = FWD_EXTRA;
+						//cout << "JUMPING TO EXTRA " << endl;
+					}
+					else {
+						data2mem_state = WAIT_CMD;
+						sendWord.last = 1;
+					}
+				}
+
+				//cout << "TX APP to mem FWD_BREAKDOWN_1[ " << dec << setw(2)  << transaction++ <<  " ] DATA: " << setw(130) << hex <<  sendWord.data;
+				//cout << "\tkeep " << setw(30) << sendWord.keep  << "\tlast " << sendWord.last << endl;
+				prevWord = currWord;
+
+#if (TCP_NODELAY)
+				data2app.write(currWord);
+#endif 				
+				DataOut.write(sendWord);
+			}
+			break;
+		case FWD_EXTRA :
+			align_words_to_memory (axiWord(0,0,0), prevWord, byte_offset, sendWord);
+			sendWord.last = 1;
+			//cout << "TX APP to mem FWD_EXTRA[ " << dec << setw(2)  << transaction++ <<  " ] DATA: " << setw(130) << hex <<  sendWord.data;
+			//cout << "\tkeep " << setw(30) << sendWord.keep  << "\tlast " << sendWord.last << endl;
+			DataOut.write(sendWord);
+			data2mem_state = WAIT_CMD;
+			break;
 	}
 
 }

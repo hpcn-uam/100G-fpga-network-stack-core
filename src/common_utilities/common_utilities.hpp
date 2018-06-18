@@ -9,14 +9,14 @@ ap_uint<7> keep2len(ap_uint<64> keepValue);
 ap_uint<64> len2Keep(ap_uint<6> length);
 
 
-void tx_align_two_64bytes_words (
+void align_words_from_memory (
 			axiWord 	currWord,
 			axiWord 	prevWord,
 			ap_uint<6>	byte_offset,
 			axiWord& 	SendWord
 	);
 
-void rx_align_two_64bytes_words (
+void align_words_to_memory (
 			axiWord 	currWord,
 			axiWord 	prevWord,
 	

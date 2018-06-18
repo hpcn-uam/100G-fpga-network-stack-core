@@ -589,7 +589,7 @@ struct appTxMeta
 		:sessionID(id), length(len) {}
 };
 
-enum txApp_error_msg {NO_ERROR, ERROR_NOCONNCECTION, ERROR_NOSPACE, ERROR_OVERFLOW_MSS};
+enum txApp_error_msg {NO_ERROR, ERROR_NOCONNECTION, ERROR_NOSPACE, ERROR_OVERFLOW_MSS};
 
 struct appTxRsp
 {
