@@ -41,7 +41,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 						stream<appTxRsp>&				appTxDataRsp,
 						stream<ap_uint<16> >&			txApp2stateTable_req,
 						stream<txAppTxSarQuery>&		txApp2txSar_upd_req,
-						stream<pkgPushMeta>&			tasi_writeToBufFifo,
+						stream<mmCmd>&					txBufferWriteCmd,
 						stream<event>&					txAppStream2eventEng_setEvent)
 {
 #pragma HLS pipeline II=1
@@ -54,7 +54,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 	ap_uint<16> 			maxWriteLength;
 	ap_uint<16> 			usedLength;
 	ap_uint<16> 			usableWindow;
-
+	ap_uint<32> 			pkgAddr;
 	sessionState state;
 
 	// FSM requests metadata, decides if packet goes to buffer or not
@@ -83,7 +83,6 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 #endif
 				//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
 				if (state != ESTABLISHED) {
-					tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail
 				}
 #if (!TCP_NODELAY)
@@ -96,7 +95,10 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 				}	
 				else {
 					// TODO there seems some redundancy
-					tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
+					pkgAddr(31, 30) = 0x01;
+					pkgAddr(29, 16) = tasi_writeMeta.sessionID(13, 0);
+					pkgAddr(15, 0)  = writeSar.mempt;
+					txBufferWriteCmd.write(mmCmd( pkgAddr, tasi_writeMeta.length));
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, NO_ERROR));
 					txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
 					txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, writeSar.mempt+tasi_writeMeta.length));
@@ -108,55 +110,6 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 }
 
 
-/** @ingroup tx_app_stream_if
- *  In case the @tasi_metaLoader decides to write the packet to the memory,
- *  it forward the data and it generates a command to the memory the command may produce
- *  buffer overflow, but the next module has to deal with it. Otherwise the data is discarded
- *  and no command is generated.
- */
-void tasi_pkg_dropper (											// FIXME Unnecessary the application is intelligent enough to no send data
-		stream<pkgPushMeta>&			tasi_writeToBufFifo,
-		stream<axiWord>& 				tasi_dataIn,
-		stream<axiWord>& 				tasi_dataOut,
-		stream<mmCmd>&					txBufferWriteCmd){
-
-#pragma HLS pipeline II=1
-#pragma HLS INLINE off
-
-	static pkgPushMeta 	tasi_pushMeta;
-	static bool 		reading_data = false;
-	ap_uint<32> 		pkgAddr;
-	axiWord				currWord;
-
-	// TODO: The app gets a notification if can write or not, probably this modules produces a stall 
-
-	if (!tasi_writeToBufFifo.empty() && !reading_data){
-		tasi_writeToBufFifo.read(tasi_pushMeta);
-		//std::cout << "PACKAGE DROPPER waiting for data DROP " << (tasi_pushMeta.drop ? "YES": " NO")<< std::endl;
-
-		if (!tasi_pushMeta.drop){
-			pkgAddr(31, 30) = 0x01;
-			pkgAddr(29, 16) = tasi_pushMeta.sessionID(13, 0);
-			pkgAddr(15, 0)  = tasi_pushMeta.address;
-
-			txBufferWriteCmd.write(mmCmd(pkgAddr, tasi_pushMeta.length));
-		}
-
-		reading_data = true;
-
-	}
-	else if(!tasi_dataIn.empty() && reading_data){
-		tasi_dataIn.read(currWord);
-		if (!tasi_pushMeta.drop){
-			tasi_dataOut.write(currWord);
-		}
-
-		if (currWord.last){
-			reading_data = false;
-		}
-	}
-
-}
 
 /** @ingroup tx_app_stream_if
  *  This application interface is used to transmit data streams of established connections.
@@ -192,15 +145,9 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 {
 #pragma HLS INLINE
 
-	static stream<pkgPushMeta> tasi_writeToBufFifo("tasi_writeToBufFifo");
-	#pragma HLS stream variable=tasi_writeToBufFifo depth=32
-	#pragma HLS DATA_PACK variable=tasi_writeToBufFifo
 
-	static stream<axiWord> tasi_app_data_accepted("tasi_app_data_accepted");
-	#pragma HLS DATA_PACK variable=tasi_app_data_accepted
-
-	static stream<mmCmd> tasi_command_accepted("tasi_command_accepted");
-	#pragma HLS DATA_PACK variable=tasi_command_accepted
+	static stream<mmCmd> tasiMetaLoaderCmd("tasiMetaLoaderCmd");
+	#pragma HLS DATA_PACK variable=tasiMetaLoaderCmd
 
 	tasi_metaLoader(	
 			appTxDataReqMetaData,
@@ -209,19 +156,12 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 			appTxDataRsp,
 			txApp2stateTable_req,
 			txApp2txSar_upd_req,
-			tasi_writeToBufFifo,
+			tasiMetaLoaderCmd,
 			txAppStream2eventEng_setEvent);
 
-	tasi_pkg_dropper (
-			tasi_writeToBufFifo,
-			appTxDataReq,
-			tasi_app_data_accepted,
-			tasi_command_accepted);
-
-
 	tx_Data_to_Memory(
-			tasi_app_data_accepted,
-			tasi_command_accepted,		// Command with potential overflow
+			appTxDataReq,
+			tasiMetaLoaderCmd,			// Command with potential overflow
 			txBufferWriteCmd,			// Command without overflow
 #if (TCP_NODELAY)					
 			txApp2txEng_data_stream,
