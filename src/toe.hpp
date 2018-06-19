@@ -50,14 +50,13 @@ static const uint16_t MAX_SESSIONS = 10000;
 #define TCP_NODELAY 1
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
-#define RX_DDR_BYPASS 0
+#define RX_DDR_BYPASS 1
 
 // FAST_RETRANSMIT flag, to enable TCP fast recovery/retransmit mechanism
 #define FAST_RETRANSMIT 0
 
 #define CLOCK_PERIOD 0.003103
 
-#define noOfTxSessions 1 // Number of Tx Sessions to open for testing
 extern uint32_t packetCounter;
 extern uint32_t cycleCounter;
 extern unsigned int	simCycleCounter;
@@ -629,14 +628,14 @@ void toe(	// Data & Memory Interface
 			stream<mmStatus>&						rxBufferWriteStatus,
 			stream<mmCmd>&							rxBufferWriteCmd,
 			stream<mmCmd>&							rxBufferReadCmd,
+			stream<axiWord>&						rxBufferReadData,				
+			stream<axiWord>&						rxBufferWriteData,				
 #endif
 			stream<mmStatus>&						txBufferWriteStatus,
-			stream<axiWord>&						rxBufferReadData,				
 			stream<axiWord>&						txBufferReadData,				
 			stream<axiWord>&						ipTxData,						
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
-			stream<axiWord>&						rxBufferWriteData,				
 			stream<axiWord>&						txBufferWriteData,				
 			// SmartCam Interface
 			stream<rtlSessionLookupReply>&			sessionLookup_rsp,

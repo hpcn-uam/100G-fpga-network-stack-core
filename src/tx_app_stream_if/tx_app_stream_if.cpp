@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
 #include "tx_app_stream_if.hpp"
@@ -58,54 +58,52 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 	sessionState state;
 
 	// FSM requests metadata, decides if packet goes to buffer or not
-	switch(tai_state)
-	{
-	case READ_REQUEST:
-		if (!appTxDataReqMetaData.empty()) {
-			appTxDataReqMetaData.read(tasi_writeMeta); 								// Read sessionID
-			txApp2stateTable_req.write(tasi_writeMeta.sessionID); 					// Get session state
-			txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID));	// Get Ack pointer
-			tai_state = READ_META;
-		}
-		break;
-	case READ_META:
-		if (!txSar2txApp_upd_rsp.empty() && !stateTable2txApp_rsp.empty()) {
-			stateTable2txApp_rsp.read(state);
-			txSar2txApp_upd_rsp.read(writeSar);
-			maxWriteLength = (writeSar.ackd - writeSar.mempt) - 1;
+	switch(tai_state) {
+		case READ_REQUEST:
+			if (!appTxDataReqMetaData.empty()) {
+				appTxDataReqMetaData.read(tasi_writeMeta); 								// Read sessionID
+				txApp2stateTable_req.write(tasi_writeMeta.sessionID); 					// Get session state
+				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID));	// Get Ack pointer
+				tai_state = READ_META;
+			}
+			break;
+		case READ_META:
+			if (!txSar2txApp_upd_rsp.empty() && !stateTable2txApp_rsp.empty()) {
+				stateTable2txApp_rsp.read(state);
+				txSar2txApp_upd_rsp.read(writeSar);
+				maxWriteLength = (writeSar.ackd - writeSar.mempt) - 1;
 #if (TCP_NODELAY)
-			usedLength 		= ((ap_uint<16>) writeSar.mempt - writeSar.ackd);
-			if (writeSar.min_window > usedLength) {
-				usableWindow = writeSar.min_window - usedLength;
-			}
-			else {
-				usableWindow 	= 0;
-			}
+				usedLength 		= ((ap_uint<16>) writeSar.mempt - writeSar.ackd);
+				if (writeSar.min_window > usedLength) {
+					usableWindow = writeSar.min_window - usedLength;
+				}
+				else {
+					usableWindow 	= 0;
+				}
 #endif
-			//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
-			if (state != ESTABLISHED) {
-				tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail
-			}
+				//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
+				if (state != ESTABLISHED) {
+					tasi_writeToBufFifo.write(pkgPushMeta(true));	// drop data
+					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail
+				}
 #if (!TCP_NODELAY)
-			else if(tasi_writeMeta.length > maxWriteLength) {
+				else if(tasi_writeMeta.length > maxWriteLength) {
 #else
-			else if(tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length) {
+				else if(tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length) {
 #endif
-				//tasi_writeToBufFifo.write(pkgPushMeta(true));
-				// Notify app about fail
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOSPACE));
-			}	
-			else {
-				// TODO there seems some redundancy
-				tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
-				appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, NO_ERROR));
-				txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
-				txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, writeSar.mempt+tasi_writeMeta.length));
+					// Notify app about fail
+					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOSPACE));
+				}	
+				else {
+					// TODO there seems some redundancy
+					tasi_writeToBufFifo.write(pkgPushMeta(tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
+					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, NO_ERROR));
+					txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));
+					txApp2txSar_upd_req.write(txAppTxSarQuery(tasi_writeMeta.sessionID, writeSar.mempt+tasi_writeMeta.length));
+				}
+				tai_state = READ_REQUEST;
 			}
-			tai_state = READ_REQUEST;
-		}
-		break;
+			break;
 	} //switch
 }
 
@@ -116,7 +114,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
  *  buffer overflow, but the next module has to deal with it. Otherwise the data is discarded
  *  and no command is generated.
  */
-void tasi_pkg_dropper (
+void tasi_pkg_dropper (											// FIXME Unnecessary the application is intelligent enough to no send data
 		stream<pkgPushMeta>&			tasi_writeToBufFifo,
 		stream<axiWord>& 				tasi_dataIn,
 		stream<axiWord>& 				tasi_dataOut,

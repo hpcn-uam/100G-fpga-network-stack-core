@@ -166,21 +166,30 @@ void rxAppMemDataRead(	stream<ap_uint<1> >&	rxBufferReadCmd,
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
 
-	static ap_uint<1> ramdr_fsmState = 0;
-	static bool 	  reading_data;
+	enum ramdr_states {READ_CMD , FWD_DATA};
+	static ramdr_states ramdr_fsm_state = READ_CMD;
+
 	axiWord currWord;
 
-	if (!rxBufferReadCmd.empty() && !reading_data){			// FIXME this is completely useless. Why wait to read?
-		rxBufferReadCmd.read();
-		reading_data = true;
+	switch (ramdr_fsm_state){					// FIXME Unnecessary 
+		case READ_CMD:
+			if (!rxBufferReadCmd.empty()) {
+				rxBufferReadCmd.read();
+				ramdr_fsm_state = FWD_DATA;
+			}
+			break;
+		case FWD_DATA:
+			if (!rxBufferReadData.empty()){
+				rxBufferReadData.read(currWord);
+
+				if (currWord.last){
+					ramdr_fsm_state = READ_CMD;
+				}
+				rxDataRsp.write(currWord);
+			}
+			break;	
 	}
-	else if (!rxBufferReadData.empty() && reading_data) {
-		rxBufferReadData.read(currWord);
-		rxDataRsp.write(currWord);
-		if (currWord.last){
-			reading_data = false;
-		}
-	}
+
 }
 #endif
 
@@ -195,8 +204,8 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 #if (!RX_DDR_BYPASS)
 					stream<mmCmd>&					rxBufferReadCmd,
 #endif
-					stream<appNotification>&		appNotification,
 					stream<axiWord>& 				rxBufferReadData,
+					stream<appNotification>&		appNotification,
 					stream<axiWord>& 				rxDataRsp)
 {
 	#pragma HLS INLINE
@@ -296,14 +305,14 @@ void toe(	// Data & Memory Interface
 			stream<mmStatus>&						rxBufferWriteStatus,
 			stream<mmCmd>&							rxBufferWriteCmd,
 			stream<mmCmd>&							rxBufferReadCmd,
+			stream<axiWord>&						rxBufferReadData,
+			stream<axiWord>&						rxBufferWriteData,
 #endif
 			stream<mmStatus>&						txBufferWriteStatus,
-			stream<axiWord>&						rxBufferReadData,
 			stream<axiWord>&						txBufferReadData,
 			stream<axiWord>&						ipTxData,		
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
-			stream<axiWord>&						rxBufferWriteData,
 			stream<axiWord>&						txBufferWriteData,
 			// SmartCam Interface
 			stream<rtlSessionLookupReply>&			sessionLookup_rsp,
@@ -352,14 +361,14 @@ void toe(	// Data & Memory Interface
 #pragma HLS INTERFACE axis register both port=rxEng_pseudo_packet_res_checksum name=s_axis_rx_pseudo_packet_checksum
 #pragma HLS INTERFACE axis register both port=tx_pseudo_packet_res_checksum name=s_axis_tx_pseudo_packet_checksum
 	// MEMORY
-#pragma HLS INTERFACE axis register both port=rxBufferWriteData name=m_axis_rx_S2MM
-#pragma HLS INTERFACE axis register both port=rxBufferReadData name=s_axis_rx_MM2S
 #pragma HLS INTERFACE axis register both port=txBufferReadData name=s_axis_tx_MM2S
 #pragma HLS INTERFACE axis register both port=txBufferWriteData name=m_axis_tx_S2MM
 #pragma HLS INTERFACE axis register both port=txBufferWriteStatus name=s_axis_txwrite_sts
 #pragma HLS INTERFACE axis register both port=txBufferWriteCmd name=m_axis_txwrite_cmd
 #pragma HLS INTERFACE axis register both port=txBufferReadCmd name=m_axis_txread_cmd
 #if (!RX_DDR_BYPASS)
+#pragma HLS INTERFACE axis register both port=rxBufferReadData name=s_axis_rx_MM2S
+#pragma HLS INTERFACE axis register both port=rxBufferWriteData name=m_axis_rx_S2MM
 #pragma HLS INTERFACE axis register both port=rxBufferWriteStatus name=s_axis_rxwrite_sts
 #pragma HLS INTERFACE axis register both port=rxBufferWriteCmd name=m_axis_rxwrite_cmd
 #pragma HLS INTERFACE axis register both port=rxBufferReadCmd name=m_axis_rxread_cmd	
@@ -593,6 +602,9 @@ void toe(	// Data & Memory Interface
 
 	//#pragma HLS STREAM variable=txApp2portTable_port_req			depth=4
 
+	static stream<axiWord>                 rxData2AppNoDDR("rxData2AppNoDDR");
+   	#pragma HLS STREAM variable=rxData2AppNoDDR   depth=64
+
    	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
    	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=512
 
@@ -695,8 +707,10 @@ void toe(	// Data & Memory Interface
 #if !(RX_DDR_BYPASS)
 					rxBufferWriteStatus,
 					rxBufferWriteCmd,
-#endif
 					rxBufferWriteData,
+#else					
+					rxData2AppNoDDR,
+#endif
 					rxEng2sLookup_req,
 					rxEng2stateTable_upd_req,
 					rxEng2portTable_check_req,
@@ -742,9 +756,11 @@ void toe(	// Data & Memory Interface
 			 	 	rxApp2rxSar_upd_req,
 #if !(RX_DDR_BYPASS)
 			 	 	rxBufferReadCmd,
+			 	 	rxBufferReadData,
+#else
+			 	 	rxData2AppNoDDR,
 #endif
 			 	 	rxAppNotification,
-			 	 	rxBufferReadData,
 					rxDataRsp);
 
 	tx_app_interface(

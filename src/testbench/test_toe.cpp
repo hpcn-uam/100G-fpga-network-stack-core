@@ -749,14 +749,14 @@ int main(int argc, char **argv) {
 			rxBufferWriteStatus, 
 			rxBufferWriteCmd,
 			rxBufferReadCmd, 
+			rxBufferReadData, 
+			rxBufferWriteData, 
 #endif				
 			txBufferWriteStatus, 
-			rxBufferReadData, 
 			txBufferReadData, 
 			ipTxData, 
 			txBufferWriteCmd, 
 			txBufferReadCmd, 
-			rxBufferWriteData, 
 			txBufferWriteData, 
 
 			sessionLookup_rsp, 
