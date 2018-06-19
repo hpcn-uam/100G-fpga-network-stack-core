@@ -205,8 +205,8 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					stream<mmCmd>&					rxBufferReadCmd,
 #endif
 					stream<axiWord>& 				rxBufferReadData,
-					stream<appNotification>&		appNotification,
-					stream<axiWord>& 				rxDataRsp)
+					stream<axiWord>& 				rxDataRsp,
+					stream<appNotification>&		appNotification)
 {
 	#pragma HLS INLINE
 	#pragma HLS PIPELINE II=1
@@ -224,8 +224,8 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					appRxDataReq, 
 					rxSar2rxApp_upd_rsp,
 					appRxDataRspIDsession,
-					rxApp2rxSar_upd_req,
-					rxAppStreamIf2memAccessBreakdown);
+					rxAppStreamIf2memAccessBreakdown,
+					rxApp2rxSar_upd_req);
 
 	app_ReadMemAccessBreakdown(
 					rxAppStreamIf2memAccessBreakdown,
@@ -245,8 +245,8 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					appRxDataReq,
 					rxSar2rxApp_upd_rsp,
 					appRxDataRspIDsession,
-					rxApp2rxSar_upd_req,
-					rxBufferReadCmd);
+					rxBufferReadCmd,
+					rxApp2rxSar_upd_req);
 
 	rxAppMemDataRead(
 					rxBufferReadCmd,
@@ -463,7 +463,6 @@ void toe(	// Data & Memory Interface
 
 	static stream<ap_uint<16> >			txApp2stateTable_req("txApp2stateTable_req");
 	#pragma HLS STREAM variable=txApp2stateTable_req				depth=2
-	//#pragma HLS DATA_PACK variable=txApp2stateTable_req
 
 	static stream<sessionState>			stateTable2txApp_rsp("stateTable2txApp_rsp");
 	#pragma HLS STREAM variable=stateTable2txApp_rsp				depth=2
@@ -504,8 +503,6 @@ void toe(	// Data & Memory Interface
 	#pragma HLS STREAM variable=txSar2txEng_upd_rsp		depth=2
 	#pragma HLS DATA_PACK variable=txSar2txEng_upd_rsp
 
-	//static stream<txAppTxSarQuery>		txApp2txSar_upd_req("txApp2txSar_upd_req");
-	//static stream<txAppTxSarReply>		txSar2txApp_upd_rsp("txSar2txApp_upd_rsp");
 	static stream<rxTxSarQuery>			rxEng2txSar_upd_req("rxEng2txSar_upd_req");
 	#pragma HLS STREAM variable=rxEng2txSar_upd_req		depth=2
 	#pragma HLS DATA_PACK variable=rxEng2txSar_upd_req
@@ -521,10 +518,6 @@ void toe(	// Data & Memory Interface
 	static stream<txAppTxSarPush>		txApp2txSar_push("txApp2txSar_push");
 	#pragma HLS STREAM variable=txApp2txSar_push		depth=2
 	#pragma HLS DATA_PACK variable=txApp2txSar_push
-	//#pragma HLS STREAM variable=txApp2txSar_upd_req		depth=2
-	//#pragma HLS STREAM variable=txSar2txApp_upd_rsp		depth=2
-	//#pragma HLS DATA_PACK variable=txApp2txSar_upd_req
-	//#pragma HLS DATA_PACK variable=txSar2txApp_upd_rsp
 
 	// Retransmit Timer
 	static stream<rxRetransmitTimerUpdate>		rxEng2timer_clearRetransmitTimer("rxEng2timer_clearRetransmitTimer");
@@ -555,10 +548,8 @@ void toe(	// Data & Memory Interface
 	#pragma HLS STREAM variable=txApp2eventEng_setEvent			depth=4
 	#pragma HLS DATA_PACK variable=txApp2eventEng_setEvent
 
-	//static stream<event>					appStreamEventFifo("appStreamEventFifo");
-	//static stream<event>					retransmitEventFifo("retransmitEventFifo");
 	static stream<event>					timer2eventEng_setEvent("timer2eventEng_setEvent");
-	#pragma HLS STREAM variable=timer2eventEng_setEvent			depth=4 //TODO maybe reduce to 2, there should be no evil cycle
+	#pragma HLS STREAM variable=timer2eventEng_setEvent			depth=4
 	#pragma HLS DATA_PACK variable=timer2eventEng_setEvent
 
 	static stream<extendedEvent>			eventEng2ackDelay_event("eventEng2ackDelay_event");
@@ -593,20 +584,11 @@ void toe(	// Data & Memory Interface
 	static stream<bool>						portTable2rxEng_check_rsp("portTable2rxEng_check_rsp");
 	#pragma HLS STREAM variable=portTable2rxEng_check_rsp			depth=4
 
-	//static stream<ap_uint<1> >				txApp2portTable_port_req("txApp2portTable_port_req");
 	static stream<ap_uint<16> >				portTable2txApp_free_port("portTable2txApp_free_port");
 	#pragma HLS STREAM variable=portTable2txApp_free_port			depth=4
 
 	static stream<ap_uint<16> >				sLookup2portTable_releasePort("sLookup2portTable_releasePort");
 	#pragma HLS STREAM variable=sLookup2portTable_releasePort		depth=4
-
-	//#pragma HLS STREAM variable=txApp2portTable_port_req			depth=4
-
-	static stream<axiWord>                 rxData2AppNoDDR("rxData2AppNoDDR");
-   	#pragma HLS STREAM variable=rxData2AppNoDDR   depth=64
-
-   	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
-   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=512
 
 	static stream<ap_uint<1> > ackDelayFifoReadCount("ackDelayFifoReadCount");
 	#pragma HLS STREAM variable=ackDelayFifoReadCount		depth=2
@@ -616,6 +598,15 @@ void toe(	// Data & Memory Interface
 
 	static stream<ap_uint<1> > txEngFifoReadCount("txEngFifoReadCount");
 	#pragma HLS STREAM variable=txEngFifoReadCount depth=2
+
+#if (RX_DDR_BYPASS)
+	static stream<axiWord>                 rxData2AppNoDDR("rxData2AppNoDDR");
+   	#pragma HLS STREAM variable=rxData2AppNoDDR   depth=128
+#endif
+#if (TCP_NODELAY)	
+   	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
+   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=128
+#endif
 	
 	/*
 	 * Data Structures
@@ -655,17 +646,14 @@ void toe(	// Data & Memory Interface
 
 	// TX Sar Table
 	tx_sar_table(	rxEng2txSar_upd_req,
-					//txApp2txSar_upd_req,
 					txEng2txSar_upd_req,
 					txApp2txSar_push,
 					txSar2rxEng_upd_rsp,
-					//txSar2txApp_upd_rsp,
 					txSar2txEng_upd_rsp,
 					txSar2txApp_ack_push);
 	// Port Table
 	port_table(		rxEng2portTable_check_req,
 					listenPortRequest,
-					//txApp2portTable_port_req,
 					sLookup2portTable_releasePort,
 					portTable2rxEng_check_rsp,
 					listenPortResponse,
@@ -760,14 +748,13 @@ void toe(	// Data & Memory Interface
 #else
 			 	 	rxData2AppNoDDR,
 #endif
-			 	 	rxAppNotification,
-					rxDataRsp);
+					rxDataRsp,
+			 	 	rxAppNotification);
 
 	tx_app_interface(
 					txDataReqMeta,
 					txApp_Data2send,
 					stateTable2txApp_rsp,
-					//txSar2txApp_upd_rsp,
 					txSar2txApp_ack_push,
 					txBufferWriteStatus,
 
@@ -780,7 +767,6 @@ void toe(	// Data & Memory Interface
 					
 					txAppDataRsp,
 					txApp2stateTable_req,
-					//txApp2txSar_upd_req,
 					txBufferWriteCmd,
 					txBufferWriteData,
 #if (TCP_NODELAY)
@@ -789,7 +775,6 @@ void toe(	// Data & Memory Interface
 					txApp2txSar_push,
 					openConnRsp,
 					txApp2sLookup_req,
-					//txApp2portTable_port_req,
 					txApp2stateTable_upd_req,
 					txApp2eventEng_setEvent,
 					timer2txApp_notification,

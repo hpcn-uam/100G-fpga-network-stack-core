@@ -95,7 +95,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 				}	
 				else {
 					// TODO there seems some redundancy
-					pkgAddr(31, 30) = 0x01;
+					pkgAddr(31, 30) = (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
 					pkgAddr(29, 16) = tasi_writeMeta.sessionID(13, 0);
 					pkgAddr(15, 0)  = writeSar.mempt;
 					txBufferWriteCmd.write(mmCmd( pkgAddr, tasi_writeMeta.length));

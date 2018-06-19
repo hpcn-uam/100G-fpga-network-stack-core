@@ -77,45 +77,38 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 	txRetransmitTimerSet	set;
 	ap_uint<16>				currID;
 
-	if (rt_waitForWrite && rt_update.sessionID != rt_prevPosition) //TODO maybe prevprev too
-	{
-		if (!rt_update.stop)
-		{
+	if (rt_waitForWrite && (rt_update.sessionID != rt_prevPosition)) { //TODO maybe prevprev too
+	
+		if (!rt_update.stop) {
 			retransmitTimerTable[rt_update.sessionID].time = TIME_1s;
 		}
-		else
-		{
+		else {
 			retransmitTimerTable[rt_update.sessionID].time = 0;
 			retransmitTimerTable[rt_update.sessionID].active = false;
 		}
 		retransmitTimerTable[rt_update.sessionID].retries = 0;
 		rt_waitForWrite = false;
 	}
-	else if (!rxEng2timer_clearRetransmitTimer.empty() && !rt_waitForWrite) //FIXME rx path has priority over tx path
-	{
+	else if (!rxEng2timer_clearRetransmitTimer.empty() && !rt_waitForWrite) { //FIXME rx path has priority over tx path
+	
 		rxEng2timer_clearRetransmitTimer.read(rt_update);
 		rt_waitForWrite = true;
 	}
-	else
-	{
+	else {
 		currID = rt_position;
 
-		if (!txEng2timer_setRetransmitTimer.empty())
-		{
+		if (!txEng2timer_setRetransmitTimer.empty()) {
 			txEng2timer_setRetransmitTimer.read(set);
 			currID = set.sessionID;
 			operationSwitch = 1;
-			if (set.sessionID-3 < rt_position && rt_position <= set.sessionID)
-			{
+			if (set.sessionID-3 < rt_position && rt_position <= set.sessionID) {
 				rt_position += 5;
 			}
 		}
-		else
-		{
+		else {
 			// increment position
 			rt_position++;
-			if (rt_position >= MAX_SESSIONS)
-			{
+			if (rt_position >= MAX_SESSIONS) {
 				rt_position = 0;
 			}
 			operationSwitch = 0;
@@ -123,12 +116,10 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 
 		// Get entry from table
 		currEntry = retransmitTimerTable[currID];
-		switch (operationSwitch)
-		{
+		switch (operationSwitch) {
 		case 1:
 			currEntry.type = set.type;
-			if (!currEntry.active)
-			{
+			if (!currEntry.active)	{
 				switch(currEntry.retries)
 				{
 				case 0:
@@ -151,33 +142,26 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 			currEntry.active = true;
 			break;
 		case 0:
-			if (currEntry.active)
-			{
-				if (currEntry.time > 0)
-				{
+			if (currEntry.active) {
+				if (currEntry.time > 0) {
 					currEntry.time--;
 				}
 				// We need to check if we can generate another event, otherwise we might end up in a Deadlock,
 				// since the TX Engine will not be able to set new retransmit timers
-				else if (!rtTimer2eventEng_setEvent.full())
-				{
+				else if (!rtTimer2eventEng_setEvent.full()) {
 					currEntry.time = 0;
 					currEntry.active = false;
-					if (currEntry.retries < 4)
-					{
+					if (currEntry.retries < 4) {
 						currEntry.retries++;
 						rtTimer2eventEng_setEvent.write(event(currEntry.type, currID, currEntry.retries));
 					}
-					else
-					{
+					else {
 						currEntry.retries = 0;
 						rtTimer2stateTable_releaseState.write(currID);
-						if (currEntry.type == SYN)
-						{
+						if (currEntry.type == SYN) {
 							rtTimer2txApp_notification.write(openStatus(currID, false));
 						}
-						else
-						{
+						else {
 							rtTimer2rxApp_notification.write(appNotification(currID, true)); //TIME_OUT
 						}
 					}

@@ -564,7 +564,7 @@ void simulateTx(
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		//cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator.bit(16)){
 			cout << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl;
@@ -585,7 +585,7 @@ void simulateTx(
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		//cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
+		cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);

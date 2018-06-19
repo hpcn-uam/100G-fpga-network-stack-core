@@ -200,11 +200,6 @@ void txEng_metaLoader(
 					txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
 					ml_FsmState = 0;
 
-
-					/*if (meta.length != 0)
-					{
-						//txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
-					}*/
 					// Send a packet only if there is data or we want to send an empty probing message
 					if (meta.length != 0) {// || ml_curEvent.retransmit) //TODO retransmit boolean currently not set, should be removed
 					
@@ -241,7 +236,7 @@ void txEng_metaLoader(
 						meta.length 		= 0;
 						meta.ack 			= 1; 							// ACK is always set when established
 						meta.ackNumb 		= rxSar.recvd;
-						pkgAddr(31, 30) 	= 0x01;
+						pkgAddr(31, 30) 	= (!RX_DDR_BYPASS);				// If DDR is not used in the RX start from the beginning of the memory
 						pkgAddr(29, 16) 	= ml_curEvent.sessionID(13, 0);
 					}
 					else{
@@ -370,7 +365,7 @@ void txEng_metaLoader(
 					meta.fin = 0;
 
 					// Construct address before modifying txSar.ackd
-					pkgAddr(31, 30) = 0x01;
+					pkgAddr(31, 30) = (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
 					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
 					pkgAddr(15, 0) = txSar.ackd(15, 0); //ml_curEvent.address;
 

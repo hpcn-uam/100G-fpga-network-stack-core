@@ -50,6 +50,10 @@ static const uint16_t MAX_SESSIONS = 10000;
 #define TCP_NODELAY 1
 
 // RX_DDR_BYPASS flag, to enable DDR bypass on RX path
+// This MACRO also modifies the buffer address for the TX path
+// When DDR is not bypassed the RX buffers have the first 2 GB of the memory
+// and the TX buffers have the remaining 2 GB
+// However, when the DDR is bypassed the TX buffers have the 4 GB
 #define RX_DDR_BYPASS 1
 
 // FAST_RETRANSMIT flag, to enable TCP fast recovery/retransmit mechanism
@@ -117,9 +121,6 @@ enum eventType {TX, RT, ACK, SYN, SYN_ACK, FIN, RST, ACK_NODELAY};
  * LISTEN is merged into CLOSED
  */
 enum sessionState {CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSING, TIME_WAIT, LAST_ACK};
-
-
-enum { WORD_0, WORD_1, WORD_2, WORD_3, WORD_4 };
 
 template<int D>
 struct my_axis {
@@ -494,10 +495,6 @@ struct mmCmd
 	mmCmd() {}
 	mmCmd(ap_uint<32> addr, ap_uint<16> len)
 		:bbt(len), type(1), dsa(0), eof(1), drr(1), saddr(addr), tag(0), rsvd(0) {}
-	/*mm_cmd(ap_uint<32> addr, ap_uint<16> len, ap_uint<1> last)
-		:bbt(len), type(1), dsa(0), eof(last), drr(1), saddr(addr), tag(0), rsvd(0) {}*/
-	/*mm_cmd(ap_uint<32> addr, ap_uint<16> len, ap_uint<4> dsa)
-			:bbt(len), type(1), dsa(dsa), eof(1), drr(1), saddr(addr), tag(0), rsvd(0) {}*/
 };
 
 struct mmStatus
