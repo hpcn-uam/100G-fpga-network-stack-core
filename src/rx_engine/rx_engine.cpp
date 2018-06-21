@@ -114,7 +114,7 @@ void combine_words(
 }
 
 /** @ingroup rx_engine
- * Extracts tcpLength from IP header, removes the header and prepends the IP addresses to the payload,
+ * Extracts tcpLength from IP header, removes the IP header and prepends the IP addresses to the payload,
  * such that the output can be used for the TCP pseudo header creation
  * The TCP length is computed from the total length and the IP header length
  * @param[in]		dataIn, incoming data stream
@@ -132,7 +132,7 @@ void combine_words(
 *
 *	Fig 1.a. Output word without IP options
 *
-*   +--------------------------------------------------------------+
+*   +---------------------------------------------------------------+
 *   | current   |                                           |pseudo |
 *   | word      |          previous word  (511 , 160)       |header |
 *   | (63,0)    |                                           |       |
@@ -179,35 +179,30 @@ void rxEngPseudoHeaderInsert(
 	static ap_uint<32>		ip_dst;
 	static ap_uint<32>		ip_src;
 	static bool				pseudo_header = false;
-	static bool 			extra_word 	  = false;
 
-	enum pseudo_header_state {IP_HEADER ,TCP_PAYLOAD};
+	enum pseudo_header_state {IP_HEADER ,TCP_PAYLOAD, EXTRA_WORD};
 	static pseudo_header_state fsm_state = IP_HEADER;
 
-	if (!IpLevelPacket.empty() && !extra_word){
-		switch (fsm_state){
-			case (IP_HEADER):
+
+	switch (fsm_state){
+		case (IP_HEADER):
+			if (!IpLevelPacket.empty()){
 				IpLevelPacket.read(currWord);
-				ip_headerlen 		= currWord.data( 3, 0); 	// Read IP header len
-				ipTotalLen(7, 0) 	= currWord.data(31, 24);    // Read IP total len
-				ipTotalLen(15, 8) 	= currWord.data(23, 16);
-				ip_src 				= currWord.data(127,96);
-				ip_dst 				= currWord.data(159,128);
+				ip_headerlen 	= currWord.data( 3, 0); 				// Read IP header len
+				ipTotalLen 		= byteSwap16(currWord.data(31, 16));    // Read IP total len
+				ip_src 			= currWord.data(127,96);
+				ip_dst 			= currWord.data(159,128);
 
 				keep_extra = 8 + (ip_headerlen-5) * 4;
-				prevWord = currWord;
 				if (currWord.last){
-					currWord.data = 0;
-					currWord.keep = 0;
 
-				 	combine_words( currWord, prevWord, ip_headerlen, sendWord);
+				 	combine_words( axiWord(0,0,0), currWord, ip_headerlen, sendWord);
 					
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-					sendWord.data( 63 ,0) 	= (ip_dst,ip_src);
-					sendWord.data( 79 ,64)	= 0x0600;
-					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
-					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
-					sendWord.keep(11,0) 	= 0xFFF;
+					sendWord.data(63 , 0) 	= (ip_dst,ip_src);
+					sendWord.data(79 ,64)	= 0x0600;
+					sendWord.data(95 ,80) 	= byteSwap16(tcpTotalLen);
+					sendWord.keep(11 , 0) 	= 0xFFF;
 					sendWord.last 			= 1;
 					
 					TCP_PseudoPacket_i.write(sendWord);
@@ -217,46 +212,46 @@ void rxEngPseudoHeaderInsert(
 					pseudo_header = true;
 					fsm_state = TCP_PAYLOAD;
 				}
-				break;
-			case (TCP_PAYLOAD) :
+				prevWord = currWord;
+			}
+			break;
+		case (TCP_PAYLOAD) :
+			if (!IpLevelPacket.empty()){
 				IpLevelPacket.read(currWord);
 				combine_words( currWord, prevWord, ip_headerlen, sendWord);
 				if (pseudo_header){
 					pseudo_header = false;
 					tcpTotalLen = ipTotalLen - (ip_headerlen *4);
-					sendWord.data( 63 ,0) 	= (ip_dst,ip_src);
-					sendWord.data( 79 ,64)	= 0x0600;
-					sendWord.data(87 ,80) 	= tcpTotalLen(15,8);
-					sendWord.data(95 ,88) 	= tcpTotalLen( 7,0);
+					sendWord.data(63 , 0) 	= (ip_dst,ip_src);
+					sendWord.data(79 ,64)	= 0x0600;
+					sendWord.data(95 ,80) 	= byteSwap16(tcpTotalLen);
 					sendWord.keep(11,0) 	= 0xFFF;
 				}
 				sendWord.last = 0;
-				prevWord = currWord;
 				if (currWord.last){
 					if (currWord.keep.bit(keep_extra)) {
-						extra_word = true;
+						fsm_state = EXTRA_WORD;
 					}
 					else {
-						sendWord.last=1;
+						sendWord.last = 1;
+						fsm_state = IP_HEADER;
 					}
-					fsm_state = IP_HEADER;
 				}
+				prevWord = currWord;
 				TCP_PseudoPacket_i.write(sendWord);
 				TCP_PseudoPacket_c.write(sendWord);
-			 	break;
-			default:
-				fsm_state = IP_HEADER;
-				break;
-		}
-	}
-	else if (extra_word) {
-		extra_word 	  = false;
-		currWord.data = 0;
-		currWord.keep = 0;
-		combine_words( currWord, prevWord, ip_headerlen, sendWord);
-		sendWord.last 			= 1;
-		TCP_PseudoPacket_i.write(sendWord);
-		TCP_PseudoPacket_c.write(sendWord);
+			}
+		 	break;
+		case EXTRA_WORD:
+			currWord.data = 0;
+			currWord.keep = 0;
+			combine_words( currWord, prevWord, ip_headerlen, sendWord);
+			sendWord.last 			= 1;
+			TCP_PseudoPacket_i.write(sendWord);
+			TCP_PseudoPacket_c.write(sendWord);
+			fsm_state = IP_HEADER;
+			break;	
+
 	}
 }
 
@@ -264,96 +259,103 @@ void rxEngPseudoHeaderInsert(
  *  This module gets the packet at Pseudo TCP layer.
  *  First of all, it removes the pseudo TCP header and forward the payload if any.
  *  It also sends the metaData information to the following module.
- *  @param[in]		pseudo_packet
+ *  @param[in]		pseudoPacket
  *  @param[out]		payload
  *  @param[out]		metaDataFifoOut
  */
 void rxEngGetMetaData(
-							stream<axiWord>&				pseudo_packet,
+							stream<axiWord>&				pseudoPacket,
 							stream<axiWord>&				payload,
 							stream<rxEngPktMetaInfo>&		metaDataFifoOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	static axiWord 			prevWord;
-	static bool 			first_word=true;
+	enum regmd_states {FIRST_WORD, SHORT_PACKET ,NORMAL_PACKET, EXTRA_WORD};
+	static regmd_states regdm_fsm_state = FIRST_WORD;
 
+	static axiWord 			prevWord;
 	static ap_uint<4> 		tcp_offset;
-	static bool 			short_packet = false;
-	static bool 			extra_trans  = false;
 
 	ap_uint<16> 			payload_length;
 	axiWord 				currWord;
-	axiWord 				sendWord = axiWord(0,0,0);
+	axiWord 				sendWord;
 	rxEngPktMetaInfo 		rxMetaInfo;
 
-
-	if (!pseudo_packet.empty() && !short_packet && !extra_trans){
-		
-		pseudo_packet.read(currWord);
-		
-		if (first_word){
-			first_word=false;
-			/* Get the TCP Pseudo header total length and subtract the TCP header size. This value is the payload size*/
-			tcp_offset 			= currWord.data(199 ,196);
-			payload_length 		= byteSwap16(currWord.data(95 ,80)) - tcp_offset * 4; 
-			// Get four tuple info but do not swap it
-			rxMetaInfo.tuple.srcIp		= currWord.data(31 ,  0);
-			rxMetaInfo.tuple.dstIp		= currWord.data(63 , 32);
-			rxMetaInfo.tuple.srcPort	= currWord.data(111, 96);
-			rxMetaInfo.tuple.dstPort	= currWord.data(127,112);
-			// Get TCP meta Info swap the necessary words
-			rxMetaInfo.digest.seqNumb	= byteSwap32(currWord.data(159,128));
-			rxMetaInfo.digest.ackNumb	= byteSwap32(currWord.data(191,160));
-			rxMetaInfo.digest.winSize	= byteSwap16(currWord.data(223,208));
-			rxMetaInfo.digest.length 	= payload_length;
-			rxMetaInfo.digest.cwr 		= currWord.data.bit(207);
-			rxMetaInfo.digest.ecn 		= currWord.data.bit(206);
-			rxMetaInfo.digest.urg 		= currWord.data.bit(205);
-			rxMetaInfo.digest.ack 		= currWord.data.bit(204);
-			rxMetaInfo.digest.psh 		= currWord.data.bit(203);
-			rxMetaInfo.digest.rst 		= currWord.data.bit(202);
-			rxMetaInfo.digest.syn 		= currWord.data.bit(201);
-			rxMetaInfo.digest.fin 		= currWord.data.bit(200);
-			/* Only set this variable if the one-transaction packet packet has data */
-			short_packet 		= currWord.last && (payload_length != 0);		
-			metaDataFifoOut.write(rxMetaInfo);
-		}
-		else{ // MR TODO: if tcp_offset > 13 the payload starts in the second transaction
-			sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
-			sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
-
-			if (currWord.last && currWord.keep.bit((int)(tcp_offset* 4 + 12))){
-				sendWord.last 	= 0;
-				extra_trans  	= true;
+	switch (regdm_fsm_state){
+		case FIRST_WORD:
+			if (!pseudoPacket.empty()){
+				pseudoPacket.read(currWord);
+				/* Get the TCP Pseudo header total length and subtract the TCP header size. This value is the payload size*/
+				tcp_offset 			= currWord.data(199 ,196);
+				payload_length 		= byteSwap16(currWord.data(95 ,80)) - tcp_offset * 4; 
+				// Get four tuple info but do not swap it
+				rxMetaInfo.tuple.srcIp		= currWord.data(31 ,  0);
+				rxMetaInfo.tuple.dstIp		= currWord.data(63 , 32);
+				rxMetaInfo.tuple.srcPort	= currWord.data(111, 96);
+				rxMetaInfo.tuple.dstPort	= currWord.data(127,112);
+				// Get TCP meta Info swap the necessary words
+				rxMetaInfo.digest.seqNumb	= byteSwap32(currWord.data(159,128));
+				rxMetaInfo.digest.ackNumb	= byteSwap32(currWord.data(191,160));
+				rxMetaInfo.digest.winSize	= byteSwap16(currWord.data(223,208));
+				rxMetaInfo.digest.length 	= payload_length;
+				rxMetaInfo.digest.cwr 		= currWord.data.bit(207);
+				rxMetaInfo.digest.ecn 		= currWord.data.bit(206);
+				rxMetaInfo.digest.urg 		= currWord.data.bit(205);
+				rxMetaInfo.digest.ack 		= currWord.data.bit(204);
+				rxMetaInfo.digest.psh 		= currWord.data.bit(203);
+				rxMetaInfo.digest.rst 		= currWord.data.bit(202);
+				rxMetaInfo.digest.syn 		= currWord.data.bit(201);
+				rxMetaInfo.digest.fin 		= currWord.data.bit(200);
+				/* Only send data when one-transaction packet has data */
+				
+				if (currWord.last){		
+					if (payload_length != 0){ // one-transaction packet with any data
+						sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
+						sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
+						sendWord.last 	  	= 1;
+						payload.write(sendWord);
+					}
+				}
+				else {
+					regdm_fsm_state = NORMAL_PACKET;								// MR TODO: if tcp_offset > 13 the payload starts in the second transaction
+					
+				}
+				std::cout << std::endl;
+				prevWord = currWord;
+				metaDataFifoOut.write(rxMetaInfo);
 			}
-			else
-				sendWord.last = currWord.last;
+			break;
+		case NORMAL_PACKET:
+			if (!pseudoPacket.empty()){
+				pseudoPacket.read(currWord);
+				
+				// Compose the output word
+				sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
+				sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
+
+				sendWord.last 	= 0;
+				if (currWord.last){
+					if (currWord.keep.bit((int)(tcp_offset* 4 + 12))){
+						regdm_fsm_state = EXTRA_WORD;
+					}
+					else {
+						sendWord.last 	= 1;
+						regdm_fsm_state = FIRST_WORD;
+					}
+				}
+				prevWord = currWord;
+				payload.write(sendWord);
+			}
+			break;
+		case EXTRA_WORD:
+			sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
+			sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
+			sendWord.last 	  	= 1;
 			payload.write(sendWord);
-		}
-
-		prevWord = currWord;
-
-		if(currWord.last){
-			first_word=true;
-		}
+			regdm_fsm_state = FIRST_WORD;
+			break;
 	}
-	else if (short_packet){			// If we get here point the one-transaction packet has payload
-		short_packet = false;
-		sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
-		sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
-		sendWord.last 	  	= 1;
-		payload.write(sendWord);
-	}
-	else if(extra_trans){			// If we get here an extra transaction with tlast asserted is needed
-		extra_trans = false;
-		sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
-		sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
-		sendWord.last 	  	= 1;
-		payload.write(sendWord);
-	}
-
 }
 
 
@@ -566,7 +568,6 @@ void rxEngTcpFSM(
 
 	enum fsmStateType {LOAD, TRANSITION};
 	static fsmStateType fsm_state = LOAD;
-//#pragma HLS RESET variable=fsm_state 			// TODO MR check if valid
 	static rxFsmMetaData fsm_meta;
 	static bool fsm_txSarRequest = false;
 
@@ -575,6 +576,7 @@ void rxEngTcpFSM(
 	sessionState tcpState;
 	rxSarEntry rxSar;
 	rxTxSarReply txSar;
+	ap_uint<32> pkgAddr = 0;
 
 
 	switch(fsm_state) {
@@ -658,7 +660,7 @@ void rxEngTcpFSM(
 								if ((fsm_meta.meta.seqNumb == rxSar.recvd) && (free_space > fsm_meta.meta.length)) {
 									rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, newRecvd, 1));
 									// Build memory address
-									ap_uint<32> pkgAddr;
+									
 									pkgAddr(31, 30) = 0x0;
 									pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
 									pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);					// TODO maybe align to the beginning of the buffer
@@ -802,7 +804,6 @@ void rxEngTcpFSM(
 
 							// Check if there is payload
 							if (fsm_meta.meta.length != 0) {
-								ap_uint<32> pkgAddr;
 								pkgAddr(31, 30) = 0x0;
 								pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
 								pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
