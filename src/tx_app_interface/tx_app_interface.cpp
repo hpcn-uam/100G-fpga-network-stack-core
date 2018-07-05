@@ -140,39 +140,37 @@ void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 	txSarAckPush	ackPush;
 	txAppTxSarQuery txAppUpdate;
 
-	if (!txSar2txApp_ack_push.empty())
-	{
+	if (!txSar2txApp_ack_push.empty()) {
 		txSar2txApp_ack_push.read(ackPush);
-		if (ackPush.init)
-		{
+		if (ackPush.init) {
 			// At init this is actually not_ackd
 			app_table[ackPush.sessionID].ackd = ackPush.ackd-1;
 			app_table[ackPush.sessionID].mempt = ackPush.ackd;
 #if (TCP_NODELAY)
 			app_table[ackPush.sessionID].min_window = ackPush.min_window;
+			std::cout << "tx_app_table 0 min_window " << ackPush.min_window << std::endl;
 #endif			
 		}
-		else
-		{
+		else {
 			app_table[ackPush.sessionID].ackd = ackPush.ackd;
 #if (TCP_NODELAY)
 			app_table[ackPush.sessionID].min_window = ackPush.min_window;
+			std::cout << "tx_app_table 1 min_window " << ackPush.min_window << std::endl;
 #endif			
 		}
 	}
-	else if (!txApp_upd_req.empty())
-	{
+	else if (!txApp_upd_req.empty()) {
 		txApp_upd_req.read(txAppUpdate);
 		// Write
-		if(txAppUpdate.write)
-		{
+		if(txAppUpdate.write) {
 			app_table[txAppUpdate.sessionID].mempt = txAppUpdate.mempt;
 		}
-		else // Read
-		{
+		else { // Read
+		
 #if (!TCP_NODELAY)
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt));
 #else
+			std::cout << "tx_app_table 2 min_window " << app_table[txAppUpdate.sessionID].min_window << std::endl;
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt, app_table[txAppUpdate.sessionID].min_window));
 #endif
 		}

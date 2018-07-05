@@ -40,18 +40,21 @@ using namespace hls;
  */
 struct rxEng_TCP_MetaData
 {
-	ap_uint<32> seqNumb;
-	ap_uint<32> ackNumb;
-	ap_uint<16> winSize;
-	ap_uint<16> length;
-	ap_uint<1>	cwr;
-	ap_uint<1>	ecn;
-	ap_uint<1>	urg;
-	ap_uint<1>	ack;
-	ap_uint<1>	psh;
-	ap_uint<1>	rst;
-	ap_uint<1>	syn;
-	ap_uint<1>	fin;
+	ap_uint<32> 			seqNumb;
+	ap_uint<32> 			ackNumb;
+	ap_uint<16> 			winSize;
+#if (WINDOW_SCALE)
+	ap_uint<4>				recv_window_scale;
+#endif
+	ap_uint<16> 			length;
+	ap_uint<1>				cwr;
+	ap_uint<1>				ecn;
+	ap_uint<1>				urg;
+	ap_uint<1>				ack;
+	ap_uint<1>				psh;
+	ap_uint<1>				rst;
+	ap_uint<1>				syn;
+	ap_uint<1>				fin;
 };
 
 struct rxEngPktMetaInfo

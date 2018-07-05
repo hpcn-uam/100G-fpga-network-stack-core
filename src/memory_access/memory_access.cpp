@@ -50,8 +50,8 @@ void app_ReadMemAccessBreakdown(
 		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
 			appTempCmd = inputMemAccess.read();
 			mmCmd tempCmd = appTempCmd;
-			if ((appTempCmd.saddr.range(15, 0) + appTempCmd.bbt) > 65536) {
-				appBreakTemp = 65536 - appTempCmd.saddr;
+			if ((appTempCmd.saddr.range(WINDOW_BITS-1, 0) + appTempCmd.bbt) > BUFFER_SIZE) { // TODO this sum could get precomputed 
+				appBreakTemp = BUFFER_SIZE - appTempCmd.saddr;
 				tempCmd = mmCmd(appTempCmd.saddr, appBreakTemp);
 				appBreakdown = true;
 
@@ -66,7 +66,7 @@ void app_ReadMemAccessBreakdown(
 	}
 	else if (appBreakdown == true) {
 		if (!outputMemAccess.full()) {
-			appTempCmd.saddr.range(15, 0) = 0;
+			appTempCmd.saddr.range(WINDOW_BITS-1, 0) = 0;
 			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << appTempCmd.saddr << " - " << appTempCmd.bbt - appBreakTemp << endl;
 			outputMemAccess.write(mmCmd(appTempCmd.saddr, appTempCmd.bbt - appBreakTemp));
 			appBreakdown = false;
@@ -91,8 +91,8 @@ void tx_ReadMemAccessBreakdown(
 		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
 			txEngTempCmd = inputMemAccess.read();
 			mmCmd tempCmd = txEngTempCmd;
-			if ((txEngTempCmd.saddr.range(15, 0) + txEngTempCmd.bbt) > 65536) {
-				txEngBreakTemp = 65536 - txEngTempCmd.saddr;
+			if ((txEngTempCmd.saddr.range(WINDOW_BITS-1, 0) + txEngTempCmd.bbt) > BUFFER_SIZE) {
+				txEngBreakTemp = BUFFER_SIZE - txEngTempCmd.saddr;
 				tempCmd = mmCmd(txEngTempCmd.saddr, txEngBreakTemp);
 				txEngBreakdown = true;
 
@@ -107,7 +107,7 @@ void tx_ReadMemAccessBreakdown(
 	}
 	else if (txEngBreakdown == true) {
 		if (!outputMemAccess.full()) {
-			txEngTempCmd.saddr.range(15, 0) = 0;
+			txEngTempCmd.saddr.range(WINDOW_BITS-1, 0) = 0;
 			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.bbt - txEngBreakTemp << endl;
 			outputMemAccess.write(mmCmd(txEngTempCmd.saddr, txEngTempCmd.bbt - txEngBreakTemp));
 			txEngBreakdown = false;
@@ -500,8 +500,8 @@ void Rx_Data_to_Memory(
 	static ap_uint<23> 		bytes_first_command;
 	static mmCmd 			command_i;
 
-	bool 				rxWrBreakDown;
-	ap_uint<17> 		buffer_overflow;
+	bool 					rxWrBreakDown;
+	ap_uint<WINDOW_BITS+1> 	buffer_overflow;
 
 	axiWord 			currWord;
 	axiWord 			sendWord;
@@ -513,19 +513,19 @@ void Rx_Data_to_Memory(
 
 				CmdIn.read(input_command);
 
-				buffer_overflow 	= input_command.saddr(15, 0) + input_command.bbt; 	// Compute the address of the last byte to write
+				buffer_overflow 	= input_command.saddr(WINDOW_BITS-1, 0) + input_command.bbt; 	// Compute the address of the last byte to write
 				
-				if (buffer_overflow.bit(16)){											// The remaining buffer space is not enough. An address overflow has to be done
-					command_i.bbt 		= 65536 - input_command.saddr(15,0);			// Compute how much bytes are needed in the first transaction
+				if (buffer_overflow.bit(WINDOW_BITS)){											// The remaining buffer space is not enough. An address overflow has to be done
+					command_i.bbt 		= BUFFER_SIZE - input_command.saddr(WINDOW_BITS-1,0);			// Compute how much bytes are needed in the first transaction
 					command_i.saddr 	= input_command.saddr;
 					byte_offset 		= command_i.bbt.range(5,0);	// Determines the position of the MSB in the last word
 					bytes_first_command = command_i.bbt;
 
 					if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
-						number_of_words_to_send = command_i.bbt.range(15,6) + 1;
+						number_of_words_to_send = command_i.bbt.range(WINDOW_BITS-1,6) + 1;
 					}
 					else {
-						number_of_words_to_send = command_i.bbt.range(15,6);
+						number_of_words_to_send = command_i.bbt.range(WINDOW_BITS-1,6);
 					}
 					count_word_sent 	= 1;
 					rxWrBreakDown 		= true;
@@ -564,8 +564,8 @@ void Rx_Data_to_Memory(
 					sendWord.data   = currWord.data;
 					sendWord.keep 	= len2Keep(byte_offset);						// Get the keep of the last transaction of the first memory offset;
 					sendWord.last 	= 1;
-					command_i.saddr(31,16) 	= input_command.saddr(31,16);
-					command_i.saddr(15,0) 		= 0;										// point to the beginning of the buffer
+					command_i.saddr(31,WINDOW_BITS) 	= input_command.saddr(31,WINDOW_BITS);
+					command_i.saddr(WINDOW_BITS-1,0) 		= 0;										// point to the beginning of the buffer
 					command_i.bbt 				= input_command.bbt - bytes_first_command;	// Recompute the bytes to transfer in the second memory access
 					CmdOut.write(command_i);										// Issue the second command
 					
@@ -649,13 +649,13 @@ void tx_Data_to_Memory(
 	static ap_uint<23> 		bytes_first_command;
 	static mmCmd 			command_i;
 
-	bool 				rxWrBreakDown;
-	ap_uint<17> 		buffer_overflow;
+	bool 					rxWrBreakDown;
+	ap_uint<WINDOW_BITS+1> 	buffer_overflow;
 
-	axiWord 			currWord;
-	axiWord 			sendWord;
+	axiWord 				currWord;
+	axiWord 				sendWord;
 	static axiWord 			prevWord;
-	static int					transaction = 0; // deleteme
+	static int				transaction = 0; // deleteme
 
 	switch (data2mem_state) {
 		case WAIT_CMD :
@@ -663,20 +663,20 @@ void tx_Data_to_Memory(
 
 				CmdIn.read(input_command);
 
-				buffer_overflow 	= input_command.saddr(15, 0) + input_command.bbt; // Compute the address of the last byte to write
+				buffer_overflow 	= input_command.saddr(WINDOW_BITS-1, 0) + input_command.bbt; // Compute the address of the last byte to write
 				
-				if (buffer_overflow.bit(16)){	// The remaining buffer space is not enough. An address overflow has to be done
-					command_i.bbt 		= 65536 - input_command.saddr(15,0);	// Compute how much bytes are needed in the first transaction
+				if (buffer_overflow.bit(WINDOW_BITS)){	// The remaining buffer space is not enough. An address overflow has to be done
+					command_i.bbt 		= BUFFER_SIZE - input_command.saddr(WINDOW_BITS-1,0);	// Compute how much bytes are needed in the first transaction
 					//cout << "COMMAND BREAKDOWN input_command.bbt " << dec << input_command.bbt << "\tcommand_i.bbt " << command_i.bbt << endl;
 					command_i.saddr 	= input_command.saddr;
 					byte_offset 		= command_i.bbt.range(5,0);	// Determines the position of the MSB in the last word
 					bytes_first_command = command_i.bbt;
 
 					if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
-						number_of_words_to_send = command_i.bbt.range(15,6) + 1;
+						number_of_words_to_send = command_i.bbt.range(WINDOW_BITS-1,6) + 1;
 					}
 					else {
-						number_of_words_to_send = command_i.bbt.range(15,6);
+						number_of_words_to_send = command_i.bbt.range(WINDOW_BITS-1,6);
 					}
 					count_word_sent 	= 1;
 					rxWrBreakDown 		= true;
@@ -717,8 +717,8 @@ void tx_Data_to_Memory(
 					sendWord.data = currWord.data;
 					sendWord.keep 	= len2Keep(byte_offset);								// Get the keep of the last transaction of the first memory offset;
 					sendWord.last 	= 1;
-					command_i.saddr(31,16) 	= input_command.saddr(31,16);
-					command_i.saddr(15,0) 		= 0;										// point to the beginning of the buffer
+					command_i.saddr(31,WINDOW_BITS) 	= input_command.saddr(31,WINDOW_BITS);
+					command_i.saddr(WINDOW_BITS-1,0) 		= 0;										// point to the beginning of the buffer
 					command_i.bbt 				= input_command.bbt - bytes_first_command;	// Recompute the bytes to transfer in the second memory access
 					CmdOut.write(command_i);												// Issue the second command
 					if (currWord.last) {													// The second part of the memory write has less than 64 bytes

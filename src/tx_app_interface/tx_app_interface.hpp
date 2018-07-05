@@ -35,10 +35,10 @@ using namespace hls;
 
 struct txAppTableEntry
 {
-	ap_uint<16>		ackd;
-	ap_uint<16>		mempt;
+	ap_uint<WINDOW_BITS>		ackd;
+	ap_uint<WINDOW_BITS>		mempt;
 #if (TCP_NODELAY)
-	ap_uint<16> 	min_window;
+	ap_uint<WINDOW_BITS> 		min_window;
 #endif	
 };
 

@@ -92,11 +92,11 @@ void txEng_metaLoader(
 	ap_uint<32> pkgAddr;
 	rstEvent resetEvent;
 	
-	static ap_uint<16> 		currLength;
-	static ap_uint<16> 		usedLength;
-	static ap_uint<16> 		usableWindow;
-	static bool     		ackd_eq_not_ackd;
-	ap_uint<16> 			usableWindow_w;
+	static ap_uint<WINDOW_BITS> 	currLength;
+	static ap_uint<WINDOW_BITS> 	usedLength;
+	static ap_uint<WINDOW_BITS> 	usableWindow;
+	static bool     				ackd_eq_not_ackd;
+	ap_uint<WINDOW_BITS> 			usableWindow_w;
 	
 
 	
@@ -180,15 +180,15 @@ void txEng_metaLoader(
 					//meta.length = 0;
 
 					currLength = ml_curEvent.length;
-					usedLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
+					usedLength = txSar.not_ackd(WINDOW_BITS-1,0) - txSar.ackd;
 					// min_window, is the min(txSar.recv_window, txSar.cong_window)
-					if (txSar.min_window > usedLength) {
+					/*if (txSar.min_window > usedLength) {
 						usableWindow = txSar.min_window - usedLength;
 					}
 					else {
 						usableWindow = 0;
-					}
-					if (usableWindow < ml_curEvent.length) {
+					}*/
+					if (txSar.UsableWindow < ml_curEvent.length) {
 						txEng2timer_setProbeTimer.write(ml_curEvent.sessionID);
 					}
 
@@ -276,8 +276,8 @@ void txEng_metaLoader(
 							}
 							// Check if small segment and if unacknowledged data in pipe (Nagle)
 							if (txSar.ackd_eq_not_ackd) {
-								next_currLength = txSar.not_ackd(15,0) - currLength; 	// todo maybe precompute
-								next_usedLength = txSar.not_ackd(15,0) + currLength;
+								next_currLength = txSar.not_ackd(WINDOW_BITS-1,0) - currLength; 	// todo maybe precompute
+								next_usedLength = txSar.not_ackd(WINDOW_BITS-1,0) + currLength;
 								txSar_not_ackd_w = txSar.not_ackd_short;
 								meta.length = currLength;
 							}
@@ -348,13 +348,12 @@ void txEng_metaLoader(
 						txSar = txSar_r;
 					}
 
-
-					if (!txSar.finSent) { //no FIN sent
-						currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd);
-					}
-					else {//FIN already sent
-						currLength = ((ap_uint<16>) txSar.not_ackd - txSar.ackd)-1;
-					}
+					//if (!txSar.finSent) { //no FIN sent
+						currLength = txSar.usedLength - !txSar.finSent;
+					//}
+					//else {//FIN already sent
+					//	currLength = txSar.usedLength-1;
+					//}
 
 					meta.ackNumb = rxSar.recvd;
 					meta.seqNumb = txSar.ackd;
@@ -365,9 +364,9 @@ void txEng_metaLoader(
 					meta.fin = 0;
 
 					// Construct address before modifying txSar.ackd
-					pkgAddr(31, 30) = (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
-					pkgAddr(29, 16) = ml_curEvent.sessionID(13, 0);
-					pkgAddr(15, 0) = txSar.ackd(15, 0); //ml_curEvent.address;
+					pkgAddr(31, 30) 			= (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
+					pkgAddr(30, WINDOW_BITS)  	= ml_curEvent.sessionID(13, 0);
+					pkgAddr(WINDOW_BITS-1, 0) 	= txSar.ackd(WINDOW_BITS-1, 0); //ml_curEvent.address;
 
 					// Decrease Slow Start Threshold, only on first RT from retransmitTimer
 					if (!ml_sarLoaded && (ml_curEvent.rt_count == 1)) {
@@ -387,6 +386,7 @@ void txEng_metaLoader(
 						// We stay in this state and sent immediately another packet
 						meta.length = MSS;
 						txSar.ackd += MSS;
+						txSar.usedLength	-= MSS;	
 						// TODO replace with dynamic count, remove this
 						if (ml_segmentCount == 3) {
 							// Should set a probe or sth??
@@ -460,13 +460,18 @@ void txEng_metaLoader(
 					meta.ackNumb = 0;
 					//meta.seqNumb = txSar.not_ackd;
 					meta.window_size = 0xFFFF;
-					meta.length = 4; // For MSS Option, 4 bytes
 					meta.ack = 0;
 					meta.rst = 0;
 					meta.syn = 1;
 					meta.fin = 0;
-
-					txEng_ipMetaFifoOut.write(4); //length
+					meta.length = 4; 									// For MSS Option, 4 bytes
+#if (WINDOW_SCALE)
+					meta.length = 4 + 4* (rxSar.rx_win_shift!=0); 				// For MSS Option and WScale, 8 bytes
+					meta.rx_win_shift = rxSar.rx_win_shift;
+#else				
+					meta.length = 4;	
+#endif						
+					txEng_ipMetaFifoOut.write(meta.length); 		//length
 					txEng_tcpMetaFifoOut.write(meta);
 					txEng_isLookUpFifoOut.write(true);
 					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
@@ -484,7 +489,6 @@ void txEng_metaLoader(
 					// construct SYN_ACK message
 					meta.ackNumb = rxSar.recvd;
 					meta.window_size = 0xFFFF;
-					meta.length = 4; // For MSS Option, 4 bytes
 					meta.ack = 1;
 					meta.rst = 0;
 					meta.syn = 1;
@@ -499,7 +503,14 @@ void txEng_metaLoader(
 						txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 1));
 					}
 
-					txEng_ipMetaFifoOut.write(4); // length
+#if (WINDOW_SCALE)
+					cout << "GOT A WIN_SHIFT OF " << dec << rxSar.rx_win_shift << endl << endl << endl;
+					meta.length = 4 + 4* (rxSar.rx_win_shift!=0); 				// For MSS Option and WScale, 8 bytes
+					meta.rx_win_shift = rxSar.rx_win_shift;
+#else					
+					meta.length = 4; 									// For MSS Option, 4 bytes
+#endif						
+					txEng_ipMetaFifoOut.write(meta.length); 		//length
 					txEng_tcpMetaFifoOut.write(meta);
 					txEng_isLookUpFifoOut.write(true);
 					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
@@ -545,8 +556,8 @@ void txEng_metaLoader(
 						}
 					}
 
-					// Check if there is a FIN to be sent //TODO maybe restruce this
-					if (meta.seqNumb(15, 0) == txSar.app) {
+					// Check if there is a FIN to be sent //TODO maybe restructure this
+					if (meta.seqNumb(WINDOW_BITS-1, 0) == txSar.app) {
 						txEng_ipMetaFifoOut.write(meta.length);
 						txEng_tcpMetaFifoOut.write(meta);
 						txEng_isLookUpFifoOut.write(true);
@@ -653,18 +664,19 @@ void txEng_ipHeader_Const(
 
 	axiWord sendWord = axiWord(0,0,1);
 	ap_uint<16> length = 0;
+	ap_uint<16> length_i;
+
 
 	if (!txEng_ipMetaDataFifoIn.empty() && !txEng_ipTupleFifoIn.empty()){
-		txEng_ipMetaDataFifoIn.read(length);
+		
+		txEng_ipMetaDataFifoIn.read(length_i);
 		txEng_ipTupleFifoIn.read(ihc_tuple);
-		//cout << "IPH length: " << dec << length << endl;
-		length = length + 40;						// TODO: it has to be change if TCP options are implemented
+		length = length_i + 40;
 
 		// Compose the IP header
 		sendWord.data(  7,  0) = 0x45;
 		sendWord.data( 15,  8) = 0;
-		sendWord.data( 23, 16) = length(15, 8); 	//length
-		sendWord.data( 31, 24) = length(7, 0);
+		sendWord.data( 31, 16) = byteSwap16(length); 	//length
 		sendWord.data( 47, 32) = 0;
 		sendWord.data( 50, 48) = 0; 				//Flags
 		sendWord.data( 63, 51) = 0x0;				//Fragment Offset
@@ -707,7 +719,6 @@ void txEng_ipHeader_Const(
  *  @param[in]		tcpMetaDataFifoIn
  *  @param[in]		tcpTupleFifoIn
  *  @param[out]		dataOut
- *  @TODO this should be better, cleaner
  */
 
 void txEng_pseudoHeader_Const(
@@ -724,7 +735,8 @@ void txEng_pseudoHeader_Const(
 	static fourTuple 		phc_tuple;
 	bool 					packet_has_payload;
 	//static bool phc_done = true;
-	ap_uint<16> length = 0;
+	ap_uint<16> 			length = 0;
+	ap_uint<16> 			window_size;
 
 	if (!tcpTupleFifoIn.empty() && !tcpMetaDataFifoIn.empty()){
 		tcpTupleFifoIn.read(phc_tuple);
@@ -737,32 +749,32 @@ void txEng_pseudoHeader_Const(
 		else{
 			packet_has_payload = true;
 		}
-
+/*
+#if (WINDOW_SCALE)
+		window_size = phc_meta.window_size >> phc_meta.recv_window_scale;
+		cout << "txEng_pseudoHeader_Const window_size: " << dec << phc_meta.window_size << "\tWindow scale: " << phc_meta.recv_window_scale;
+		cout << "\tResulting window size:" << window_size << endl;
+#else
+		window_size = phc_meta.window_size;
+#endif		
+*/
 		// Generate pseudoheader
-		sendWord.data( 31,  0) = phc_tuple.srcIp;
-		sendWord.data( 63, 32) = phc_tuple.dstIp;
+		sendWord.data( 31,  0) 	= phc_tuple.srcIp;
+		sendWord.data( 63, 32) 	= phc_tuple.dstIp;
 
-		sendWord.data( 79, 64) = 0x0600; // TCP
+		sendWord.data( 79, 64) 	= 0x0600; // TCP
 
-		sendWord.data( 95, 80) = (length(7, 0),length(15, 8));
-		sendWord.data(111, 96) = phc_tuple.srcPort; // srcPort
-		sendWord.data(127,112) = phc_tuple.dstPort; // dstPort
+		sendWord.data( 95, 80) 	= byteSwap16(length);
+		sendWord.data(111, 96) 	= phc_tuple.srcPort; // srcPort
+		sendWord.data(127,112) 	= phc_tuple.dstPort; // dstPort
 
 		// Insert SEQ number
-		sendWord.data(135,128) = phc_meta.seqNumb(31, 24);
-		sendWord.data(143,136) = phc_meta.seqNumb(23, 16);
-		sendWord.data(151,144) = phc_meta.seqNumb(15, 8);
-		sendWord.data(159,152) = phc_meta.seqNumb(7, 0);
+		sendWord.data(159,128) 	= byteSwap32(phc_meta.seqNumb);
 		// Insert ACK number
-		sendWord.data(167,160) = phc_meta.ackNumb(31, 24);
-		sendWord.data(175,168) = phc_meta.ackNumb(23, 16);
-		sendWord.data(183,176) = phc_meta.ackNumb(15, 8);
-		sendWord.data(191,184) = phc_meta.ackNumb(7, 0);
+		sendWord.data(191,160) 	= byteSwap32(phc_meta.ackNumb);
 
-
-		sendWord.data.bit(192) = 0; //NS bit
-		sendWord.data(195,193) = 0; // reserved
-		sendWord.data(199,196) = (0x5 + phc_meta.syn); //data offset
+		sendWord.data.bit(192) 	= 0; //NS bit
+		sendWord.data(195,193) 	= 0; // reserved
 		/* Control bits:
 		 * [200] == FIN
 		 * [201] == SYN
@@ -771,22 +783,41 @@ void txEng_pseudoHeader_Const(
 		 * [204] == ACK
 		 * [205] == URG
 		 */
-		sendWord.data.bit(200) = phc_meta.fin; //control bits
-		sendWord.data.bit(201) = phc_meta.syn;
-		sendWord.data.bit(202) = phc_meta.rst;
-		sendWord.data.bit(203) = 0;
-		sendWord.data.bit(204) = phc_meta.ack;
+		sendWord.data.bit(200) 	= phc_meta.fin; //control bits
+		sendWord.data.bit(201) 	= phc_meta.syn;
+		sendWord.data.bit(202) 	= phc_meta.rst;
+		sendWord.data.bit(203) 	= 0;
+		sendWord.data.bit(204)  = phc_meta.ack;
 		sendWord.data(207, 205) = 0; //some other bits
-		sendWord.data.range(223, 208) = (phc_meta.window_size(7, 0) , phc_meta.window_size(15, 8)); // TODO if window size is in option this must be verified
-		sendWord.data.range(255, 224) = 0; //urgPointer & checksum
+		sendWord.data(223, 208) = byteSwap16(phc_meta.window_size);
+		sendWord.data(255, 224) = 0; //urgPointer & checksum
 
 		if (phc_meta.syn) {
-			sendWord.data(263, 256) = 0x02; // Option Kind
-			sendWord.data(271, 264) = 0x04; // Option length
-			sendWord.data(287, 272) = 0xB405; // 0x05B4 = 1460
+			sendWord.data(263, 256) = 0x02; 	// Option Kind
+			sendWord.data(271, 264) = 0x04; 	// Option length
+			sendWord.data(287, 272) = 0xB405; 	// 0x05B4 = 1460
+
+#if WINDOW_SCALE
+			// Only send WINDOW SCALE in SYN and SYN-ACK, in the latest only send if WSopt was received RFC 7323 1.3
+			if (phc_meta.rx_win_shift !=0){
+				sendWord.data(199, 196) = 0x7; 		//data offset
+				sendWord.data(295, 288) = 0x03; 	// Option Kind
+				sendWord.data(303, 296) = 0x03; 		// Option length
+				sendWord.data(311, 304) = phc_meta.rx_win_shift;
+				sendWord.data(319, 312) = 0X0; 		// End of Option List
+				sendWord.keep = 0xFFFFFFFFFF;
+			}
+			else {
+				sendWord.data(199,196) = 0x6; 		//data offset
+				sendWord.keep = 0xFFFFFFFFF;
+			}
+#else
+			sendWord.data(199,196) = 0x6; 		//data offset
 			sendWord.keep = 0xFFFFFFFFF;
+#endif			
 		}
 		else {
+			sendWord.data(199,196) = 0x5; //data offset
 			sendWord.keep = 0xFFFFFFFF;
 		}
 
@@ -1115,7 +1146,6 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	static stream<ap_uint<16> >			txEng_ipMetaFifo("txEng_ipMetaFifo");
 	#pragma HLS stream variable=txEng_ipMetaFifo depth=16
-	//#pragma HLS DATA_PACK variable=txEng_ipMetaFifo
 
 	static stream<tx_engine_meta>		txEng_tcpMetaFifo("txEng_tcpMetaFifo");
 	#pragma HLS stream variable=txEng_tcpMetaFifo depth=16

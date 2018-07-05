@@ -61,6 +61,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 	static ap_uint<2>				rasi_fsmState 	= 0;
 	appReadRequest					app_read_request;
 	rxSarAppd						rxSar;
+	ap_uint<32> 					pkgAddr = 0;
 
 	switch (rasi_fsmState) {
 		case 0:
@@ -79,9 +80,9 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 				rxSar2rxApp_upd_rsp.read(rxSar);
 				appRxDataRspIDsession.write(rxSar.sessionID);
 #if (!RX_DDR_BYPASS)
-				ap_uint<32> pkgAddr = 0;
-				pkgAddr(29, 16) = rxSar.sessionID(13, 0);
-				pkgAddr(15, 0) = rxSar.appd;
+				
+				pkgAddr(29, WINDOW_BITS) = rxSar.sessionID(13, 0);
+				pkgAddr(WINDOW_BITS-1, 0) = rxSar.appd;
 				rxBufferReadCmd.write(mmCmd(pkgAddr, rasi_readLength));
 #else
 				rxBufferReadCmd.write(1);

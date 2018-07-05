@@ -38,14 +38,17 @@ using namespace hls;
  */
 struct tx_engine_meta //same as rxEngine
 {
-	ap_uint<32> seqNumb;
-	ap_uint<32> ackNumb;
-	ap_uint<16> window_size;
-	ap_uint<16> length;
-	ap_uint<1>	ack;
-	ap_uint<1>	rst;
-	ap_uint<1>	syn;
-	ap_uint<1>	fin;
+	ap_uint<32> 			seqNumb;
+	ap_uint<32> 			ackNumb;
+	ap_uint<16> 			window_size;
+#if (WINDOW_SCALE)	
+	ap_uint< 4> 			rx_win_shift;
+#endif	
+	ap_uint<16> 			length;
+	ap_uint<1>				ack;
+	ap_uint<1>				rst;
+	ap_uint<1>				syn;
+	ap_uint<1>				fin;
 	tx_engine_meta() {}
 	tx_engine_meta(ap_uint<1> ack, ap_uint<1> rst, ap_uint<1> syn, ap_uint<1> fin)
 			:seqNumb(0), ackNumb(0), window_size(0), length(0), ack(ack), rst(rst), syn(syn), fin(fin) {}
@@ -53,21 +56,7 @@ struct tx_engine_meta //same as rxEngine
 			:seqNumb(seqNumb), ackNumb(ackNumb), window_size(0), length(0), ack(ack), rst(rst), syn(syn), fin(fin) {}
 };
 
-/** @ingroup tx_engine
- *
- */
-struct subSums
-{
-	ap_uint<17>		sum0;
-	ap_uint<17>		sum1;
-	ap_uint<17>		sum2;
-	ap_uint<17>		sum3;
-	subSums() {}
-	subSums(ap_uint<17> sums[4])
-		:sum0(sums[0]), sum1(sums[1]), sum2(sums[2]), sum3(sums[3]) {}
-	subSums(ap_uint<17> s0, ap_uint<17> s1, ap_uint<17> s2, ap_uint<17> s3)
-		:sum0(s0), sum1(s1), sum2(s2), sum3(s3) {}
-};
+
 
 /** @ingroup tx_engine
  *

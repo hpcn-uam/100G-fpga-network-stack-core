@@ -43,18 +43,19 @@ using namespace hls;
  */
 void rx_sar_table(	stream<rxSarRecvd>&			rxEng2rxSar_upd_req,
 					stream<rxSarAppd>&			rxApp2rxSar_upd_req,
-					stream<ap_uint<16> >&		txEng2rxSar_req, //read only
+					stream<ap_uint<16> >&		txEng2rxSar_req, 		//read only
 					stream<rxSarEntry>&			rxSar2rxEng_upd_rsp,
 					stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
 					stream<rxSarEntry_rsp>&		rxSar2txEng_rsp)
 {
 
 	static rxSarEntry rx_table[MAX_SESSIONS];
-	ap_uint<16> 	addr;
-	rxSarRecvd 		in_recvd;
-	rxSarAppd 		in_appd;
-	rxSarEntry 		tmp_entry;
-	rxSarEntry_rsp 	response2_metaloader;
+	ap_uint<16> 			addr;
+	rxSarRecvd 				in_recvd;
+	rxSarAppd 				in_appd;
+	rxSarEntry 				tmp_entry;
+	rxSarEntry_rsp 			response2_metaloader;
+	ap_uint<WINDOW_BITS> 	real_window_size;
 
 #pragma HLS PIPELINE II=1
 
@@ -62,43 +63,46 @@ void rx_sar_table(	stream<rxSarRecvd>&			rxEng2rxSar_upd_req,
 #pragma HLS DEPENDENCE variable=rx_table inter false
 
 	// Read only access from the Tx Engine
-	if(!txEng2rxSar_req.empty())
-	{
+	if(!txEng2rxSar_req.empty()) {
 		txEng2rxSar_req.read(addr);
 		tmp_entry = rx_table[addr];
+
 		response2_metaloader.recvd 			= tmp_entry.recvd;
-		// Copmpute windows size This works even for wrap around
-		// TODO: this only works for fix buffer size
-		response2_metaloader.windowSize     = (tmp_entry.appd - ((ap_uint<16>)tmp_entry.recvd)) - 1; 
+		// Copmpute windows size This works even for wrap around. The window scale is taken into account
+		real_window_size = (tmp_entry.appd - tmp_entry.recvd(WINDOW_BITS-1,0)) - 1;
+#if (WINDOW_SCALE)		
+		response2_metaloader.windowSize  = real_window_size >> tmp_entry.rx_win_shift;
+		response2_metaloader.rx_win_shift = tmp_entry.rx_win_shift;
+#else
+		response2_metaloader.rx_win_shift = real_window_size;
+#endif 		
+
 		rxSar2txEng_rsp.write(response2_metaloader);
 	}
 	// Read or Write access from the Rx App I/F to update the application pointer
-	else if(!rxApp2rxSar_upd_req.empty())
-	{
+	else if(!rxApp2rxSar_upd_req.empty()) {
 		rxApp2rxSar_upd_req.read(in_appd);
-		if(in_appd.write)
-		{
+		if(in_appd.write) {
 			rx_table[in_appd.sessionID].appd = in_appd.appd;
 		}
-		else
-		{
+		else {
 			rxSar2rxApp_upd_rsp.write(rxSarAppd(in_appd.sessionID, rx_table[in_appd.sessionID].appd));
 		}
 	}
 	// Read or Write access from the Rx Engine
-	else if(!rxEng2rxSar_upd_req.empty())
-	{
+	else if(!rxEng2rxSar_upd_req.empty()) {
 		rxEng2rxSar_upd_req.read(in_recvd);
-		if (in_recvd.write)
-		{
+		if (in_recvd.write) {
+
 			rx_table[in_recvd.sessionID].recvd = in_recvd.recvd;
-			if (in_recvd.init)
-			{
+			if (in_recvd.init) {
+#if (WINDOW_SCALE)				
+				rx_table[in_recvd.sessionID].rx_win_shift = in_recvd.rx_win_shift;
+#endif				
 				rx_table[in_recvd.sessionID].appd = in_recvd.recvd;
 			}
 		}
-		else
-		{
+		else {
 			rxSar2rxEng_upd_rsp.write(rx_table[in_recvd.sessionID]);
 		}
 	}

@@ -271,12 +271,13 @@ void rxEngGetMetaData(
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	enum regmd_states {FIRST_WORD, SHORT_PACKET ,NORMAL_PACKET, EXTRA_WORD};
+	enum regmd_states {FIRST_WORD, NORMAL_PACKET, EXTRA_WORD};
 	static regmd_states regdm_fsm_state = FIRST_WORD;
 
 	static axiWord 			prevWord;
-	static ap_uint<4> 		tcp_offset;
+	static ap_uint<6>		byte_offset;
 
+	ap_uint<4> 				tcp_offset;
 	ap_uint<16> 			payload_length;
 	axiWord 				currWord;
 	axiWord 				sendWord;
@@ -307,21 +308,25 @@ void rxEngGetMetaData(
 				rxMetaInfo.digest.rst 		= currWord.data.bit(202);
 				rxMetaInfo.digest.syn 		= currWord.data.bit(201);
 				rxMetaInfo.digest.fin 		= currWord.data.bit(200);
+
+#if (WINDOW_SCALE)
+				// TODO proccess OPTIONS 
+				rxMetaInfo.digest.recv_window_scale = 10;
+#endif				
+
 				/* Only send data when one-transaction packet has data */
-				
+				byte_offset = tcp_offset* 4 + 12;
 				if (currWord.last){		
 					if (payload_length != 0){ // one-transaction packet with any data
-						sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
-						sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
+						sendWord.data 		= currWord.data(511, byte_offset*8);
+						sendWord.keep 		= currWord.keep( 63,  byte_offset);
 						sendWord.last 	  	= 1;
 						payload.write(sendWord);
 					}
 				}
 				else {
 					regdm_fsm_state = NORMAL_PACKET;								// MR TODO: if tcp_offset > 13 the payload starts in the second transaction
-					
 				}
-				std::cout << std::endl;
 				prevWord = currWord;
 				metaDataFifoOut.write(rxMetaInfo);
 			}
@@ -331,12 +336,12 @@ void rxEngGetMetaData(
 				pseudoPacket.read(currWord);
 				
 				// Compose the output word
-				sendWord.data = ((currWord.data(tcp_offset*32-1 + 96,0)) , prevWord.data(511,tcp_offset*32 + 96));
-				sendWord.keep = ((currWord.keep(tcp_offset* 4-1 + 12,0)) , prevWord.keep(63, tcp_offset* 4 + 12));
+				sendWord.data = ((currWord.data((byte_offset*8)-1 ,0)) , prevWord.data(511, byte_offset*8));
+				sendWord.keep = ((currWord.keep(    byte_offset-1 ,0)) , prevWord.keep( 63,   byte_offset));
 
 				sendWord.last 	= 0;
 				if (currWord.last){
-					if (currWord.keep.bit((int)(tcp_offset* 4 + 12))){
+					if (currWord.keep.bit(byte_offset)){
 						regdm_fsm_state = EXTRA_WORD;
 					}
 					else {
@@ -349,8 +354,8 @@ void rxEngGetMetaData(
 			}
 			break;
 		case EXTRA_WORD:
-			sendWord.data 		= prevWord.data(511,tcp_offset*32 + 96);
-			sendWord.keep 		= prevWord.keep(63, tcp_offset* 4 + 12);
+			sendWord.data 		= prevWord.data(511,byte_offset*8);
+			sendWord.keep 		= prevWord.keep(63,   byte_offset);
 			sendWord.last 	  	= 1;
 			payload.write(sendWord);
 			regdm_fsm_state = FIRST_WORD;
@@ -572,12 +577,18 @@ void rxEngTcpFSM(
 	static bool fsm_txSarRequest = false;
 
 
-	static ap_uint<4> control_bits = 0;
-	sessionState tcpState;
-	rxSarEntry rxSar;
-	rxTxSarReply txSar;
-	ap_uint<32> pkgAddr = 0;
+	static ap_uint<4> 		control_bits = 0;
+	sessionState 			tcpState;
+	rxSarEntry 				rxSar;
+	rxTxSarReply 			txSar;
+	ap_uint<32> 			pkgAddr = 0;
+	ap_uint<32> 			newRecvd;
+	ap_uint<WINDOW_BITS> 	free_space;
 
+#if (WINDOW_SCALE)	
+	ap_uint<4>				rx_win_shift;	// used to computed the scale option for RX buffer
+	ap_uint<4>				tx_win_shift;	// used to computed the scale option for TX buffer
+#endif
 
 	switch(fsm_state) {
 		case LOAD:
@@ -632,39 +643,46 @@ void rxEngTcpFSM(
 							}
 							else {
 								// Notify probeTimer about new ACK
-								//if (fsm_meta.meta.ackNumb == txSar.nextByte) //{				//MR TODO: This solve the unexpected retramnsmissio but why?
-									rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
-								//}
+								rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
 								// Check for SlowStart & Increase Congestion Window
+								std::cout << std::endl << "rxEngTcpFSM txSar.cong_window " << txSar.cong_window << "\ttxSar.slowstart_threshold " <<txSar.slowstart_threshold;
+								std::cout << "\tCONGESTION_WINDOW_MAX " << CONGESTION_WINDOW_MAX << std::endl;
 								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
 									txSar.cong_window += MSS;
 								}
-								else if (txSar.cong_window <= 0xF7FF) {
+								else if (txSar.cong_window <= CONGESTION_WINDOW_MAX) {
 									txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
 								}
+								std::cout << "out         txSar.cong_window " << txSar.cong_window << std::endl<< std::endl;
 								txSar.count = 0;
 								txSar.fastRetransmitted = false;
 							}
 							// TX SAR
 							if ((txSar.prevAck <= fsm_meta.meta.ackNumb && fsm_meta.meta.ackNumb <= txSar.nextByte)
 									|| ((txSar.prevAck <= fsm_meta.meta.ackNumb || fsm_meta.meta.ackNumb <= txSar.nextByte) && txSar.nextByte < txSar.prevAck)) {
-								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count, ((txSar.count == 3) || txSar.fastRetransmitted))));
+#if (!WINDOW_SCALE)								
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 
+																		txSar.count, ((txSar.count == 3) || txSar.fastRetransmitted))));
+#else
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 
+																		txSar.count, ((txSar.count == 3) || txSar.fastRetransmitted) , txSar.tx_win_shift)));
+#endif							
 							}
 
 							// Check if packet contains payload
 							if (fsm_meta.meta.length != 0){
-								ap_uint<32> newRecvd = fsm_meta.meta.seqNumb+fsm_meta.meta.length;
+								newRecvd = fsm_meta.meta.seqNumb+fsm_meta.meta.length;
 								// Second part makes sure that app pointer is not overtaken
-								ap_uint<16> free_space = ((rxSar.appd - rxSar.recvd(15, 0)) - 1);
+								free_space = ((rxSar.appd - rxSar.recvd(WINDOW_BITS-1, 0)) - 1);
 								// Check if segment is in order and if enough free space is available
 								if ((fsm_meta.meta.seqNumb == rxSar.recvd) && (free_space > fsm_meta.meta.length)) {
 									rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, newRecvd, 1));
 									// Build memory address
 									
-									pkgAddr(31, 30) = 0x0;
-									pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
-									pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);					// TODO maybe align to the beginning of the buffer
 #if (!RX_DDR_BYPASS)
+									pkgAddr(31, 30) = 0x0;
+									pkgAddr(30, WINDOW_BITS)  	= fsm_meta.sessionID(13, 0);
+									pkgAddr(WINDOW_BITS-1, 0) 	= fsm_meta.meta.seqNumb(WINDOW_BITS-1, 0);
 									rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
 #endif
 									// Only notify about  new data available
@@ -672,6 +690,7 @@ void rxEngTcpFSM(
 									dropDataFifoOut.write(false);
 								}
 								else {
+									std::cout << std::endl << std::endl << std::endl << "Dropping packet because no free space" << std::endl << std::endl << std::endl;
 									dropDataFifoOut.write(true);
 								}
 							}
@@ -730,10 +749,20 @@ void rxEngTcpFSM(
 					if (fsm_state == LOAD) {
 						if (tcpState == CLOSED || tcpState == SYN_SENT) {// Actually this is LISTEN || SYN_SENT
 							// Simultaneous open is supported due to (tcpState == SYN_SENT)
-							// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized
+							
+							//rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
+							// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized + Window scale if enable
+#if (WINDOW_SCALE)							
+							rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
+							tx_win_shift = (fsm_meta.meta.recv_window_scale > WINDOW_SCALE_BITS) ? ((ap_uint<4>) WINDOW_SCALE_BITS) : fsm_meta.meta.recv_window_scale; // Limit the maximum scale to the actual value of the buffer size
+							std::cout << "RXeng recv_window_scale ----> " << std::dec << fsm_meta.meta.recv_window_scale << endl<< endl<< endl;
+							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift));
+							// TX Sar table is initialized with the received window scale 
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
+#else
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
-							// Initialize receive window
 							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //TODO maybe include count check SYN_ACK event
+#endif				
 							rxEng2eventEng_setEvent.write(event(SYN_ACK, fsm_meta.sessionID));
 							// Change State to SYN_RECEIVED
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, SYN_RECEIVED, 1));
@@ -768,11 +797,19 @@ void rxEngTcpFSM(
 						if (tcpState == SYN_SENT) { // A SYN was already send, ack number has to be check, if is correct send ACK is not send a RST
 							if (fsm_meta.meta.ackNumb == txSar.nextByte) { // SYN-ACK is correct
 								
-								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1)); //initialize rx_sar, SEQ + phantom byte, last '1' for appd init
-								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //CHANGE this was added //TODO maybe include count check
 								rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID)); 				// set ACK event
 								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); 	// Update TCP FSM to ESTABLISHED now data can be transfer 
-
+								//initialize rx_sar, SEQ + phantom byte, last '1' for appd init + Window scale if enable
+#if (WINDOW_SCALE)							
+								rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
+								tx_win_shift = (fsm_meta.meta.recv_window_scale > WINDOW_SCALE_BITS) ? ((ap_uint<4>) WINDOW_SCALE_BITS) : fsm_meta.meta.recv_window_scale; // Limit the maximum scale to the actual value of the buffer size
+								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift)); 
+								// TX Sar table is initialized with the received window scale 
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
+#else								
+								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1)); //initialize rx_sar, SEQ + phantom byte, last '1' for appd init
+								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //CHANGE this was added //TODO maybe include count check
+#endif
 								openConStatusOut.write(openStatus(fsm_meta.sessionID, true));
 							}
 							else{ //TODO is this the correct procedure?
@@ -805,8 +842,8 @@ void rxEngTcpFSM(
 							// Check if there is payload
 							if (fsm_meta.meta.length != 0) {
 								pkgAddr(31, 30) = 0x0;
-								pkgAddr(29, 16) = fsm_meta.sessionID(13, 0);
-								pkgAddr(15, 0) = fsm_meta.meta.seqNumb(15, 0);
+								pkgAddr(30, WINDOW_BITS)  	= fsm_meta.sessionID(13, 0);
+								pkgAddr(WINDOW_BITS-1, 0) 	= fsm_meta.meta.seqNumb(WINDOW_BITS-1, 0);
 #if (!RX_DDR_BYPASS)
 								rxBufferWriteCmd.write(mmCmd(pkgAddr, fsm_meta.meta.length));
 #endif

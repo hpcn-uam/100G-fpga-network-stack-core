@@ -57,13 +57,14 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	#pragma HLS DEPENDENCE variable=tx_table inter false
 	#pragma HLS RESOURCE variable=tx_table core=RAM_T2P_BRAM
 	
-	txTxSarQuery 	tst_txEngUpdate;
-	txTxSarRtQuery 	txEngRtUpdate;
-	rxTxSarQuery 	tst_rxEngUpdate;
-	txAppTxSarPush 	push;
-	ap_uint<16> 	minWindow;
-	txSarEntry 		tmp_entry_read;
-	txTxSarReply 	tmp_replay;
+	txTxSarQuery 			tst_txEngUpdate;
+	txTxSarRtQuery 			txEngRtUpdate;
+	rxTxSarQuery 			tst_rxEngUpdate;
+	txAppTxSarPush 			push;
+	txSarEntry 				tmp_entry_read;
+	txTxSarReply 			tmp_replay;
+	ap_uint<WINDOW_BITS> 	minWindow;
+	ap_uint<WINDOW_BITS>	scaled_recv_window = 0;
 
 	// TX Engine
 	if (!txEng2txSar_upd_req.empty()) {
@@ -79,7 +80,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 					tx_table[tst_txEngUpdate.sessionID].finReady = tst_txEngUpdate.finReady;
 					tx_table[tst_txEngUpdate.sessionID].finSent = tst_txEngUpdate.finSent;
 					// Init ACK to txAppInterface
-#if !(TCP_NODELAY)
+#if (!TCP_NODELAY)
 					txSar2txApp_ack_push.write(txSarAckPush(tst_txEngUpdate.sessionID, tst_txEngUpdate.not_ackd, 1));
 #else
 					txSar2txApp_ack_push.write(txSarAckPush(tst_txEngUpdate.sessionID, tst_txEngUpdate.not_ackd, 0x3908 /* 10 x 1460(MSS) */, 1));
@@ -101,6 +102,19 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 		else {// Read
 			tmp_entry_read = tx_table[tst_txEngUpdate.sessionID];
 
+
+			tmp_replay.ackd			= tmp_entry_read.ackd;
+			tmp_replay.not_ackd		= tmp_entry_read.not_ackd;
+			tmp_replay.app			= tmp_entry_read.app;
+			tmp_replay.finReady		= tmp_entry_read.finReady;
+			tmp_replay.finSent		= tmp_entry_read.finSent;	
+			tmp_replay.currLength	= tmp_entry_read.app - tmp_entry_read.not_ackd(WINDOW_BITS-1,0);	
+			tmp_replay.usedLength	= tmp_entry_read.not_ackd(WINDOW_BITS-1,0) - tmp_entry_read.ackd;	
+			
+			tmp_replay.ackd_eq_not_ackd	= (tmp_entry_read.ackd == tmp_entry_read.not_ackd);	
+			tmp_replay.not_ackd_plus_mss	= tmp_entry_read.not_ackd + MSS;	
+
+#if (!WINDOW_SCALE)			
 			if (tmp_entry_read.cong_window < tmp_entry_read.recv_window) {
 				minWindow = tmp_entry_read.cong_window;
 			}
@@ -108,24 +122,25 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 				minWindow = tmp_entry_read.recv_window;
 			}
 
-			tmp_replay.ackd			= tmp_entry_read.ackd;
-			tmp_replay.not_ackd		= tmp_entry_read.not_ackd;
-			tmp_replay.min_window	= minWindow;		
-			tmp_replay.app			= tmp_entry_read.app;
-			tmp_replay.finReady		= tmp_entry_read.finReady;
-			tmp_replay.finSent		= tmp_entry_read.finSent;	
-			tmp_replay.currLength	= tmp_entry_read.app - tmp_entry_read.not_ackd(15,0);	
-			tmp_replay.usedLength	= tmp_entry_read.not_ackd(15,0) - tmp_entry_read.ackd;	
-			
-			tmp_replay.ackd_eq_not_ackd	= (tmp_entry_read.ackd == tmp_entry_read.not_ackd);	
-			tmp_replay.not_ackd_plus_mss	= tmp_entry_read.not_ackd + MSS;	
-			
+#else
+			scaled_recv_window(tmp_entry_read.tx_win_shift+15,tmp_entry_read.tx_win_shift)  = tmp_entry_read.recv_window;
+			if (tmp_entry_read.cong_window < scaled_recv_window ) {
+				minWindow = tmp_entry_read.cong_window;
+			}
+			else {
+				minWindow = scaled_recv_window;
+			}
+
+			tmp_replay.tx_win_shift = tmp_entry_read.tx_win_shift;
+#endif			
+
 			if (minWindow > tmp_replay.usedLength){
 				tmp_replay.UsableWindow	= minWindow - tmp_replay.usedLength;
 			}
 			else{
 				tmp_replay.UsableWindow	= 0;
 			}
+			tmp_replay.min_window	= minWindow;		
 			//std::cout << "TX Sar table min window " << std::dec << minWindow << " usable window " << tmp_replay.UsableWindow;
 			//std::cout << " currLength " << tmp_replay.currLength<<  " usedLength " <<  tmp_replay.usedLength;
 			//std::cout << "\t not ack " << tmp_entry_read.not_ackd(15,0) << "\tapp " << tmp_entry_read.app << std::endl;
@@ -135,17 +150,26 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			txSar2txEng_upd_rsp.write(tmp_replay);
 		}
 	}
+
+
 	// TX App Stream If
 	else if (!txApp2txSar_app_push.empty()) {//write only
 		txApp2txSar_app_push.read(push);
 		tx_table[push.sessionID].app = push.app;
 		//std::cout << "APP update  " << std::dec << push.app << std::endl;
 	}
+
+
 	// RX Engine
 	else if (!rxEng2txSar_upd_req.empty()) {
 		rxEng2txSar_upd_req.read(tst_rxEngUpdate);
 		if (tst_rxEngUpdate.write) {
-			//std::cout << "TX Sar updating table  " << std::dec << tst_rxEngUpdate.recv_window << std::endl;
+#if (WINDOW_SCALE)
+			//std::cout << "TX Sar updating table  write_ws " << std::dec << tst_rxEngUpdate.write_ws << "\trecv_window_scale" << tst_rxEngUpdate.recv_window_scale << std::endl;
+			if (tst_rxEngUpdate.tx_win_shift_write){
+				tx_table[tst_rxEngUpdate.sessionID].tx_win_shift = tst_rxEngUpdate.tx_win_shift;
+			}
+#endif			
 			tx_table[tst_rxEngUpdate.sessionID].ackd = tst_rxEngUpdate.ackd;
 			tx_table[tst_rxEngUpdate.sessionID].recv_window = tst_rxEngUpdate.recv_window;
 			tx_table[tst_rxEngUpdate.sessionID].cong_window = tst_rxEngUpdate.cong_window;
@@ -154,11 +178,21 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 #if (!TCP_NODELAY)
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd));
 #else
-			if (tst_rxEngUpdate.cong_window < tst_rxEngUpdate.recv_window) {
+
+#if (WINDOW_SCALE)				
+			scaled_recv_window(tst_rxEngUpdate.tx_win_shift+15,tst_rxEngUpdate.tx_win_shift)  = tst_rxEngUpdate.recv_window;
+			//scaled_recv_window = (tst_rxEngUpdate.recv_window *  (1 << tst_rxEngUpdate.tx_win_shift));
+#else
+			scaled_recv_window = tst_rxEngUpdate.recv_window;		
+#endif				
+			if (tst_rxEngUpdate.cong_window < scaled_recv_window) {
 				minWindow = tst_rxEngUpdate.cong_window;
+				std::cout << "Using Congestion win " << std::dec << tst_rxEngUpdate.cong_window << "\tshift: " << tst_rxEngUpdate.tx_win_shift;
+				std::cout << "\trecv_window " << tst_rxEngUpdate.recv_window << "\t scaled recv_wind: " << scaled_recv_window << std::endl;
 			}
 			else {
-				minWindow = tst_rxEngUpdate.recv_window;
+				minWindow = scaled_recv_window;			
+				std::cout << "Scaling window size up " << std::dec << "\tmin wind " << minWindow << std::endl;
 			}
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd, minWindow));
 #endif
@@ -169,7 +203,11 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 													tx_table[tst_rxEngUpdate.sessionID].cong_window,
 													tx_table[tst_rxEngUpdate.sessionID].slowstart_threshold,
 													tx_table[tst_rxEngUpdate.sessionID].count,
-													tx_table[tst_rxEngUpdate.sessionID].fastRetransmitted));
+													tx_table[tst_rxEngUpdate.sessionID].fastRetransmitted
+#if (WINDOW_SCALE)
+													,tx_table[tst_rxEngUpdate.sessionID].tx_win_shift
+#endif
+			));
 		}
 	}
 }

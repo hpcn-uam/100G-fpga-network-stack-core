@@ -29,7 +29,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "dummy_memory.hpp"
 #include <iostream>
 
-
 /*dummyMemory::dummyMemory(const dummyMemory& another)
 {
 
@@ -38,8 +37,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 void dummyMemory::setReadCmd(mmCmd cmd)
 {
 //	readAddr = cmd.saddr(7, 0);
-	readAddr = cmd.saddr(15, 0);
-	readId = cmd.saddr(31, 16);
+	readAddr = cmd.saddr(WINDOW_BITS-1, 0);
+	readId   = cmd.saddr(31, WINDOW_BITS);
 	uint16_t tempLen = (uint16_t) cmd.bbt(15, 0);
 	readLen = (int) tempLen;
 	//std::cout << readLen << std::endl;
@@ -48,8 +47,8 @@ void dummyMemory::setReadCmd(mmCmd cmd)
 void dummyMemory::setWriteCmd(mmCmd cmd)
 {
 //	writeAddr = cmd.saddr(7, 0);
-	writeAddr = cmd.saddr(15, 0);
-	writeId = cmd.saddr(31, 16);
+	writeAddr = cmd.saddr(WINDOW_BITS-1, 0);
+	writeId   = cmd.saddr(31, WINDOW_BITS);
 }
 
 
@@ -85,25 +84,28 @@ void dummyMemory::writeWord(axiWord& word)
 		writeStorageIt = createBuffer(writeId);
 		// check it?
 	}
+	if (word.keep.or_reduce() == 0){
+		std::cout << std::endl << std::endl << "ERROR YOU ARE TRYING TO WRITE A NON VALID AXI4-STREAM WORD" << std::endl;
+		std::cout << "DATA: " << std::hex << std::setw(130) << word.data << "\tKEEP: " << std::setw(18) << word.keep << "\tLAST: " << word.last << std::endl << std::endl;
+	}
+
 	for (int i = 0; i < (ETH_INTERFACE_WIDTH/8); i++) {
 		if (word.keep.bit(i)) {
 			(writeStorageIt->second)[writeAddr] = word.data((i*8)+7, i*8);
 			writeAddr++;
 		}
-		else
-		{
+		else {
 			break;
 		}
 	}
 }
 
-std::map<ap_uint<16>, ap_uint<8>*>::iterator dummyMemory::createBuffer(ap_uint<16> id)
+std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*>::iterator dummyMemory::createBuffer(ap_uint<16> id)
 {
-	ap_uint<8>* array = new ap_uint<8>[65536]; // [255] default
-	std::pair<std::map<ap_uint<16>, ap_uint<8>*>::iterator, bool> ret;
+	ap_uint<8>* array = new ap_uint<8>[BUFFER_SIZE]; // [255] default
+	std::pair<std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*>::iterator, bool> ret;
 	ret = storage.insert(std::make_pair(id, array));
-	if (ret.second)
-	{
+	if (ret.second)	{
 		return ret.first;
 	}
 	return storage.end();

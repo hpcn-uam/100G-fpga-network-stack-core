@@ -39,15 +39,15 @@ public:
 	void readWord(axiWord& word);
 	void writeWord(axiWord& word);
 private:
-	std::map<ap_uint<16>, ap_uint<8>*>::iterator createBuffer(ap_uint<16> id);
-	ap_uint<16> readAddr; //<8>
-	ap_uint<16> readId;
-	int readLen;
-	ap_uint<16> writeAddr; //<8>
-	ap_uint<16> writeId;
+	std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*>::iterator createBuffer(ap_uint<16> id);
+	ap_uint<WINDOW_BITS> 	readAddr; //<8>
+	ap_uint<16> 			readId;
+	int 					readLen;
+	ap_uint<WINDOW_BITS> 	writeAddr; //<8>
+	ap_uint<16> 			writeId;
 	//ap_uint<16> writeLen;
-	std::map<ap_uint<16>, ap_uint<8>*> storage;
-	std::map<ap_uint<16>, ap_uint<8>*>::iterator readStorageIt;
-	std::map<ap_uint<16>, ap_uint<8>*>::iterator writeStorageIt;
+	std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*> storage;
+	std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*>::iterator readStorageIt;
+	std::map<ap_uint<WINDOW_BITS>, ap_uint<8>*>::iterator writeStorageIt;
 };
 #endif

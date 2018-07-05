@@ -51,11 +51,11 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 
 	static appTxMeta 		tasi_writeMeta;
 	txAppTxSarReply 		writeSar;
-	ap_uint<16> 			maxWriteLength;
-	ap_uint<16> 			usedLength;
-	ap_uint<16> 			usableWindow;
+	ap_uint<WINDOW_BITS>	maxWriteLength;
+	ap_uint<WINDOW_BITS>	usedLength;
+	ap_uint<WINDOW_BITS>	usableWindow;
 	ap_uint<32> 			pkgAddr;
-	sessionState state;
+	sessionState 			state;
 
 	// FSM requests metadata, decides if packet goes to buffer or not
 	switch(tai_state) {
@@ -73,7 +73,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 				txSar2txApp_upd_rsp.read(writeSar);
 				maxWriteLength = (writeSar.ackd - writeSar.mempt) - 1;
 #if (TCP_NODELAY)
-				usedLength 		= ((ap_uint<16>) writeSar.mempt - writeSar.ackd);
+				usedLength 		= writeSar.mempt(WINDOW_BITS-1,0) - writeSar.ackd;
 				if (writeSar.min_window > usedLength) {
 					usableWindow = writeSar.min_window - usedLength;
 				}
@@ -81,23 +81,28 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 					usableWindow 	= 0;
 				}
 #endif
-				//std::cout << "READ_META writeSar.min_window " << std::dec << writeSar.min_window << "\tusedLength " << usedLength << "\tusable window "  << usableWindow << std::endl;
+				std::cout << "READ_META condition " << std::dec << (tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length);
+				std::cout << "\tc0 " << (tasi_writeMeta.length > maxWriteLength) << "\tc2 " << (usableWindow < tasi_writeMeta.length);
+				std::cout << "\tusableWindow ---> " << usableWindow << "\tusedLength ---> " << usedLength << "\twriteSar.min_window ---> " << writeSar.min_window << std::endl;
+
 				if (state != ESTABLISHED) {
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail
 				}
-#if (!TCP_NODELAY)
-				else if(tasi_writeMeta.length > maxWriteLength) {
-#else
-				else if(tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length) {
+#if (TCP_NODELAY)
+				else if (usableWindow < tasi_writeMeta.length){
+					// Notify app about fail
+					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, usableWindow, ERROR_WINDOW));					
+				}
 #endif
+				else if(tasi_writeMeta.length > maxWriteLength) {
 					// Notify app about fail
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOSPACE));
 				}	
 				else {
 					// TODO there seems some redundancy
-					pkgAddr(31, 30) = (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
-					pkgAddr(29, 16) = tasi_writeMeta.sessionID(13, 0);
-					pkgAddr(15, 0)  = writeSar.mempt;
+					pkgAddr(31, 30) 			= (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
+					pkgAddr(29, WINDOW_BITS) 	= tasi_writeMeta.sessionID(13, 0);
+					pkgAddr(WINDOW_BITS-1, 0)  	= writeSar.mempt;
 					txBufferWriteCmd.write(mmCmd( pkgAddr, tasi_writeMeta.length));
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, NO_ERROR));
 					txAppStream2eventEng_setEvent.write(event(TX, tasi_writeMeta.sessionID, writeSar.mempt, tasi_writeMeta.length));

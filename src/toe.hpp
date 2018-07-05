@@ -44,7 +44,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 
 static const ap_uint<16> MSS=1460; //536
 
-static const uint16_t MAX_SESSIONS = 10000;
 
 // TCP_NODELAY flag, to disable Nagle's Algorithm
 #define TCP_NODELAY 1
@@ -58,6 +57,32 @@ static const uint16_t MAX_SESSIONS = 10000;
 
 // FAST_RETRANSMIT flag, to enable TCP fast recovery/retransmit mechanism
 #define FAST_RETRANSMIT 0
+
+// WINDOW_SCALE, to enable TCP Window Scale option
+#define WINDOW_SCALE 1
+
+// This macro defines the amount of bits for the window scale option
+// It is used to extend the window size, increasing the throughput.
+static const uint8_t WINDOW_SCALE_BITS = 7;
+
+
+// If the window scale option is enable the the MAX session have to be computed
+#if (WINDOW_SCALE)
+
+// Do NOT touch from this point
+static const uint16_t WINDOW_BITS=(16+WINDOW_SCALE_BITS);
+
+// If the Window is 64 KB there are 64K possible sessions.
+// Since we want to scale the window size the number of connection is reduced by the (2^WINDOW_SCALE_BITS)
+static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
+
+#else
+static const uint8_t  WINDOW_BITS=16;
+static const uint16_t MAX_SESSIONS = 10000;
+#endif
+
+static const uint32_t BUFFER_SIZE=(1<<WINDOW_BITS);
+static const ap_uint<WINDOW_BITS> CONGESTION_WINDOW_MAX = (BUFFER_SIZE-2048);
 
 #define CLOCK_PERIOD 0.003103
 
@@ -177,8 +202,8 @@ struct sessionLookupQuery
 
 struct sessionLookupReply
 {
-	ap_uint<16> sessionID;
-	bool		hit;
+	ap_uint<16> 	sessionID;
+	bool			hit;
 	sessionLookupReply() {}
 	sessionLookupReply(ap_uint<16> id, bool hit)
 			:sessionID(id), hit(hit) {}
@@ -187,9 +212,9 @@ struct sessionLookupReply
 
 struct stateQuery
 {
-	ap_uint<16> sessionID;
-	sessionState state;
-	ap_uint<1>	write;
+	ap_uint<16> 	sessionID;
+	sessionState 	state;
+	ap_uint<1>		write;
 	stateQuery() {}
 	stateQuery(ap_uint<16> id)
 				:sessionID(id), state(CLOSED), write(0){}
@@ -204,23 +229,31 @@ struct stateQuery
  */
 struct rxSarEntry
 {
-	ap_uint<32> recvd;
-	ap_uint<16> appd;
+	ap_uint<32> 			recvd;
+	ap_uint<WINDOW_BITS> 	appd;
+#if (WINDOW_SCALE)	
+	ap_uint<4>				rx_win_shift;
+#endif	
 };
 
 struct rxSarEntry_rsp
 {
-	ap_uint<32> recvd;
-//	ap_uint<16> appd;
-	ap_uint<16> windowSize;
+	ap_uint<32> 			recvd;
+	ap_uint<16> 			windowSize;
+#if (WINDOW_SCALE)	
+	ap_uint<4>				rx_win_shift;
+#endif	
 };
 
 struct rxSarRecvd
 {
-	ap_uint<16> sessionID;
-	ap_uint<32> recvd;
-	ap_uint<1> write;
-	ap_uint<1> init;
+	ap_uint<16> 			sessionID;
+	ap_uint<32> 			recvd;
+	ap_uint<1> 				write;
+	ap_uint<1> 				init;
+#if (WINDOW_SCALE)
+	ap_uint<4>				rx_win_shift;
+#endif	
 	rxSarRecvd() {}
 	rxSarRecvd(ap_uint<16> id)
 				:sessionID(id), recvd(0), write(0), init(0) {}
@@ -228,60 +261,84 @@ struct rxSarRecvd
 				:sessionID(id), recvd(recvd), write(write), init(0) {}
 	rxSarRecvd(ap_uint<16> id, ap_uint<32> recvd, ap_uint<1> write, ap_uint<1> init)
 					:sessionID(id), recvd(recvd), write(write), init(init) {}
+
+#if (WINDOW_SCALE)
+	rxSarRecvd(ap_uint<16> id, ap_uint<32> recvd, ap_uint<1> write, ap_uint<1> init, ap_uint<4> wsopt)
+					:sessionID(id), recvd(recvd), write(write), init(init), rx_win_shift(wsopt)  {}
+#endif					
+
 };
 
 struct rxSarAppd
 {
-	ap_uint<16> sessionID;
-	ap_uint<16> appd;
-	ap_uint<1>	write;
+	ap_uint<16> 			sessionID;
+	ap_uint<WINDOW_BITS> 	appd;
+	ap_uint<1>				write;
 	rxSarAppd() {}
 	rxSarAppd(ap_uint<16> id)
 				:sessionID(id), appd(0), write(0) {}
-	rxSarAppd(ap_uint<16> id, ap_uint<16> appd)
+	rxSarAppd(ap_uint<16> id, ap_uint<WINDOW_BITS> appd)
 				:sessionID(id), appd(appd), write(1) {}
 };
 
 struct txSarEntry
 {
-	ap_uint<32> ackd;
-	ap_uint<32> not_ackd;
-	ap_uint<16> recv_window;
-	ap_uint<16> cong_window;
-	ap_uint<16> slowstart_threshold;
-	ap_uint<16> app;
-	ap_uint<2>	count;
-	bool		fastRetransmitted;
-	bool		finReady;
-	bool		finSent;
-	bool 		use_cong_window;
+	ap_uint<32> 			ackd;
+	ap_uint<32> 			not_ackd;
+	ap_uint<16> 			recv_window;
+#if (WINDOW_SCALE)
+	ap_uint< 4>				tx_win_shift;
+#endif	
+	ap_uint<WINDOW_BITS> 	cong_window;
+	ap_uint<WINDOW_BITS> 	slowstart_threshold;
+	ap_uint<WINDOW_BITS> 	app;
+	ap_uint<2>				count;
+	bool					fastRetransmitted;
+	bool					finReady;
+	bool					finSent;
+	bool 					use_cong_window;
 };
 
 struct rxTxSarQuery
 {
-	ap_uint<16> sessionID;
-	ap_uint<32> ackd;
-	ap_uint<16> recv_window;
-	ap_uint<16>	cong_window;
-	ap_uint<2>  count;
-	bool		fastRetransmitted;
-	ap_uint<1> write;
+	ap_uint<16> 			sessionID;
+	ap_uint<32> 			ackd;
+	ap_uint<16> 			recv_window;
+	ap_uint<WINDOW_BITS>	cong_window;
+	ap_uint<2>  			count;
+	bool					fastRetransmitted;
+	ap_uint<1> 				write;
+#if (WINDOW_SCALE)
+	ap_uint<4>				tx_win_shift;
+	bool 					tx_win_shift_write;
+#endif	
 	rxTxSarQuery () {}
 	rxTxSarQuery(ap_uint<16> id)
 				:sessionID(id), ackd(0), recv_window(0), count(0), fastRetransmitted(false), write(0) {}
-	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<16> recv_win, ap_uint<16> cong_win, ap_uint<2> count, bool fastRetransmitted)
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted)
 				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1) {}
+#if (WINDOW_SCALE)
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
+				 ap_uint<4> ws)
+				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1),
+				 tx_win_shift_write(0),  tx_win_shift(ws) {}
+
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
+				 bool tx_win_shift_write, ap_uint<4> ws)
+				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1),
+				 tx_win_shift_write(tx_win_shift_write),  tx_win_shift(ws) {}
+#endif				
 };
 
 struct txTxSarQuery
 {
-	ap_uint<16> sessionID;
-	ap_uint<32> not_ackd;
-	ap_uint<1>	write;
-	ap_uint<1>	init;
-	bool		finReady;
-	bool		finSent;
-	bool		isRtQuery;
+	ap_uint<16> 			sessionID;
+	ap_uint<32> 			not_ackd;
+	ap_uint<1>				write;
+	ap_uint<1>				init;
+	bool					finReady;
+	bool					finSent;
+	bool					isRtQuery;
 	txTxSarQuery() {}
 	txTxSarQuery(ap_uint<16> id)
 				:sessionID(id), not_ackd(0), write(0), init(0), finReady(false), finSent(false), isRtQuery(false) {}
@@ -300,109 +357,119 @@ struct txTxSarRtQuery : public txTxSarQuery
 	txTxSarRtQuery() {}
 	txTxSarRtQuery(const txTxSarQuery& q)
 			:txTxSarQuery(q.sessionID, q.not_ackd, q.write, q.init, q.finReady, q.finSent, q.isRtQuery) {}
-	txTxSarRtQuery(ap_uint<16> id, ap_uint<16> ssthresh)
+	txTxSarRtQuery(ap_uint<16> id, ap_uint<WINDOW_BITS> ssthresh)
 			:txTxSarQuery(id, ssthresh, 1, 0, false, false, true) {}
-	ap_uint<16> getThreshold()
+	ap_uint<WINDOW_BITS> getThreshold()
 	{
-	return not_ackd(15, 0);
+	return not_ackd(WINDOW_BITS-1, 0);
 	}
 };
 
 struct txAppTxSarQuery
 {
-	ap_uint<16> sessionID;
+	ap_uint<16> 			sessionID;
 	//ap_uint<16> ackd;
-	ap_uint<16> mempt;
-	bool		write;
+	ap_uint<WINDOW_BITS> 	mempt;
+	bool					write;
 	txAppTxSarQuery() {}
 	txAppTxSarQuery(ap_uint<16> id)
 				:sessionID(id), mempt(0), write(false) {}
-	txAppTxSarQuery(ap_uint<16> id, ap_uint<16> pt)
+	txAppTxSarQuery(ap_uint<16> id, ap_uint<WINDOW_BITS> pt)
 			:sessionID(id), mempt(pt), write(true) {}
 };
 
 struct rxTxSarReply
 {
-	ap_uint<32>	prevAck;
-	ap_uint<32> nextByte;
-	ap_uint<16>	cong_window;
-	ap_uint<16> slowstart_threshold;
-	ap_uint<2>	count;
-	bool		fastRetransmitted;
+	ap_uint<32>				prevAck;
+	ap_uint<32> 			nextByte;
+	ap_uint<WINDOW_BITS>	cong_window;
+	ap_uint<WINDOW_BITS> 	slowstart_threshold;
+	ap_uint<2>				count;
+	bool					fastRetransmitted;
+#if (WINDOW_SCALE)
+	ap_uint<4>				tx_win_shift;
+#endif	
 	rxTxSarReply() {}
-	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<16> cong_win, ap_uint<16> sstresh, ap_uint<2> count, bool fastRetransmitted)
+	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<WINDOW_BITS> cong_win, ap_uint<WINDOW_BITS> sstresh, ap_uint<2> count, bool fastRetransmitted)
 			:prevAck(ack), nextByte(next), cong_window(cong_win), slowstart_threshold(sstresh), count(count), fastRetransmitted(fastRetransmitted) {}
+#if (WINDOW_SCALE)
+	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<WINDOW_BITS> cong_win, ap_uint<WINDOW_BITS> sstresh, ap_uint<2> count, bool fastRetransmitted, ap_uint<4> txws)
+		:prevAck(ack), nextByte(next), cong_window(cong_win), slowstart_threshold(sstresh), count(count), fastRetransmitted(fastRetransmitted), tx_win_shift(txws) {}		
+#endif			
 };
 
 struct txAppTxSarReply
 {
-	ap_uint<16> sessionID;
-	ap_uint<16> ackd;
-	ap_uint<16> mempt;
+	ap_uint<16> 			sessionID;
+	ap_uint<WINDOW_BITS> 	ackd;
+	ap_uint<WINDOW_BITS> 	mempt;
 #if (TCP_NODELAY)
-	ap_uint<16> min_window;
+	ap_uint<WINDOW_BITS> 	min_window;
 #endif	
 	txAppTxSarReply() {}
 #if !(TCP_NODELAY)
-	txAppTxSarReply(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> pt)
+	txAppTxSarReply(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> pt)
 		:sessionID(id), ackd(ackd), mempt(pt) {}
 #else
-	txAppTxSarReply(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> pt, ap_uint<16> min_window)
+	txAppTxSarReply(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> pt, ap_uint<WINDOW_BITS> min_window)
 		:sessionID(id), ackd(ackd), mempt(pt), min_window(min_window) {}
 #endif
 };
 
 struct txAppTxSarPush
 {
-	ap_uint<16> sessionID;
-	ap_uint<16> app;
+	ap_uint<16> 			sessionID;
+	ap_uint<WINDOW_BITS> 	app;
 	txAppTxSarPush() {}
-	txAppTxSarPush(ap_uint<16> id, ap_uint<16> app)
+	txAppTxSarPush(ap_uint<16> id, ap_uint<WINDOW_BITS> app)
 			:sessionID(id), app(app) {}
 };
 
 struct txSarAckPush
 {
-	ap_uint<16> sessionID;
-	ap_uint<16> ackd;
+	ap_uint<16> 			sessionID;
+	ap_uint<WINDOW_BITS> 	ackd;
 #if (TCP_NODELAY)
-	ap_uint<16> min_window;
+	ap_uint<WINDOW_BITS> 	min_window;
 #endif	
 	ap_uint<1>	init;
 	txSarAckPush() {}
-#if !(TCP_NODELAY)
-	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd)
+#if (!TCP_NODELAY)
+	txSarAckPush(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd)
 		:sessionID(id), ackd(ackd), init(0) {}
-	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<1> init)
+	txSarAckPush(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<1> init)
 		:sessionID(id), ackd(ackd), init(init) {}
 #else
-	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> min_window)
+	txSarAckPush(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> min_window)
 		:sessionID(id), ackd(ackd), min_window(min_window), init(0) {}
-	txSarAckPush(ap_uint<16> id, ap_uint<16> ackd, ap_uint<16> min_window, ap_uint<1> init)
+	txSarAckPush(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> min_window, ap_uint<1> init)
 		:sessionID(id), ackd(ackd), min_window(min_window), init(init) {}
 #endif
 };
 
 struct txTxSarReply
 {
-	ap_uint<32> ackd;
-	ap_uint<32> not_ackd;
-	ap_uint<16> min_window;
-	ap_uint<16> app;
-	bool		finReady;
-	bool		finSent;
-	ap_uint<16> currLength;
-	ap_uint<16> usedLength;
-	ap_uint<16> UsableWindow;
+	ap_uint<32> 			ackd;
+	ap_uint<32> 			not_ackd;
+	ap_uint<WINDOW_BITS> 	min_window;
+	ap_uint<WINDOW_BITS> 	app;
+	bool					finReady;
+	bool					finSent;
+	ap_uint<WINDOW_BITS> 	currLength;
+	ap_uint<WINDOW_BITS> 	usedLength;
+	ap_uint<WINDOW_BITS> 	UsableWindow;
 
-	bool 		ackd_eq_not_ackd;
-	ap_uint<32> not_ackd_short;
-	bool 		usablewindow_b_mss;
-	ap_uint<32> not_ackd_plus_mss;
+	bool 					ackd_eq_not_ackd;
+	ap_uint<32> 			not_ackd_short;
+	bool 					usablewindow_b_mss;
+	ap_uint<32> 			not_ackd_plus_mss;
+#if (WINDOW_SCALE)
+	ap_uint<4>				tx_win_shift;	
+#endif	
 
 	//ap_uint<16> Send_Window;
 	txTxSarReply() {}
-	txTxSarReply(ap_uint<32> ack, ap_uint<32> nack, ap_uint<16> min_window, ap_uint<16> app, bool finReady, bool finSent)
+	txTxSarReply(ap_uint<32> ack, ap_uint<32> nack, ap_uint<WINDOW_BITS> min_window, ap_uint<WINDOW_BITS> app, bool finReady, bool finSent)
 		:ackd(ack), not_ackd(nack), min_window(min_window), app(app), finReady(finReady), finSent(finSent) {}
 };
 
@@ -471,7 +538,7 @@ struct rstEvent : public event
 		//:event(RST, id, hasSessionID), seq(seq) {}
 	ap_uint<32> getAckNumb()
 	{
-		ap_uint<32> seq;
+		ap_uint<32> seq;					// TODO FIXME REVIEW
 		seq(31, 16) = address;
 		seq(15, 0) = length;
 		return seq;
@@ -585,15 +652,15 @@ struct appTxMeta
 		:sessionID(id), length(len) {}
 };
 
-enum txApp_error_msg {NO_ERROR, ERROR_NOCONNECTION, ERROR_NOSPACE, ERROR_OVERFLOW_MSS};
+enum txApp_error_msg {NO_ERROR, ERROR_NOCONNECTION, ERROR_NOSPACE, ERROR_WINDOW};
 
 struct appTxRsp
 {
-	ap_uint<16> 		length;
-	ap_uint<16> 		remaining_space;
-	txApp_error_msg		error;
+	ap_uint<16> 				length;
+	ap_uint<WINDOW_BITS> 		remaining_space;
+	txApp_error_msg				error;
 	appTxRsp() {}
-	appTxRsp(ap_uint<12> len, ap_uint<16> rem_space, txApp_error_msg err)
+	appTxRsp(ap_uint<12> len, ap_uint<WINDOW_BITS> rem_space, txApp_error_msg err)
 		:length(len), remaining_space(rem_space), error(err) {}
 };
 

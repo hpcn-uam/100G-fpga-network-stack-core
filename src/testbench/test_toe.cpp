@@ -38,8 +38,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 
 #define ECHO_REPLAY 1
 
-#define totalSimCycles 100000
-//#define totalSimCycles 10000
+#define totalSimCycles 10000000
 
 using namespace std;
 
@@ -482,17 +481,17 @@ void simulateRx(
 	static int read_packet_number = 0;
 	static int read_transaction_number = 0;
 
-	ap_uint<17> address_comparator;	
+	ap_uint<WINDOW_BITS+1> address_comparator;	
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		wrBufferWriteCounter = cmd.bbt;
 		stx_write = true;
-		cout << "Rx WRITE command [" << setw(3) << write_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << "Rx WRITE command [" << setw(3) << write_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
-		if (address_comparator.bit(16)){
-			cout << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl;
+		if (address_comparator > BUFFER_SIZE){
+			cout << endl << endl << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl << endl;
 		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
@@ -551,6 +550,7 @@ void simulateTx(
 	mmStatus status;
 	axiWord inWord;
 	axiWord outWord;
+	static int write_command_number = 0;
 
 	static bool stx_write 	= false;
 	static bool stx_read 	= false;
@@ -558,16 +558,16 @@ void simulateTx(
 
 	static int app2mem_word=0;
 	static int mem2tx_word=0;
-	ap_uint<17> address_comparator;	
+	ap_uint<WINDOW_BITS+1> address_comparator;	
 
 	if (!WriteCmdFifo.empty() && !stx_write) {
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		cout << "Tx WRITE command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
-		if (address_comparator.bit(16)){
-			cout << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl;
+		if (address_comparator > BUFFER_SIZE){
+			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl << endl ;
 		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
@@ -585,7 +585,7 @@ void simulateTx(
 		ReadCmdFifo.read(cmd);
 		memory->setReadCmd(cmd);
 		stx_read = true;
-		cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
+		//cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
@@ -655,7 +655,7 @@ int main(int argc, char **argv) {
 	*/
 	bool			testRxPath;	 
 	bool			testTxPath;
-	bool			firsts_packets_pace 	= false;
+	bool			firsts_packets_pace 	= true;
 	bool			seconds_packets_pace 	= false;
 	
 	int 			mode=-1;
@@ -704,6 +704,8 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
+	cout << "WINDOW_BITS " << dec << WINDOW_BITS << "\tMAX_SESSIONS " << MAX_SESSIONS << "\tBUFFER_SIZE " << BUFFER_SIZE << endl;
+
 	
 	input_file 	= argv[2];
 	output_file = argv[3];
@@ -712,10 +714,7 @@ int main(int argc, char **argv) {
 
 
 		if (testTxPath){
-			if (simCycleCounter < 200){
-				firsts_packets_pace = true;
-			}
-			else{
+			if (simCycleCounter > 200){
 				firsts_packets_pace = false;
 			}
 
@@ -726,17 +725,25 @@ int main(int argc, char **argv) {
 			if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
 				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
 				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
-				cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
+				//cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
 			}
 		}
 
 		if (testRxPath){
-			if (!(simCycleCounter > 11500 && simCycleCounter < 15000)) {
-				if ((((simCycleCounter+1) % 120) ==0) && (end_of_data==false)){
-					pcap2stream_step(input_file, false ,end_of_data, ipRxData);
-					cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
-				}
+			if (simCycleCounter > 200){
+				firsts_packets_pace = false;
 			}
+
+			if (simCycleCounter > 400){
+				seconds_packets_pace = true;
+			}
+
+			if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
+				((((simCycleCounter+1) % 50) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
+				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
+				//cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
+			}
+
 		}
 
 		//if (simCycleCounter == 50){
