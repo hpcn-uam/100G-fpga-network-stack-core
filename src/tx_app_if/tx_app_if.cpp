@@ -124,6 +124,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 		{
 			closeConnReq.read(tai_closeSessionID);
 			txApp2stateTable_upd_req.write(stateQuery(tai_closeSessionID));
+			std::cout << "Closing ID " << std::dec << tai_closeSessionID << " has been requested" << std::endl;
 			tai_fsmState = CLOSE_CONN;
 		}
 		break;
@@ -132,10 +133,12 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 		{
 			stateTable2txApp_upd_rsp.read(state);
 			//TODO might add CLOSE_WAIT here???
+			std::cout << "State " << std::dec << state;
 			if ((state == ESTABLISHED) || (state == FIN_WAIT_2) || (state == FIN_WAIT_1)) //TODO Why if FIN already SENT
 			{
 				txApp2stateTable_upd_req.write(stateQuery(tai_closeSessionID, FIN_WAIT_1, 1));
 				txApp2eventEng_setEvent.write(event(FIN, tai_closeSessionID));
+				std::cout << " set event FIN " << std::endl << std::endl;
 			}
 			else
 			{

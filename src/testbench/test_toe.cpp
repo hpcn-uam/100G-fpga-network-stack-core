@@ -34,11 +34,12 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "pcap2stream.hpp"
 #include "../common_utilities/common_utilities.hpp"
 #include "../../../echo_server_app/src/echo_server_application.hpp"
+#include "../../iperf_client/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 1
+#define ECHO_REPLAY 0
 
-#define totalSimCycles 10000000
+#define totalSimCycles 500000
 
 using namespace std;
 
@@ -71,8 +72,16 @@ void compute_pseudo_tcp_checksum(
 		dataIn.read(currWord);
 
 		first_level_sum : for (int i=0 ; i < 32 ; i++ ){
-			tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
-			tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+			if (currWord.keep.bit((i*2)+1))
+				tmp(7,0) 	= currWord.data((((i*2)+1)*8)+7,((i*2)+1)*8);
+			else
+				tmp(7,0) 	= 0;	
+
+			if (currWord.keep.bit(i*2))
+				tmp(15,8) 	= currWord.data(((i*2)*8)+7,(i*2)*8);
+			else 
+				tmp(15,8) 	= 0;
+
 			tmp1 		= word_sum[i][source] + tmp;
 			tmp2 		= word_sum[i][source] + tmp + 1;
 			if (tmp1.bit(16)) 				// one's complement adder
@@ -491,7 +500,7 @@ void simulateRx(
 		//cout << "Rx WRITE command [" << setw(3) << write_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
-			cout << endl << endl << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl << endl;
+			//cout << endl << endl << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl << endl;
 		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
@@ -517,7 +526,7 @@ void simulateRx(
 		memory->setReadCmd(cmd);
 		wrBufferReadCounter = cmd.bbt;
 		stx_read = true;
-		cout << "Rx  READ command [" << setw(3) << read_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << "Rx  READ command [" << setw(3) << read_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
@@ -564,7 +573,7 @@ void simulateTx(
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		cout << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
 			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl << endl ;
@@ -573,13 +582,14 @@ void simulateTx(
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
 		memory->writeWord(inWord);
+		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 		if (inWord.last) {
 			//fake_txBuffer.write(inWord); // RT hack
 			stx_write = false;
 			status.okay = 1;
 			WriteStatusFifo.write(status);
+			app2mem_word = 0;
 		}
-		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 	}
 	if (!ReadCmdFifo.empty() && !stx_read) {
 		ReadCmdFifo.read(cmd);
@@ -629,7 +639,7 @@ int main(int argc, char **argv) {
 	stream<openStatus>					openConnRsp("openConnRsp");
 	stream<appTxRsp>					txApp_data_write_response("txApp_data_write_response");
 	ap_uint<16>							regSessionCount;
-	static ap_uint<32>							myIP_address=0x0500A8C0;
+	ap_uint<32>							myIP_address=0x0500A8C0;
 	stream<axiWord> 					rxDataOut("rxDataOut");						// This stream contains the data output from the Rx App I/F
   	stream<axiWord>						tx_pseudo_packet_to_checksum("tx_pseudo_packet_to_checksum");
 	stream<ap_uint<16> >				tx_pseudo_packet_res_checksum("tx_pseudo_packet_res_checksum");
@@ -657,6 +667,7 @@ int main(int argc, char **argv) {
 	bool			testTxPath;
 	bool			firsts_packets_pace 	= true;
 	bool			seconds_packets_pace 	= false;
+	bool 			feed_sim;
 	
 	int 			mode=-1;
 
@@ -666,13 +677,19 @@ int main(int argc, char **argv) {
 	stream<ap_int<17> > 				tx_iperf_Status("tx_iperf_Status");
 	ap_uint<1> 							iperf_runExperiment 	= 0;
 	ap_uint<1> 							iperf_dualModeEn 		= 0;
-	ap_uint<13> 						iperf_num_useConn 		= 1;
-	ap_uint<8> 							iperf_pkgWordCount 		= 8;
+	ap_uint<1> 							iperf_useTimer 			= 0;
+	ap_uint<32> 						iperf_runTime 			= 1000;
+	ap_uint<14> 						iperf_num_useConn 		= 1;
+	ap_uint<12> 						iperf_packetMSS 		= 1460;
+	ap_uint<16> 						iperf_dstPort 			= 5001;
+	ap_uint<16> 						iperf_maxConnections 	;
+
+
 	ap_uint<32> 						iperf_ipAddress0 		= 0xC0A80008;
 	ap_uint<32> 						iperf_ipAddress1 		= 0xC0A80009;
 	ap_uint<32> 						iperf_ipAddress2 		= 0xC0A8000A;
 	ap_uint<32> 						iperf_ipAddress3 		= 0xC0A8000B;
-	ap_uint<32> 						bytes_to_send 			= 20000;
+	ap_uint<32> 						bytes_to_send 			= 12543;
 	
 	char 								*input_file;
 	char 								*output_file;
@@ -714,16 +731,26 @@ int main(int argc, char **argv) {
 
 
 		if (testTxPath){
-			if (simCycleCounter > 200){
-				firsts_packets_pace = false;
+			if (simCycleCounter == 200){
+				feed_sim = true;
+			}
+			else if (simCycleCounter > 1500) {
+				if ((simCycleCounter+1) % 80) {
+					feed_sim = true;
+				}
+				else {
+					feed_sim = false;
+				}
+			}
+			else {
+				feed_sim = false;
 			}
 
-			if (simCycleCounter > 400){
-				seconds_packets_pace = true;
-			}
+			
+			//if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
+			//	((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
 
-			if ((((((simCycleCounter+1) % 80) ==0) && firsts_packets_pace) ||
-				((((simCycleCounter+1) % 60) ==0) && seconds_packets_pace)) && (end_of_data==false)) {
+			if (feed_sim && (end_of_data==false)) {	
 				pcap2stream_step(input_file, false ,end_of_data, ipRxData);
 				//cout << "Packet ["<< setw(3) << dec << packet_in_counter++ << "] goes in \ttime: " << simCycleCounter << endl;
 			}
@@ -746,9 +773,12 @@ int main(int argc, char **argv) {
 
 		}
 
-		//if (simCycleCounter == 50){
-		//	iperf_runExperiment = 1;
-		//}
+		if (simCycleCounter == 10){
+			iperf_runExperiment = 1;
+		}
+		else {
+			iperf_runExperiment = 0;	
+		}
 
 		toe(
 			ipRxData,
@@ -794,31 +824,38 @@ int main(int argc, char **argv) {
 			rxEng_pseudo_packet_to_checksum,
 			rxEng_pseudo_packet_res_checksum);
 
-/*
-		iperf_client(	
-			rxApp2portTable_listen_req,
-			rxApp2portTable_listen_rsp,
-			rxAppNotification,
-			rxApp_request_memory_data,
-			rxDataRspIDsession,
-			rxDataOut,
-			openConnReq,
-			openConnRsp,
-			closeConnReq,
-			tx_iperf_MetaData,
-			tx_iperf_data,
-			tx_iperf_Status,
-			iperf_runExperiment,
-			iperf_dualModeEn,
-			iperf_num_useConn,
-			iperf_pkgWordCount,
-			iperf_ipAddress0,
-			iperf_ipAddress1,
-			iperf_ipAddress2,
-			iperf_ipAddress3);
-*/
 
 #if (!ECHO_REPLAY)
+
+        iperf2_client(  
+        	rxApp2portTable_listen_req,
+            rxApp2portTable_listen_rsp,
+            rxAppNotification,
+            rxApp_request_memory_data,
+            rxDataRspIDsession,
+            rxDataOut,
+            openConnReq,
+            openConnRsp,
+            closeConnReq,
+
+            txApp_write_request,
+            txApp_data_write_response,
+            txApp_write_Data,
+            rxEng2txApp_client_notification,
+
+            iperf_runExperiment,
+            iperf_dualModeEn,
+            iperf_useTimer,
+            iperf_runTime,
+            iperf_num_useConn,
+            bytes_to_send,		// it could be passed as argument
+            iperf_packetMSS,
+            iperf_ipAddress0,
+            iperf_dstPort,
+            iperf_maxConnections
+            );
+
+/*		
 		rxApp_sim (
 			openConnReq,
 			openConnRsp,
@@ -845,6 +882,7 @@ int main(int argc, char **argv) {
 			bytes_to_send,
 			testTxPath
 		);
+*/
 #else
 		echo_server_application(	
 			rxApp2portTable_listen_req, 

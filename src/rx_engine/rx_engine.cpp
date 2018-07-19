@@ -255,6 +255,98 @@ void rxEngPseudoHeaderInsert(
 	}
 }
 
+/**
+ * @brief      This module parses the TCP option only in the syn packet.
+ * 			   If the packet is not a syn the metaInfo is forwarded directly.
+ * 			   The parsing is done sequentially, that implies a variable latency 
+ * 			   depending on where the Window Scale option is located.  	
+ *
+ * @param      metaDataFifoIn   The meta data fifo in
+ * @param      metaDataFifoOut  The meta data fifo out
+ */
+void rxParseTcpOptions (
+							stream<rxEngPktMetaInfo>&		metaDataFifoIn,
+							stream<rxEngPktMetaInfo>&		metaDataFifoOut
+	){
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+	enum rpto_states {READ_INFO, PARSE_DATA};
+	static rpto_states rtpo_fsm_state = READ_INFO;
+	static rxEngPktMetaInfo 		metaInfo;
+	static ap_uint<6> 				byte_offset=0;	
+	static ap_uint<9>				optionsSize;				
+	ap_uint<9> 				bitOffset;	
+	
+	ap_uint<8> 				optionKind;	
+	ap_uint<8> 				optionLength;
+	bool 					sendMeta = false;	
+
+	switch (rtpo_fsm_state) {
+		case READ_INFO:
+			if (!metaDataFifoIn.empty()){
+				metaDataFifoIn.read(metaInfo);
+		
+				if ((metaInfo.tcpOffset > 5) && metaInfo.digest.syn) {
+					byte_offset = 0;
+					optionsSize 	= (metaInfo.tcpOffset - 5)*4;
+					rtpo_fsm_state 	= PARSE_DATA;
+				}
+				else {
+					metaDataFifoOut.write(metaInfo);
+				}
+			}
+			
+			break;
+
+		case PARSE_DATA: 
+
+			bitOffset 	 = byte_offset*8;
+			optionKind 	 = metaInfo.tcpOptions(bitOffset +  7 ,     bitOffset);
+			optionLength = metaInfo.tcpOptions(bitOffset + 15 , bitOffset + 8);
+			//std::cout << "RxParse. byte_offset " << std::dec << byte_offset << "\tOption Kind: " << std::hex << optionKind << "\toptionLength: " << std::dec << optionLength;
+			//std::cout << "\toptionsSize " << optionsSize;
+
+			/* If all the bytes where processed and Window Scale was not found send the current metaInfo*/
+			if (optionsSize > byte_offset) {
+				switch (optionKind){
+					case 0:	// End of option List
+						sendMeta = true;
+						break;
+					case 1:	// No Operation
+						byte_offset++;
+						break;
+					case 3: // Window Scale option
+						sendMeta = true;
+						if (optionLength == 3){ // Double check
+							metaInfo.digest.recv_window_scale = metaInfo.tcpOptions(bitOffset + 19 , bitOffset + 16);
+							//std::cout << "\t Window shift " << metaInfo.tcpOptions(bitOffset + 19 , bitOffset + 16);
+						}
+						break;	
+
+					default:
+						byte_offset = byte_offset + optionLength;
+					break;
+						
+				}
+			}
+			else {
+				sendMeta = true;
+			}
+
+			std::cout << std::endl;
+
+
+			if (sendMeta) {
+				metaDataFifoOut.write(metaInfo);
+				rtpo_fsm_state = READ_INFO;
+			}
+			
+			break;	
+	}
+
+}
+
 /** @ingroup rx_engine
  *  This module gets the packet at Pseudo TCP layer.
  *  First of all, it removes the pseudo TCP header and forward the payload if any.
@@ -265,13 +357,13 @@ void rxEngPseudoHeaderInsert(
  */
 void rxEngGetMetaData(
 							stream<axiWord>&				pseudoPacket,
-							stream<axiWord>&				payload,
-							stream<rxEngPktMetaInfo>&		metaDataFifoOut)
+							stream<rxEngPktMetaInfo>&		metaDataFifoOut,
+							stream<axiWord>&				payload)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-	enum regmd_states {FIRST_WORD, NORMAL_PACKET, EXTRA_WORD};
+	enum regmd_states {FIRST_WORD, REMAINING_WORDS, EXTRA_WORD};
 	static regmd_states regdm_fsm_state = FIRST_WORD;
 
 	static axiWord 			prevWord;
@@ -282,6 +374,7 @@ void rxEngGetMetaData(
 	axiWord 				currWord;
 	axiWord 				sendWord;
 	rxEngPktMetaInfo 		rxMetaInfo;
+	ap_uint<4> 				window_shift;
 
 	switch (regdm_fsm_state){
 		case FIRST_WORD:
@@ -310,8 +403,11 @@ void rxEngGetMetaData(
 				rxMetaInfo.digest.fin 		= currWord.data.bit(200);
 
 #if (WINDOW_SCALE)
-				// TODO proccess OPTIONS 
-				rxMetaInfo.digest.recv_window_scale = 10;
+				rxMetaInfo.digest.recv_window_scale = 0;						// Initialize window shift to 0
+				rxMetaInfo.tcpOffset 		= tcp_offset;
+				rxMetaInfo.tcpOptions 		= currWord.data(511,256);			// Get the possible options
+
+				//rxMetaInfo.digest.recv_window_scale = 10;
 #endif				
 
 				/* Only send data when one-transaction packet has data */
@@ -325,13 +421,13 @@ void rxEngGetMetaData(
 					}
 				}
 				else {
-					regdm_fsm_state = NORMAL_PACKET;								// MR TODO: if tcp_offset > 13 the payload starts in the second transaction
+					regdm_fsm_state = REMAINING_WORDS;								// MR TODO: if tcp_offset > 13 the payload starts in the second transaction
 				}
 				prevWord = currWord;
 				metaDataFifoOut.write(rxMetaInfo);
 			}
 			break;
-		case NORMAL_PACKET:
+		case REMAINING_WORDS:
 			if (!pseudoPacket.empty()){
 				pseudoPacket.read(currWord);
 				
@@ -632,6 +728,7 @@ void rxEngTcpFSM(
 			switch (control_bits) {
 				case 1: //ACK
 					if (fsm_state == LOAD) {
+						std::cout << "RX_engine state " << std::dec << tcpState << "\tacknum " << std::hex << fsm_meta.meta.ackNumb <<  "\tat " << std::dec << simCycleCounter << std::endl;
 						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte))); 		// Reset Retransmit Timer
 						if (tcpState == ESTABLISHED || tcpState == SYN_RECEIVED || tcpState == FIN_WAIT_1 || tcpState == CLOSING || tcpState == LAST_ACK) {
 							// Check if new ACK arrived
@@ -645,15 +742,12 @@ void rxEngTcpFSM(
 								// Notify probeTimer about new ACK
 								rxEng2timer_clearProbeTimer.write(fsm_meta.sessionID);
 								// Check for SlowStart & Increase Congestion Window
-								std::cout << std::endl << "rxEngTcpFSM txSar.cong_window " << txSar.cong_window << "\ttxSar.slowstart_threshold " <<txSar.slowstart_threshold;
-								std::cout << "\tCONGESTION_WINDOW_MAX " << CONGESTION_WINDOW_MAX << std::endl;
 								if (txSar.cong_window <= (txSar.slowstart_threshold-MSS)) {
 									txSar.cong_window += MSS;
 								}
 								else if (txSar.cong_window <= CONGESTION_WINDOW_MAX) {
 									txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
 								}
-								std::cout << "out         txSar.cong_window " << txSar.cong_window << std::endl<< std::endl;
 								txSar.count = 0;
 								txSar.fastRetransmitted = false;
 							}
@@ -690,7 +784,6 @@ void rxEngTcpFSM(
 									dropDataFifoOut.write(false);
 								}
 								else {
-									std::cout << std::endl << std::endl << std::endl << "Dropping packet because no free space" << std::endl << std::endl << std::endl;
 									dropDataFifoOut.write(true);
 								}
 							}
@@ -755,7 +848,6 @@ void rxEngTcpFSM(
 #if (WINDOW_SCALE)							
 							rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
 							tx_win_shift = (fsm_meta.meta.recv_window_scale > WINDOW_SCALE_BITS) ? ((ap_uint<4>) WINDOW_SCALE_BITS) : fsm_meta.meta.recv_window_scale; // Limit the maximum scale to the actual value of the buffer size
-							std::cout << "RXeng recv_window_scale ----> " << std::dec << fsm_meta.meta.recv_window_scale << endl<< endl<< endl;
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift));
 							// TX Sar table is initialized with the received window scale 
 							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
@@ -803,6 +895,7 @@ void rxEngTcpFSM(
 #if (WINDOW_SCALE)							
 								rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
 								tx_win_shift = (fsm_meta.meta.recv_window_scale > WINDOW_SCALE_BITS) ? ((ap_uint<4>) WINDOW_SCALE_BITS) : fsm_meta.meta.recv_window_scale; // Limit the maximum scale to the actual value of the buffer size
+								std::cout << std::endl << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
 								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift)); 
 								// TX Sar table is initialized with the received window scale 
 								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
@@ -831,8 +924,11 @@ void rxEngTcpFSM(
 						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte)));
 						// Check state and if FIN in order, Current out of order FINs are not accepted
 						if ((tcpState == ESTABLISHED || tcpState == FIN_WAIT_1 || tcpState == FIN_WAIT_2) && (rxSar.recvd == fsm_meta.meta.seqNumb)) {
+#if (WINDOW_SCALE)							
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count, txSar.fastRetransmitted, tx_win_shift))); //TODO include count check
+#else
 							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, txSar.count, txSar.fastRetransmitted))); //TODO include count check
-
+#endif
 							// +1 for phantom byte, there might be data too
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1, 1)); //diff to ACK
 
@@ -862,6 +958,7 @@ void rxEngTcpFSM(
 							}
 							else {//FIN_WAIT_1 || FIN_WAIT_2
 								if (fsm_meta.meta.ackNumb == txSar.nextByte) {//check if final FIN is ACK'd -> LAST_ACK
+									std::cout << std::endl << "TCP FSM going to TIME_WAIT state " << std::endl << std::endl;
 									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
 									rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
 								}
@@ -1145,7 +1242,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	static stream<bool >			rxEng_VerifyChecksumDrop("rxEng_VerifyChecksumDrop");
 	#pragma HLS STREAM variable=rxEng_VerifyChecksumDrop depth=2
 
-	static stream<rxEngPktMetaInfo>		rxEngMetaInfoFifo("rx_metaDataFifo_p");
+	static stream<rxEngPktMetaInfo>		rxEngMetaInfoFifo("rxEngMetaInfoFifo");
 	#pragma HLS STREAM variable=rxEngMetaInfoFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEngMetaInfoFifo
 
@@ -1184,6 +1281,12 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	static stream<ap_uint<1> >				rxEngDoubleAccess("rxEngDoubleAccess");
 	#pragma HLS STREAM variable=rxEngDoubleAccess depth=8
 
+#if WINDOW_SCALE
+	static stream<rxEngPktMetaInfo>		rxEngMetaInfoBeforeWindow("rx_metaDataFoBeforeWindow");
+	#pragma HLS STREAM variable=rxEngMetaInfoBeforeWindow depth=8
+	#pragma HLS DATA_PACK variable=rxEngMetaInfoBeforeWindow
+#endif	
+
 	rxEngPseudoHeaderInsert( 
 			ipRxData, 
 			rxEng_pseudo_packet_to_metadata,
@@ -1191,8 +1294,18 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 	rxEngGetMetaData(
 			rxEng_pseudo_packet_to_metadata,
-			rxEng_tcp_payload, 
+#if WINDOW_SCALE
+			rxEngMetaInfoBeforeWindow,
+#else			
+			rxEngMetaInfoFifo,
+#endif			
+			rxEng_tcp_payload);
+
+#if WINDOW_SCALE
+	rxParseTcpOptions (
+			rxEngMetaInfoBeforeWindow,
 			rxEngMetaInfoFifo);
+#endif			
 
 	rxEngVerifyCheckSum (
 			rxEng_pseudo_packet_res_checksum,

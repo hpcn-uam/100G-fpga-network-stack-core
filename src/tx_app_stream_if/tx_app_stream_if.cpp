@@ -81,9 +81,6 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 					usableWindow 	= 0;
 				}
 #endif
-				std::cout << "READ_META condition " << std::dec << (tasi_writeMeta.length > maxWriteLength || usableWindow < tasi_writeMeta.length);
-				std::cout << "\tc0 " << (tasi_writeMeta.length > maxWriteLength) << "\tc2 " << (usableWindow < tasi_writeMeta.length);
-				std::cout << "\tusableWindow ---> " << usableWindow << "\tusedLength ---> " << usedLength << "\twriteSar.min_window ---> " << writeSar.min_window << std::endl;
 
 				if (state != ESTABLISHED) {
 					appTxDataRsp.write(appTxRsp(tasi_writeMeta.length, maxWriteLength, ERROR_NOCONNECTION)); // Notify app about fail

@@ -71,7 +71,7 @@ void txAppStatusHandler(stream<mmStatus>&				txBufferWriteStatus,
 	static event event_i;
 
 	mmStatus status;
-	ap_uint<17> tempLength;
+	ap_uint<WINDOW_BITS+1> tempLength;
 
 	switch (tash_state){
 		case READ_EV:
@@ -94,7 +94,7 @@ void txAppStatusHandler(stream<mmStatus>&				txBufferWriteStatus,
 				tempLength = event_i.address + event_i.length;
 
 				if (status.okay){
-					if (tempLength.bit(16)){
+					if (tempLength.bit(WINDOW_BITS)){
 						tash_state =  READ_STATUS_2;
 					}
 					else {
@@ -146,16 +146,15 @@ void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 			// At init this is actually not_ackd
 			app_table[ackPush.sessionID].ackd = ackPush.ackd-1;
 			app_table[ackPush.sessionID].mempt = ackPush.ackd;
+			std::cout << "tx_app_table  .ackd " << std::hex << app_table[ackPush.sessionID].ackd << "\t.mempt " << app_table[ackPush.sessionID].mempt << std::endl;
 #if (TCP_NODELAY)
 			app_table[ackPush.sessionID].min_window = ackPush.min_window;
-			std::cout << "tx_app_table 0 min_window " << ackPush.min_window << std::endl;
 #endif			
 		}
 		else {
 			app_table[ackPush.sessionID].ackd = ackPush.ackd;
 #if (TCP_NODELAY)
 			app_table[ackPush.sessionID].min_window = ackPush.min_window;
-			std::cout << "tx_app_table 1 min_window " << ackPush.min_window << std::endl;
 #endif			
 		}
 	}
@@ -170,7 +169,6 @@ void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 #if (!TCP_NODELAY)
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt));
 #else
-			std::cout << "tx_app_table 2 min_window " << app_table[txAppUpdate.sessionID].min_window << std::endl;
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt, app_table[txAppUpdate.sessionID].min_window));
 #endif
 		}

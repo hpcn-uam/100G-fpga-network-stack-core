@@ -141,10 +141,6 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 				tmp_replay.UsableWindow	= 0;
 			}
 			tmp_replay.min_window	= minWindow;		
-			//std::cout << "TX Sar table min window " << std::dec << minWindow << " usable window " << tmp_replay.UsableWindow;
-			//std::cout << " currLength " << tmp_replay.currLength<<  " usedLength " <<  tmp_replay.usedLength;
-			//std::cout << "\t not ack " << tmp_entry_read.not_ackd(15,0) << "\tapp " << tmp_entry_read.app << std::endl;
-
 			tmp_replay.not_ackd_short = tmp_entry_read.not_ackd + tmp_replay.currLength;
 
 			txSar2txEng_upd_rsp.write(tmp_replay);
@@ -156,7 +152,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	else if (!txApp2txSar_app_push.empty()) {//write only
 		txApp2txSar_app_push.read(push);
 		tx_table[push.sessionID].app = push.app;
-		//std::cout << "APP update  " << std::dec << push.app << std::endl;
+		std::cout << "APP update  " << std::hex << push.app << std::endl;
 	}
 
 
@@ -175,6 +171,8 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			tx_table[tst_rxEngUpdate.sessionID].cong_window = tst_rxEngUpdate.cong_window;
 			tx_table[tst_rxEngUpdate.sessionID].count = tst_rxEngUpdate.count;
 			tx_table[tst_rxEngUpdate.sessionID].fastRetransmitted = tst_rxEngUpdate.fastRetransmitted;
+
+			std::cout << "tx_table.not_ackd: " << std::hex << tx_table[tst_rxEngUpdate.sessionID].not_ackd << std::endl;
 #if (!TCP_NODELAY)
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd));
 #else

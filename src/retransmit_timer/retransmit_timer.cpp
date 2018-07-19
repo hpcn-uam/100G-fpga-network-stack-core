@@ -154,6 +154,7 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 					if (currEntry.retries < 4) {
 						currEntry.retries++;
 						rtTimer2eventEng_setEvent.write(event(currEntry.type, currID, currEntry.retries));
+						std::cout << "Setting event for retransmit event type " << std::dec << currEntry.type << "\tat " << simCycleCounter << std::endl;
 					}
 					else {
 						currEntry.retries = 0;

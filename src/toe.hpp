@@ -106,16 +106,16 @@ static const ap_uint<32> TIME_25ms		= 1;
 static const ap_uint<32> TIME_50ms		= 1;
 static const ap_uint<32> TIME_100ms		= 1;
 static const ap_uint<32> TIME_250ms		= 1;
-static const ap_uint<32> TIME_500ms		= 1;
-static const ap_uint<32> TIME_1s		= 1;
-static const ap_uint<32> TIME_5s		= 1;
-static const ap_uint<32> TIME_7s		= 2;
-static const ap_uint<32> TIME_10s		= 3;
-static const ap_uint<32> TIME_15s		= 4;
-static const ap_uint<32> TIME_20s		= 5;
-static const ap_uint<32> TIME_30s		= 6;
-static const ap_uint<32> TIME_60s		= 60;
-static const ap_uint<32> TIME_120s		= 120;
+static const ap_uint<32> TIME_500ms		= 2;
+static const ap_uint<32> TIME_1s		= 5;
+static const ap_uint<32> TIME_5s		= 6;
+static const ap_uint<32> TIME_7s		= 7;
+static const ap_uint<32> TIME_10s		= 8;
+static const ap_uint<32> TIME_15s		= 9;
+static const ap_uint<32> TIME_20s		= 10;
+static const ap_uint<32> TIME_30s		= 11;
+static const ap_uint<32> TIME_60s		= 12;
+static const ap_uint<32> TIME_120s		= 13;
 #else
 static const ap_uint<32> TIME_64us		= (       64.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
 static const ap_uint<32> TIME_128us		= (      128.0/CLOCK_PERIOD/MAX_SESSIONS) + 1;
@@ -495,20 +495,20 @@ struct txRetransmitTimerSet {
 
 struct event
 {
-	eventType	type;
-	ap_uint<16>	sessionID;
-	ap_uint<16> address;
-	ap_uint<16> length;
-	ap_uint<3>	rt_count;
+	eventType				type;
+	ap_uint<16>				sessionID;
+	ap_uint<WINDOW_BITS> 	address;
+	ap_uint<16> 			length;
+	ap_uint<3>				rt_count;
 	event() {}
 	//event(const event&) {}
 	event(eventType type, ap_uint<16> id)
 			:type(type), sessionID(id), address(0), length(0), rt_count(0) {}
 	event(eventType type, ap_uint<16> id, ap_uint<3> rt_count)
 			:type(type), sessionID(id), address(0), length(0), rt_count(rt_count) {}
-	event(eventType type, ap_uint<16> id, ap_uint<16> addr, ap_uint<16> len)
+	event(eventType type, ap_uint<16> id, ap_uint<WINDOW_BITS> addr, ap_uint<16> len)
 			:type(type), sessionID(id), address(addr), length(len), rt_count(0) {}
-	event(eventType type, ap_uint<16> id, ap_uint<16> addr, ap_uint<16> len, ap_uint<3> rt_count)
+	event(eventType type, ap_uint<16> id, ap_uint<WINDOW_BITS> addr, ap_uint<16> len, ap_uint<3> rt_count)
 			:type(type), sessionID(id), address(addr), length(len), rt_count(rt_count) {}
 };
 
@@ -682,8 +682,6 @@ struct listenPortStatus
 	
 };
 
-ap_uint<16> byteSwap16(ap_uint<16> inputVector);
-ap_uint<32> byteSwap32(ap_uint<32> inputVector);
 
 
 void toe(	// Data & Memory Interface

@@ -49,15 +49,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "memory_access/memory_access.hpp"
 
 
-ap_uint<16> byteSwap16(ap_uint<16> inputVector) {
-	return (inputVector.range(7,0), inputVector(15, 8));
-}
-
-ap_uint<32> byteSwap32(ap_uint<32> inputVector) {
-	return (inputVector.range(7,0), inputVector(15, 8), inputVector.range(23,16), inputVector(31, 24));
-}
-
-
 /** @ingroup timer
  *
  */

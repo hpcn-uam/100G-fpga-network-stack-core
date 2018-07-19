@@ -29,4 +29,8 @@ void DataBroadcast(
 			stream<axiWord>& out1, 
 			stream<axiWord>& out2);
 
+ap_uint<16> byteSwap16(ap_uint<16> inputVector);
+
+ap_uint<32> byteSwap32(ap_uint<32> inputVector);
+
 #endif

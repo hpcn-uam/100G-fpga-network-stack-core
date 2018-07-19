@@ -61,7 +61,12 @@ struct rxEngPktMetaInfo
 {	
 	rxEng_TCP_MetaData 	digest;
 	fourTuple 			tuple;
+#if WINDOW_SCALE
+	ap_uint<256> 			tcpOptions;
+	ap_uint<  4> 			tcpOffset;
+#endif	
 };
+
 
 /** @ingroup rx_engine
  *

@@ -348,12 +348,8 @@ void txEng_metaLoader(
 						txSar = txSar_r;
 					}
 
-					//if (!txSar.finSent) { //no FIN sent
-						currLength = txSar.usedLength - !txSar.finSent;
-					//}
-					//else {//FIN already sent
-					//	currLength = txSar.usedLength-1;
-					//}
+					// Compute how many bytes have to be retransmitted, If the fin was sent, subtract 1 byte
+					currLength = txSar.usedLength - txSar.finSent;
 
 					meta.ackNumb = rxSar.recvd;
 					meta.seqNumb = txSar.ackd;
@@ -397,7 +393,7 @@ void txEng_metaLoader(
 					}
 					else {
 						meta.length = currLength;
-						if (txSar.finSent) {
+						if (txSar.finSent) {			// In case a FIN was sent and not ack, has to be sent again 
 							ml_curEvent.type = FIN;
 						}
 						else {
@@ -451,7 +447,7 @@ void txEng_metaLoader(
 						meta.seqNumb = txSar.ackd;
 					}
 					else {
-						txSar = txSar_r;
+						//txSar = txSar_r;
 						txSar.not_ackd = ml_randomValue; // FIXME better rand()
 						ml_randomValue = (ml_randomValue* 8) xor ml_randomValue;
 						meta.seqNumb = txSar.not_ackd;
@@ -466,8 +462,8 @@ void txEng_metaLoader(
 					meta.fin = 0;
 					meta.length = 4; 									// For MSS Option, 4 bytes
 #if (WINDOW_SCALE)
-					meta.length = 4 + 4* (rxSar.rx_win_shift!=0); 				// For MSS Option and WScale, 8 bytes
-					meta.rx_win_shift = rxSar.rx_win_shift;
+					meta.length = 8; 							// Anounce our window scale
+					meta.rx_win_shift = WINDOW_SCALE_BITS;
 #else				
 					meta.length = 4;	
 #endif						
@@ -477,7 +473,7 @@ void txEng_metaLoader(
 					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
 					// set retransmit timer
 					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN));
-					txSar_r = txSar ;
+					//txSar_r = txSar ;
 					ml_FsmState = 0;
 				}
 				break;
@@ -504,7 +500,6 @@ void txEng_metaLoader(
 					}
 
 #if (WINDOW_SCALE)
-					cout << "GOT A WIN_SHIFT OF " << dec << rxSar.rx_win_shift << endl << endl << endl;
 					meta.length = 4 + 4* (rxSar.rx_win_shift!=0); 				// For MSS Option and WScale, 8 bytes
 					meta.rx_win_shift = rxSar.rx_win_shift;
 #else					
@@ -521,6 +516,7 @@ void txEng_metaLoader(
 				}
 				break;
 			case FIN:
+				// The term ml_sarLoaded is used for retransmission proposes 
 				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
 					if (!ml_sarLoaded) {
 						rxSar2txEng_rsp.read(rxSar);
@@ -529,10 +525,8 @@ void txEng_metaLoader(
 					else {
 						txSar = txSar_r;
 					}
-
 					//construct FIN message
 					meta.ackNumb = rxSar.recvd;
-					//meta.seqNumb = txSar.not_ackd;
 					meta.window_size = rxSar.windowSize;	//Get our space
 					meta.length = 0;
 					meta.ack = 1; // has to be set for FIN message as well
@@ -541,23 +535,30 @@ void txEng_metaLoader(
 					meta.fin = 1;
 
 					// Check if retransmission, in case of RT, we have to reuse not_ackd number
-					if (ml_curEvent.rt_count != 0) {
-						meta.seqNumb = txSar.not_ackd-1; //Special case, or use ackd?
-					}
-					else {
-						meta.seqNumb = txSar.not_ackd;
+					meta.seqNumb = txSar.not_ackd - (ml_curEvent.rt_count != 0); 
+					if (ml_curEvent.rt_count == 0) {
+#if (!TCP_NODELAY)
 						// Check if all data is sent, otherwise we have to delay FIN message
 						// Set fin flag, such that probeTimer is informed
-						if (txSar.app == txSar.not_ackd(15, 0)) {
+						if (txSar.app == txSar.not_ackd(WINDOW_BITS-1, 0)) {
 							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 0, true, true));
 						}
 						else {
 							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1, 0, true, false));
 						}
+#else
+							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 0, true, true));
+#endif						
 					}
 
-					// Check if there is a FIN to be sent //TODO maybe restructure this
-					if (meta.seqNumb(WINDOW_BITS-1, 0) == txSar.app) {
+					std::cout << "Generating a FIN packet rt_count: "<< std::dec << ml_curEvent.rt_count << "\tat " << simCycleCounter << std::endl ;
+					std::cout << "\ttxSar.app " << std::dec << txSar.app << "\ttxSar.not_ackd " << txSar.not_ackd(WINDOW_BITS-1, 0) << "\tmeta.seqNumb " << meta.seqNumb(WINDOW_BITS-1, 0) << std::endl;
+					std::cout << "\ttxSar.app " << std::hex << txSar.app << "\ttxSar.not_ackd " << txSar.not_ackd(WINDOW_BITS-1, 0) << "\tmeta.seqNumb " << meta.seqNumb(WINDOW_BITS-1, 0) << std::endl << std::endl;
+#if (!TCP_NODELAY)
+					// Check if there is a FIN to be sent
+					if (meta.seqNumb(WINDOW_BITS-1, 0) == txSar.app) 
+#endif						
+					{
 						txEng_ipMetaFifoOut.write(meta.length);
 						txEng_tcpMetaFifoOut.write(meta);
 						txEng_isLookUpFifoOut.write(true);
@@ -567,7 +568,7 @@ void txEng_metaLoader(
 						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
 					}
 
-					txSar_r = txSar ;
+//					txSar_r = txSar ;
 					ml_FsmState = 0;
 				}
 				break;
@@ -579,7 +580,7 @@ void txEng_metaLoader(
 					txEng_tcpMetaFifoOut.write(tx_engine_meta(0, resetEvent.getAckNumb(), 1, 1, 0, 0));
 					txEng_isLookUpFifoOut.write(false);
 					txEng_tupleShortCutFifoOut.write(ml_curEvent.tuple);
-					ml_FsmState = 0;
+					//ml_FsmState = 0;
 				}
 				else if (!txSar2txEng_upd_rsp.empty()) {
 					txSar2txEng_upd_rsp.read(txSar);
@@ -594,8 +595,8 @@ void txEng_metaLoader(
 					{
 						metaDataFifoOut.write(tx_engine_meta(txSar.not_ackd, rxSar.recvd, 1, 1, 0, 0));
 					}*/
-						ml_FsmState = 0;
 				}
+				ml_FsmState = 0;
 				break;
 			} //switch
 			break;
