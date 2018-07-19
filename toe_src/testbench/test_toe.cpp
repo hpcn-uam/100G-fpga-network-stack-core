@@ -33,8 +33,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <string>
 #include "pcap2stream.hpp"
 #include "../common_utilities/common_utilities.hpp"
-#include "../../../echo_server_app/src/echo_server_application.hpp"
-#include "../../iperf_client/iperf_client.hpp"
+#include "../../echo_server_src/echo_server_application.hpp"
+#include "../../iperf_client_src/iperf_client.hpp"
 #include <iomanip>
 
 #define ECHO_REPLAY 0
