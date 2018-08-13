@@ -3,4 +3,10 @@
 *.bak
 fsm_encoding.os
 synlog.tcl
-toe_hls/
+ECHOSERVER_hls_prj/
+ARP_hls_prj/
+ETH_inserter_hls_prj/
+ICMP_hls_prj/
+PKT_HANDLER_prj/
+TOE_hls_prj/
+IPERF2_TCP_hls_prj/

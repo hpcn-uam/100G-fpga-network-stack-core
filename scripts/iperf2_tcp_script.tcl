@@ -1,11 +1,11 @@
-open_project IPERF_hls_prj
+open_project IPERF2_TCP_hls_prj
 
 set_top iperf2_client
 
-add_files iperf_client_src/iperf_client.cpp
-add_files toe_src/common_utilities/common_utilities.cpp
+add_files hls/iperf2_tcp/iperf_client.cpp
+add_files hls/TOE/common_utilities/common_utilities.cpp
 
-add_files -tb iperf_client_src/test_iperf_client.cpp
+add_files -tb hls/iperf2_tcp/test_iperf_client.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

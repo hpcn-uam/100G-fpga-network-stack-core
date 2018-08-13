@@ -1,7 +1,7 @@
 TOPDIR=$(shell pwd)
-TOESCR=$(TOPDIR)/toe_src
-IPERFSRC=$(TOPDIR)/iperf_client_src
-ECHOSRC=$(TOPDIR)/echo_server_src
+TOESCR=$(TOPDIR)/hls/TOE
+IPERFSRC=$(TOPDIR)/hls/iperf2_tcp
+ECHOSRC=$(TOPDIR)/hls/echo_replay
 ARPSRC=$(TOPDIR)/hls/arp_server
 ETHSRC=$(TOPDIR)/hls/ethernet_inserter
 ICMPSRC=$(TOPDIR)/hls/icmp_server
@@ -9,23 +9,20 @@ PKTSRC=$(TOPDIR)/hls/packet_handler
 TCLDIR=$(TOPDIR)/scripts
 
 
-project = TOE_hls_prj IPERF_hls_prj ECHOSERVER_hls_prj ARP_hls_prj \
+project = TOE_hls_prj IPERF2_TCP_hls_prj ECHOSERVER_hls_prj ARP_hls_prj \
 	      ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj
 
-all: folder build
+all: build
 	
 
 build: $(project)
 	@echo -e "\e[94mIP Completed: $(project)\e[39m"
 
-folder:
-	mkdir projects -p
-
 clean:
 	rm -rf *.log *.jou file* *.bak vivado*.str synlog.tcl .Xil fsm_encoding.os
 
 distclean: clean
-	rm -rf projects
+	rm -rf $(project)
 
 
 TOE_hls_prj: $(shell find $(TOESCR) -type f) \
@@ -34,11 +31,11 @@ TOE_hls_prj: $(shell find $(TOESCR) -type f) \
 	vivado_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(project)
 	#mv TOE_hls_prj projects
 
-IPERF_hls_prj: $(shell find $(IPERFSRC) -type f) \
-			 $(TCLDIR)/iperf_script.tcl
-	rm -rf 	projects/IPERF_hls_prj
-	vivado_hls -f $(TCLDIR)/iperf_script.tcl -tclargs $(project)
-	#mv IPERF_hls_prj projects
+IPERF2_TCP_hls_prj: $(shell find $(IPERFSRC) -type f) \
+			 $(TCLDIR)/iperf2_tcp_script.tcl
+	rm -rf 	projects/IPERF2_TCP_hls_prj
+	vivado_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(project)
+	#mv IPERF2_TPC_hls_prj projects
 
 ECHOSERVER_hls_prj: $(shell find $(ECHOSRC) -type f) \
 			 $(TCLDIR)/echo_server_script.tcl

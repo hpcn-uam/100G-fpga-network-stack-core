@@ -2,8 +2,8 @@ open_project ECHOSERVER_hls_prj
 
 set_top echo_server_application
 
-add_files echo_server_src/echo_server_application.cpp
-add_files -tb echo_server_src/test_echo_server_application.cpp
+add_files hls/echo_replay/echo_server_application.cpp
+add_files -tb hls/echo_replay/test_echo_server_application.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado
