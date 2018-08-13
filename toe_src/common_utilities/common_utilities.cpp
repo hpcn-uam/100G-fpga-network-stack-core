@@ -517,14 +517,15 @@ void align_words_from_memory (
 	}
 
 
+#ifndef __SYNTHESIS__	
 	cout << dec << "payload offset " << byte_offset << endl;
 	//cout << "prevWord :" << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
 	//cout << "currWord :" << setw(132) << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 	cout << "SendWord :" << setw(132) << hex << SendWord.data << "\tkeep: " << SendWord.keep << "\tlast: " << dec << SendWord.last << endl;
-
+#endif
 }
 
-
+/*
 void AlingWordFromMemoryStageOne(
 			axiWord 	currWord,
 			axiWord 	prevWord,
@@ -593,7 +594,7 @@ void AlingWordFromMemoryStageOne(
 
 
 	//cout << dec << "payload offset " << byte_offset << endl;
-
+#ifndef __SYNTHESIS__
 	cout << "currWord :" << setw(132) << hex << data_bit5 << endl << endl;
 
 	cout << "data_bit0 :" << setw(132) << hex << data_bit0 << endl;
@@ -601,9 +602,10 @@ void AlingWordFromMemoryStageOne(
 	cout << "data_bit2 :" << setw(132) << hex << data_bit2 << endl;
 	cout << "data_bit3 :" << setw(132) << hex << data_bit3 << endl;
 	cout << "data_bit4 :" << setw(132) << hex << data_bit4 << endl;
+#endif	
 }
 
-
+*/
 void align_words_to_memory (
 			axiWord 	currWord,
 			axiWord 	prevWord,
