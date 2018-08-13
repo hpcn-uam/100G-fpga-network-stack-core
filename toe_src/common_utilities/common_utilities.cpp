@@ -2,19 +2,10 @@
 Copyright (c) 2018, Systems Group, ETH Zurich and HPCN Group, UAM Spain.
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice,
-this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its contributors
-may be used to endorse or promote products derived from this software
-without specific prior written permission.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+any later version.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -25,6 +16,9 @@ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR B
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>
 ************************************************/
 #include "../toe.hpp"
 
@@ -522,11 +516,91 @@ void align_words_from_memory (
 
 	}
 
-	//cout << dec << "payload offset " << byte_offset << endl;
-	//cout << "prevWord :" << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
-	//cout << "currWord :" << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-	//cout << "SendWord :" << hex << SendWord->data << "\tkeep: " << SendWord->keep << "\tlast: " << dec << SendWord->last << endl;
 
+	cout << dec << "payload offset " << byte_offset << endl;
+	//cout << "prevWord :" << hex << prevWord.data << "\tkeep: " << prevWord.keep << "\tlast: " << dec << prevWord.last << endl;
+	//cout << "currWord :" << setw(132) << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+	cout << "SendWord :" << setw(132) << hex << SendWord.data << "\tkeep: " << SendWord.keep << "\tlast: " << dec << SendWord.last << endl;
+
+}
+
+
+void AlingWordFromMemoryStageOne(
+			axiWord 	currWord,
+			axiWord 	prevWord,
+			ap_uint<6>	byte_offset,
+			axiWord& 	SendWord
+	){
+#pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
+	ap_uint<1016>	aggregated_data;
+	ap_uint<1008>	data_bit0;
+	ap_uint< 992>	data_bit1;
+	ap_uint< 960>	data_bit2;
+	ap_uint< 896>	data_bit3;
+	ap_uint< 768>	data_bit4;
+	ap_uint< 512>	data_bit5;
+	ap_uint< 512>	data_bit6;
+
+	aggregated_data =  (currWord.data(511,  0),prevWord.data(503,  0));
+
+	if (byte_offset.bit(0) == 1){
+		data_bit0 = aggregated_data(1007,0);
+	}
+	else{
+		data_bit0 = (aggregated_data(1015,504),aggregated_data(495,0));
+	}
+
+	if (byte_offset.bit(1) == 1){
+		data_bit1 = data_bit2(527,0);
+	}
+	else{
+		data_bit1 = (data_bit0(1007,496),data_bit0(479,0));
+	}
+	
+	if (byte_offset.bit(2) == 1){
+		data_bit2 = data_bit3(543,0);
+	}
+	else{
+		data_bit2 = (data_bit1(991,480),data_bit1(447,0));
+	}
+
+	if (byte_offset.bit(3) == 1){
+		data_bit3 = data_bit4(576,0);
+	}
+	else{
+		data_bit3 = (data_bit2(959,448),data_bit2(383,0));
+	}
+
+	if (byte_offset.bit(4) == 1){
+		data_bit4 = (data_bit5(767,256),data_bit5(383,0));
+	}
+	else{
+		data_bit4 = (data_bit3(895,384),data_bit3(255,0));
+	}
+
+	if (byte_offset.bit(5) == 1){
+		data_bit5 = (currWord.data(255,  0),prevWord.data(511,  0));
+	}
+	else{ 
+		data_bit5 = data_bit4(767,256);
+	}
+
+
+	//data_bit6 = data_bit5(519,8);
+
+
+
+	//cout << dec << "payload offset " << byte_offset << endl;
+
+	cout << "currWord :" << setw(132) << hex << data_bit5 << endl << endl;
+
+	cout << "data_bit0 :" << setw(132) << hex << data_bit0 << endl;
+	cout << "data_bit1 :" << setw(132) << hex << data_bit1 << endl;
+	cout << "data_bit2 :" << setw(132) << hex << data_bit2 << endl;
+	cout << "data_bit3 :" << setw(132) << hex << data_bit3 << endl;
+	cout << "data_bit4 :" << setw(132) << hex << data_bit4 << endl;
 }
 
 
@@ -812,72 +886,8 @@ void align_words_to_memory (
 			break;
 	}	
 }
-/*
-void AlingWordFromMemoryStageOne(
-			axiWord 	currWord,
-			axiWord 	prevWord,
-			ap_uint<6>	byte_offset,
-			axiWord& 	SendWord
-	){
-#pragma HLS PIPELINE II=1
-#pragma HLS INLINE off
-
-	ap_uint<1016>	aggregated_data;
-	ap_uint<1008>	data_bit0;
-	ap_uint< 992>	data_bit1;
-	ap_uint< 960>	data_bit2;
-	ap_uint< 896>	data_bit3;
-	ap_uint< 768>	data_bit4;
-	ap_uint< 512>	data_bit5;
 
 
-	aggregated_data = (prevWord.data(503,  0),currWord.data(511,  0));
-
-	if (byte_offset.bit(0) == 1){
-		data_bit0 = (aggregated_data.data(1023,512),aggregated_data.data(503,  0));
-	}
-	else{
-		data_bit0 = aggregated_data.data(1007,  0);
-	}
-
-	if (byte_offset.bit(1) == 1){
-		data_bit1 = (data_bit0.data(1007,504),data_bit0.data(247,  0));
-	}
-	else{
-		data_bit1 = data_bit0.data(991,  0);
-	}
-
-	if (byte_offset.bit(2) == 1){
-		data_bit2 = (data_bit1.data( 999,488),data_bit1.data(119,  0));
-	}
-	else{
-		data_bit2 = data_bit1.data(959,  0);
-	}
-
-	if (byte_offset.bit(3) == 1){
-		data_bit3 = (data_bit2.data( 999,456),data_bit2.data(55,  0));
-	}
-	else{
-		data_bit3 = data_bit2.data(897,  0);
-	}
-
-	if (byte_offset.bit(4) == 1){
-		data_bit4 = (data_bit3.data( 893,392),data_bit3.data(23,  0));
-	}
-	else{
-		data_bit4 = data_bit3.data(767,  0);
-	}
-
-	if (byte_offset.bit(5) == 1){
-		data_bit5 = (data_bit4.data( 767,264),data_bit4.data(  7,  0));
-	}
-	else{
-		data_bit5 = data_bit4.data(511,  0);
-	}
-
-}
-
-*/
 void DataBroadcast(
 					stream<axiWord>& in, 
 					stream<axiWord>& out1, 
@@ -923,4 +933,86 @@ ap_uint<16> byteSwap16(ap_uint<16> inputVector) {
 
 ap_uint<32> byteSwap32(ap_uint<32> inputVector) {
 	return (inputVector.range(7,0), inputVector(15, 8), inputVector.range(23,16), inputVector(31, 24));
+}
+
+
+void combine_words(
+					axiWord 	currentWord, 
+					axiWord 	previousWord, 
+					ap_uint<4> 	ip_headerlen,
+					axiWord& 	sendWord){
+
+#pragma HLS INLINE
+	switch(ip_headerlen) {
+		case 5:
+			sendWord.data( 447,   0) 	= previousWord.data(511,  64);
+			sendWord.keep(  55,   0) 	= previousWord.keep( 63,   8);
+			sendWord.data( 511, 448) 	= currentWord.data(  63,   0);
+			sendWord.keep(  63,  56)	= currentWord.keep(   7,   0);
+			break;
+		case 6:
+			sendWord.data( 415,   0) 	= previousWord.data(511,  96);
+			sendWord.keep(  51,   0) 	= previousWord.keep( 63,  12);
+			sendWord.data( 511, 416) 	= currentWord.data(  95,   0);
+			sendWord.keep(  63,  52)	= currentWord.keep(  11,   0);
+			break;
+		case 7:
+			sendWord.data( 383,   0) 	= previousWord.data(511, 128);
+			sendWord.keep(  47,   0) 	= previousWord.keep( 63,  16);
+			sendWord.data( 511, 384) 	= currentWord.data( 127,   0);
+			sendWord.keep(  63,  48)	= currentWord.keep(  15,   0);
+			break;
+		case 8:
+			sendWord.data( 351,   0) 	= previousWord.data(511, 160);
+			sendWord.keep(  43,   0) 	= previousWord.keep( 63,  20);
+			sendWord.data( 511, 352) 	= currentWord.data( 159,   0);
+			sendWord.keep(  63,  44)	= currentWord.keep(  19,   0);
+			break;
+		case 9:
+			sendWord.data( 319,   0) 	= previousWord.data(511, 192);
+			sendWord.keep(  39,   0) 	= previousWord.keep( 63,  36);
+			sendWord.data( 511, 320) 	= currentWord.data( 191,   0);
+			sendWord.keep(  63,  40)	= currentWord.keep(  23,   0);
+			break;
+		case 10:
+			sendWord.data( 287,   0) 	= previousWord.data(511, 224);
+			sendWord.keep(  35,   0) 	= previousWord.keep( 63,  28);
+			sendWord.data( 511, 288) 	= currentWord.data( 223,   0);
+			sendWord.keep(  63,  36)	= currentWord.keep(  27,   0);
+			break;
+		case 11:
+			sendWord.data( 255,   0) 	= previousWord.data(511, 256);
+			sendWord.keep(  31,   0) 	= previousWord.keep( 63,  32);
+			sendWord.data( 511, 256) 	= currentWord.data( 255,   0);
+			sendWord.keep(  63,  32)	= currentWord.keep(  31,   0);
+			break;
+		case 12:
+			sendWord.data( 223,   0) 	= previousWord.data(511, 288);
+			sendWord.keep(  27,   0) 	= previousWord.keep( 63,  36);
+			sendWord.data( 511, 224) 	= currentWord.data( 287,   0);
+			sendWord.keep(  63,  28)	= currentWord.keep(  35,   0);
+			break;
+		case 13:
+			sendWord.data( 191,   0) 	= previousWord.data(511, 320);
+			sendWord.keep(  23,   0) 	= previousWord.keep( 63,  40);
+			sendWord.data( 511, 192) 	= currentWord.data( 319,   0);
+			sendWord.keep(  63,  24)	= currentWord.keep(  39,   0);
+			break;
+		case 14:
+			sendWord.data( 159,   0) 	= previousWord.data(511, 352);
+			sendWord.keep(  19,   0) 	= previousWord.keep( 63,  44);
+			sendWord.data( 511, 160) 	= currentWord.data( 351,   0);
+			sendWord.keep(  63,  20)	= currentWord.keep(  43,   0);
+			break;
+		case 15:
+			sendWord.data( 127,   0) 	= previousWord.data(511, 384);
+			sendWord.keep(  15,   0) 	= previousWord.keep( 63,  48);
+			sendWord.data( 511, 128) 	= currentWord.data( 383,   0);
+			sendWord.keep(  63,  16)	= currentWord.keep(  47,   0);
+			break;
+		default:
+			cout << "Error the offset is not valid" << endl;
+			break;
+	}
+
 }

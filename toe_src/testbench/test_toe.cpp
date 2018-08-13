@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, 
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) 
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 #include "../toe.hpp"
 #include "dummy_memory.hpp"
@@ -37,7 +37,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "../../iperf_client_src/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 0
+#define ECHO_REPLAY 1
 
 #define totalSimCycles 500000
 
@@ -678,7 +678,7 @@ int main(int argc, char **argv) {
 	ap_uint<1> 							iperf_runExperiment 	= 0;
 	ap_uint<1> 							iperf_dualModeEn 		= 0;
 	ap_uint<1> 							iperf_useTimer 			= 0;
-	ap_uint<32> 						iperf_runTime 			= 1000;
+	ap_uint<64> 						iperf_runTime 			= 1000;
 	ap_uint<14> 						iperf_num_useConn 		= 1;
 	ap_uint<12> 						iperf_packetMSS 		= 1460;
 	ap_uint<16> 						iperf_dstPort 			= 5001;

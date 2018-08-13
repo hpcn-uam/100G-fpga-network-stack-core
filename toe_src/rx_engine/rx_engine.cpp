@@ -24,94 +24,13 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 
 #include "rx_engine.hpp"
 
 using namespace hls;
 using namespace std;
-
-void combine_words(
-					axiWord 	currentWord, 
-					axiWord 	previousWord, 
-					ap_uint<4> 	ip_headerlen,
-					axiWord& 	sendWord){
-
-#pragma HLS INLINE
-	switch(ip_headerlen) {
-		case 5:
-			sendWord.data( 447,   0) 	= previousWord.data(511,  64);
-			sendWord.keep(  55,   0) 	= previousWord.keep( 63,   8);
-			sendWord.data( 511, 448) 	= currentWord.data(  63,   0);
-			sendWord.keep(  63,  56)	= currentWord.keep(   7,   0);
-			break;
-		case 6:
-			sendWord.data( 415,   0) 	= previousWord.data(511,  96);
-			sendWord.keep(  51,   0) 	= previousWord.keep( 63,  12);
-			sendWord.data( 511, 416) 	= currentWord.data(  95,   0);
-			sendWord.keep(  63,  52)	= currentWord.keep(  11,   0);
-			break;
-		case 7:
-			sendWord.data( 383,   0) 	= previousWord.data(511, 128);
-			sendWord.keep(  47,   0) 	= previousWord.keep( 63,  16);
-			sendWord.data( 511, 384) 	= currentWord.data( 127,   0);
-			sendWord.keep(  63,  48)	= currentWord.keep(  15,   0);
-			break;
-		case 8:
-			sendWord.data( 351,   0) 	= previousWord.data(511, 160);
-			sendWord.keep(  43,   0) 	= previousWord.keep( 63,  20);
-			sendWord.data( 511, 352) 	= currentWord.data( 159,   0);
-			sendWord.keep(  63,  44)	= currentWord.keep(  19,   0);
-			break;
-		case 9:
-			sendWord.data( 319,   0) 	= previousWord.data(511, 192);
-			sendWord.keep(  39,   0) 	= previousWord.keep( 63,  36);
-			sendWord.data( 511, 320) 	= currentWord.data( 191,   0);
-			sendWord.keep(  63,  40)	= currentWord.keep(  23,   0);
-			break;
-		case 10:
-			sendWord.data( 287,   0) 	= previousWord.data(511, 224);
-			sendWord.keep(  35,   0) 	= previousWord.keep( 63,  28);
-			sendWord.data( 511, 288) 	= currentWord.data( 223,   0);
-			sendWord.keep(  63,  36)	= currentWord.keep(  27,   0);
-			break;
-		case 11:
-			sendWord.data( 255,   0) 	= previousWord.data(511, 256);
-			sendWord.keep(  31,   0) 	= previousWord.keep( 63,  32);
-			sendWord.data( 511, 256) 	= currentWord.data( 255,   0);
-			sendWord.keep(  63,  32)	= currentWord.keep(  31,   0);
-			break;
-		case 12:
-			sendWord.data( 223,   0) 	= previousWord.data(511, 288);
-			sendWord.keep(  27,   0) 	= previousWord.keep( 63,  36);
-			sendWord.data( 511, 224) 	= currentWord.data( 287,   0);
-			sendWord.keep(  63,  28)	= currentWord.keep(  35,   0);
-			break;
-		case 13:
-			sendWord.data( 191,   0) 	= previousWord.data(511, 320);
-			sendWord.keep(  23,   0) 	= previousWord.keep( 63,  40);
-			sendWord.data( 511, 192) 	= currentWord.data( 319,   0);
-			sendWord.keep(  63,  24)	= currentWord.keep(  39,   0);
-			break;
-		case 14:
-			sendWord.data( 159,   0) 	= previousWord.data(511, 352);
-			sendWord.keep(  19,   0) 	= previousWord.keep( 63,  44);
-			sendWord.data( 511, 160) 	= currentWord.data( 351,   0);
-			sendWord.keep(  63,  20)	= currentWord.keep(  43,   0);
-			break;
-		case 15:
-			sendWord.data( 127,   0) 	= previousWord.data(511, 384);
-			sendWord.keep(  15,   0) 	= previousWord.keep( 63,  48);
-			sendWord.data( 511, 128) 	= currentWord.data( 383,   0);
-			sendWord.keep(  63,  16)	= currentWord.keep(  47,   0);
-			break;
-		default:
-			cout << "Error the offset is not valid" << endl;
-			break;
-	}
-
-}
 
 /** @ingroup rx_engine
  * Extracts tcpLength from IP header, removes the IP header and prepends the IP addresses to the payload,

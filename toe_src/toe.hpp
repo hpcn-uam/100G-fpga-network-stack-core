@@ -56,7 +56,7 @@ static const ap_uint<16> MSS=1460; //536
 #define RX_DDR_BYPASS 1
 
 // FAST_RETRANSMIT flag, to enable TCP fast recovery/retransmit mechanism
-#define FAST_RETRANSMIT 0
+#define FAST_RETRANSMIT 1
 
 // WINDOW_SCALE, to enable TCP Window Scale option
 #define WINDOW_SCALE 1
