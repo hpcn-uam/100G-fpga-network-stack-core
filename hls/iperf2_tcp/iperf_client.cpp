@@ -420,6 +420,7 @@ void server(
 
     enum server_states {OPEN_PORT, WAIT_RESPONSE, IDLE};
     static server_states server_fsm_state = OPEN_PORT;
+#pragma HLS RESET variable=server_fsm_state
 
     enum consumeFsmStateType {GET_DATA_NOTY , WAIT_SESSION_ID, CONSUME};
     static consumeFsmStateType  serverFsmState = GET_DATA_NOTY;

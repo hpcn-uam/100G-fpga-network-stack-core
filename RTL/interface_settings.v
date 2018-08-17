@@ -40,20 +40,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 	module interface_settings #
 	(
-		// Users to add parameters here
-
-		// User parameters ends
+		parameter [47:0]  MAC 		= 48'h000A35029DE5,		// Xilinx MAC
+		parameter integer IP_ADDR 	= 32'hC0A80005,			// 192.168.0.5
+		parameter integer GT   		= 32'hC0A80001,			// 192.168.0.1
+		parameter integer MASK 		= 32'hFFFFFF00,        	// 255.255.255.0
 		// Do not modify the parameters beyond this line
-
 		// Width of S_AXI data bus
-		parameter integer C_S_AXI_DATA_WIDTH	= 32,
+		localparam integer C_S_AXI_DATA_WIDTH	= 32,
 		// Width of S_AXI address bus
-		parameter integer C_S_AXI_ADDR_WIDTH	= 7
+		localparam integer C_S_AXI_ADDR_WIDTH	= 7
 	)
 	(
   		// Global Clock Signal
 (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 S_AXI_ACLK CLK" *)
-(* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF S_AXI, ASSOCIATED_RESET S_AXI_ARESETN,user_rst_n" *)
+(* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF S_AXI, ASSOCIATED_RESET S_AXI_ARESETN" *)
   		input  wire                              	S_AXI_ACLK   ,
 (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 S_AXI_ARESETN RST" *)
 (* X_INTERFACE_PARAMETER = "POLARITY ACTIVE_LOW" *) 
@@ -146,11 +146,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 	//------------------------------------------------
 	//-- Number of Slave Registers 32
 	
-	//localparam integer MAC_MSB 	= 32'h000A;
-	localparam [47:0]  MAC 		= 48'h000A35029DE5;		// Xilinx MAC
-	localparam integer IP_ADDR 	= 32'hC0A80005;			// 192.168.0.5
-	localparam integer GT   	= 32'hC0A80001;			// 192.168.0.1
-	localparam integer MASK 	= 32'hFFFFFF00;        	// 255.255.255.0
 	
 	reg [C_S_AXI_DATA_WIDTH-1:0]	mac_address_msb = MAC[47:32];
 	reg [C_S_AXI_DATA_WIDTH-1:0]	mac_address_lsb = MAC[31:0];

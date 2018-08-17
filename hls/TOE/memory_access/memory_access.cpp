@@ -245,7 +245,7 @@ void app_MemDataRead_aligner(
 		case FIRST_MERGE :	// Always the input word is unaligned otherwise there is a bug
 			if (!DtaInNoAlig.empty()){
 				DtaInNoAlig.read(currWord);
-				AlingWordFromMemoryStageOne(currWord,prevWord,offset_block0,sendWord);
+				//AlingWordFromMemoryStageOne(currWord,prevWord,offset_block0,sendWord);
 				align_words_from_memory(currWord,prevWord,offset_block0,sendWord);
 				sendWord.last = 0;
 				

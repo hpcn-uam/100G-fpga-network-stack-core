@@ -25,6 +25,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 
 using namespace hls;
 
+unsigned int simCycleCounter=0;
 
 int main()
 {
@@ -48,6 +49,10 @@ int main()
     ap_uint<32> ipDestination = 0x01010101;
     ap_uint<32> transfer_size = 1000;
     ap_uint<12> packet_mss = 1460;
+    ap_uint< 1> useTimer=0; 
+    ap_uint<64> runTime= 0;
+    ap_uint<16> dstPort = 5001;
+    ap_uint<16> maxConnections;
 
     ap_uint<16> sessionID;
     appTxMeta txMetaDataReq;
@@ -80,10 +85,14 @@ int main()
 
                         runExperiment,
                         dualModeEn,
+                        useTimer,
+                        runTime,
                         useConn,
                         transfer_size,
                         packet_mss,
-                        ipDestination);
+                        ipDestination,
+                        dstPort,
+                        maxConnections);
 
         if (!openConnection.empty()) {
             openConnection.read();

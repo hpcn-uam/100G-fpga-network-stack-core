@@ -33,11 +33,11 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include <string>
 #include "pcap2stream.hpp"
 #include "../common_utilities/common_utilities.hpp"
-#include "../../echo_server_src/echo_server_application.hpp"
-#include "../../iperf_client_src/iperf_client.hpp"
+#include "../../echo_replay/echo_server_application.hpp"
+#include "../../iperf2_tcp/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 1
+#define ECHO_REPLAY 0
 
 #define totalSimCycles 500000
 
@@ -774,7 +774,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (simCycleCounter == 10){
-			iperf_runExperiment = 1;
+			//iperf_runExperiment = 1;
 		}
 		else {
 			iperf_runExperiment = 0;	

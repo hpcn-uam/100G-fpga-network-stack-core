@@ -22,8 +22,8 @@ add_files hls/TOE/tx_app_stream_if/tx_app_stream_if.cpp
 add_files hls/TOE/tx_engine/tx_engine.cpp
 add_files hls/TOE/tx_sar_table/tx_sar_table.cpp
 
-add_files -tb echo_server_src/echo_server_application.cpp
-add_files -tb iperf_client_src/iperf_client.cpp
+add_files -tb hls/iperf2_tcp/iperf_client.cpp
+add_files -tb hls/echo_replay/echo_server_application.cpp
 add_files -tb hls/TOE/testbench/dummy_memory.cpp
 add_files -tb hls/TOE/testbench/pcap.cpp
 add_files -tb hls/TOE/testbench/pcap2stream.cpp
