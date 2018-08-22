@@ -33,7 +33,7 @@ void open_port(
 
 	enum esa_openPort_states {OPEN_PORT, WAIT_RESPONSE, IDLE};
 	static esa_openPort_states openPort_fsm = OPEN_PORT;
-//#pragma HLS RESET variable=openPort_fsm
+	#pragma HLS RESET variable=openPort_fsm
 
 	listenPortStatus 		listen_rsp ;
 

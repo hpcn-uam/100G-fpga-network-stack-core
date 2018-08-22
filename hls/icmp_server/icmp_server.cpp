@@ -28,12 +28,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 ************************************************/
 #include "icmp_server.hpp"
 
-
-ap_uint<16> byteSwap16(ap_uint<16> inputVector) {
-	return (inputVector.range(7,0), inputVector(15, 8));
-}
-
-void combine_words(
+void combineIpWords(
 					axiWord 	currentWord, 
 					axiWord 	previousWord, 
 					ap_uint<4> 	ip_headerlen,
@@ -115,6 +110,7 @@ void combine_words(
 }
 
 void remove_ip_header (
+			ap_uint<32>&			myIpAddress,
 			stream<axiWord>& 		dataIn,
 			stream<axiWord>& 		dataOutI,
 			stream<axiWord>& 		dataOutC,
@@ -133,6 +129,8 @@ void remove_ip_header (
 
 	ipMetaData 		ipMetaInfo;
 	ap_uint<16> 	totalLen_i;
+	ap_uint<32> 	ipDestination;
+	static bool 	correctIP=true;
 
 	switch (rip_fsm){
 		case IP_PAYLOAD: 
@@ -140,31 +138,37 @@ void remove_ip_header (
 				dataIn.read(currWord);
 				ip_headerlen 			= currWord.data( 3, 0); 					// Read IP header len
 				totalLen_i				= byteSwap16(currWord.data(31,16));
-				ipMetaInfo.srcIP    	= currWord.data(159,128);					// Get my own IP
+				ipDestination           = currWord.data(159,128);					// Get destination IP to be verified
 				ipMetaInfo.dstIP    	= currWord.data(127, 96);					// It will be the destination IP in the outgoing packet
 				ipMetaInfo.totalLen 	= totalLen_i - ip_headerlen*4;
+				
 				if (currWord.last){
-					combine_words (axiWord(0,0,0), currWord, ip_headerlen, sendWord);
+					combineIpWords (axiWord(0,0,0), currWord, ip_headerlen, sendWord);
 					sendWord.last = 1;
-					dataOutI.write(sendWord);
-					dataOutC.write(sendWord);
+					if (ipDestination == myIpAddress) {
+						dataOutI.write(sendWord);
+						dataOutC.write(sendWord);
+					}
 				}
 				else {
 					rip_fsm = REMAINING;
 				}
-
-				ipInfo.write(ipMetaInfo);
-
+				
+				if (ipDestination == myIpAddress) {
+					correctIP = true;
+					ipInfo.write(ipMetaInfo);
+				}	
+				else{
+					correctIP = false;
+				}
 				prevWord = currWord;
-
-
 			}
 			break;
 		case REMAINING: 
 			if (!dataIn.empty()){
 				dataIn.read(currWord);
 
-				combine_words (currWord , prevWord , ip_headerlen , sendWord);
+				combineIpWords (currWord , prevWord , ip_headerlen , sendWord);
 
 				if (currWord.last){
 					if (currWord.keep.bit(((int)(ip_headerlen*4)))){	// If this bit is valid a extra transaction is needed
@@ -181,13 +185,20 @@ void remove_ip_header (
 				}
 
 				prevWord = currWord;
-				dataOutI.write(sendWord);
-				dataOutC.write(sendWord);
+				if (correctIP){
+					dataOutI.write(sendWord);
+					dataOutC.write(sendWord);
+				}
+				else{
+					if (currWord.last){
+						rip_fsm = IP_PAYLOAD;
+					}
+				}
 			}
 			break;
 
 		case WRITE_EXTRA:
-			combine_words (axiWord(0,0,0), prevWord, ip_headerlen, sendWord);
+			combineIpWords (axiWord(0,0,0), prevWord, ip_headerlen, sendWord);
 			sendWord.last = 1;
 			dataOutI.write(sendWord);
 			dataOutC.write(sendWord);
@@ -238,9 +249,9 @@ void remove_ip_header (
 
 void analyze_icmp (
 			stream<axiWord>& 		dataIn,
-			stream<bool>&			drop,
 			stream<axiWord>& 		dataOutI,
-			stream<axiWord>& 		dataOutC){
+			stream<axiWord>& 		dataOutC,
+			stream<bool>&			drop){
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1	
 
@@ -308,6 +319,7 @@ void analyze_icmp (
  *  @param[out]		dataOut
  */
 void dropper (
+			ap_uint<32>&			myIpAddress,
 			stream<axiWord>& 		dataIn, 
 			stream<ap_uint<16> >&	checksum,
 			stream<bool>& 			drop,		// echo replay check 
@@ -319,7 +331,8 @@ void dropper (
 #pragma HLS pipeline II=1
 
 	enum drop_states{READ , DROP , FWD};
-	static drop_states fsm_state = READ;
+
+	static drop_states drop_fsm_state = READ;
 	static bool metaInfoAlreadySent = false;
 
 	axiWord currWord;
@@ -327,16 +340,16 @@ void dropper (
 	bool drop_i;
 	ipMetaData ipMetaData_i;
 
-	switch (fsm_state){
+	switch (drop_fsm_state){
 		case READ : 
 			if (!checksum.empty() && !drop.empty()){
 				checksum.read(checksum_i);
 				drop.read(drop_i);
 				if ((checksum_i == 0) && (drop_i==false)){
-					fsm_state = FWD;
+					drop_fsm_state = FWD;
 				} 
 				else {
-					fsm_state = DROP;
+					drop_fsm_state = DROP;
 				}
 				metaInfoAlreadySent = false;
 			}
@@ -345,7 +358,7 @@ void dropper (
 			if (!dataIn.empty() && (metaInfoAlreadySent || !ipInfoIn.empty())){
 				dataIn.read(currWord);
 				if (currWord.last){
-					fsm_state = READ;
+					drop_fsm_state = READ;
 				}
 
 				if (!metaInfoAlreadySent){
@@ -367,7 +380,7 @@ void dropper (
 				metaInfoAlreadySent = true;
 
 				if (currWord.last){
-					fsm_state = READ;
+					drop_fsm_state = READ;
 				}
 			}
 			break;
@@ -375,7 +388,17 @@ void dropper (
 
 }
 
+
+/**
+ * @brief      The IPv4 header is inserted on top of ICMP message
+ *
+ * @param      dataIn    ICMP Data
+ * @param      ipInfoIn  IP metadata
+ * @param      checksum  IP header checksum
+ * @param      dataOut   IP level data
+ */
 void ip_insertion (
+			ap_uint<32>&				myIpAddress,
 			stream<axiWord>& 			dataIn, 
 			stream<ipMetaData>& 		ipInfoIn,
 			stream<ap_uint<16> >&		checksum,
@@ -385,7 +408,7 @@ void ip_insertion (
 #pragma HLS pipeline II=1	
 
 	enum ii_states {IP_HEADER, READ_REMAINING, SEND_EXTRA};
-	static ii_states ii_fsm = IP_HEADER;
+	static ii_states ii_fsm_state = IP_HEADER;
 
 	ipMetaData 		ipInfo_i;
 	axiWord 		currWord;
@@ -394,7 +417,7 @@ void ip_insertion (
 	static axiWord 	prevWord;
 
 
-	switch (ii_fsm){
+	switch (ii_fsm_state){
 		case IP_HEADER:
 			if (!dataIn.empty() && !ipInfoIn.empty() && !checksum.empty()){
 				dataIn.read(currWord);
@@ -409,7 +432,7 @@ void ip_insertion (
 				sendWord.data( 71, 64) = 128;									// IP time to live
 				sendWord.data( 79, 72) = 1; 									// IP protocol
 				sendWord.data( 95, 80) = 0;										// IP checksum
-				sendWord.data(127, 96) = ipInfo_i.srcIP;						// My own IP address
+				sendWord.data(127, 96) = myIpAddress;							// My own IP address
 				sendWord.data(159,128) = ipInfo_i.dstIP;						// Destination IP address
 				sendWord.keep( 19,  0) = 0xFFFFF;
 
@@ -420,7 +443,7 @@ void ip_insertion (
 				if (currWord.last) {
 					if (currWord.keep.bit(44)){
 						sendWord.last = 0;
-						ii_fsm 	= SEND_EXTRA;
+						ii_fsm_state 	= SEND_EXTRA;
 					} 
 					else {
 						sendWord.last = 1;
@@ -429,7 +452,7 @@ void ip_insertion (
 				}
 				else {
 					sendWord.last = 0;
-					ii_fsm 	= READ_REMAINING;
+					ii_fsm_state 	= READ_REMAINING;
 				}
 
 				prevWord = currWord;
@@ -447,11 +470,11 @@ void ip_insertion (
 				if (currWord.last) {
 					if (currWord.keep.bit(44)){
 						sendWord.last = 0;
-						ii_fsm 	= SEND_EXTRA;
+						ii_fsm_state 	= SEND_EXTRA;
 					}
 					else {
 						sendWord.last = 1;
-						ii_fsm 	= IP_HEADER;
+						ii_fsm_state 	= IP_HEADER;
 					}
 				}
 				else {
@@ -469,12 +492,10 @@ void ip_insertion (
 				sendWord.keep( 63, 20) = 0;
 				sendWord.last = 1;
 				dataOut.write(sendWord);
-				ii_fsm 	= IP_HEADER;
+				ii_fsm_state 	= IP_HEADER;
 
 			break;
 	}
-
-
 }
 
 
@@ -487,9 +508,7 @@ void icmp_server(
 			stream<axiWord>&			dataIn,
 			stream<ap_uint<16> >&		input_icmp_checksum,
 			stream<ap_uint<16> >&		output_icmp_checksum,
-
-			//stream<axiWord>&	udpIn,
-			//stream<axiWord>&	ttlIn,
+			ap_uint<32>&				myIpAddress,
 			stream<axiWord>&			inputIcmp2checksum,
 			stream<axiWord>&			outputIcmp2checksum,
 			stream<axiWord>&			dataOut) {
@@ -506,6 +525,7 @@ void icmp_server(
 #pragma HLS INTERFACE axis register both port=input_icmp_checksum name=s_icmp_input_packet_checksum
 #pragma HLS INTERFACE axis register both port=output_icmp_checksum name=s_icmp_output_packet_checksum	
 
+#pragma HLS INTERFACE ap_stable register port=myIpAddress name=myIpAddress
 
 //#pragma HLS INTERFACE port=udpIn axis
 //#pragma HLS INTERFACE port=ttlIn axis
@@ -529,8 +549,8 @@ void icmp_server(
 	#pragma HLS STREAM variable=icmpEchoReplayDrop depth=8
 
 
-
 	remove_ip_header (
+			myIpAddress,
 			dataIn,
 			icmpLevel_i,
 			inputIcmp2checksum,
@@ -538,11 +558,12 @@ void icmp_server(
 
 	analyze_icmp (
 			icmpLevel_i,
-			icmpEchoReplayDrop,
 			icmp2dropper,
-			outputIcmp2checksum);
+			outputIcmp2checksum,
+			icmpEchoReplayDrop);
 
 	dropper(
+			myIpAddress,
 			icmp2dropper,
 			input_icmp_checksum,
 			icmpEchoReplayDrop,
@@ -551,6 +572,7 @@ void icmp_server(
 			icmp2ipInsertion);
 
 	ip_insertion (
+			myIpAddress,
 			icmp2ipInsertion, 
 			ipInfo2ipInsertion,
 			output_icmp_checksum,

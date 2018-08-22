@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2018, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, 
@@ -24,7 +24,7 @@ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIM
 PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) 
 HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, 
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, Inc.
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, Inc.
 ************************************************/
 #include <stdio.h>
 #include <iostream>
@@ -34,10 +34,13 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <hls_stream.h>
 #include "ap_int.h"
 #include <stdint.h>
+#include "../TOE/toe.hpp"
+
+#ifndef _ARP_SERVER_HPP_
+#define _ARP_SERVER_HPP_
 
 using namespace hls;
 
-#define ETH_INTERFACE_WIDTH 512
 
 const uint16_t 		REQUEST 		= 0x0100;
 const uint16_t 		REPLY 			= 0x0200;
@@ -45,17 +48,12 @@ const ap_uint<32>	replyTimeOut 	= 65536;
 
 const ap_uint<48> BROADCAST_MAC	= 0xFFFFFFFFFFFF;	// Broadcast MAC Address
 
+// This flag enables an aggressive scanning of the IP in the subnet
+// For instance, at the beginning ARP packets will be sent to each IP in the subnet
+#define SCANNING 1
+
+
 const uint8_t 	noOfArpTableEntries	= 8;
-
-
-template<int D>
-struct my_axis {
-	ap_uint< D >		data;
-	ap_uint<D/8>		keep;
-	ap_uint<1>			last;
-};
-
-typedef my_axis<ETH_INTERFACE_WIDTH> axiWord;
 
 struct arpTableReply
 {
@@ -133,5 +131,7 @@ void arp_server(
     	stream<ap_uint<32> >&     		macIpEncode_req,
 		stream<axiWord>&          		arpDataOut,
 		stream<arpTableReply>&    		macIpEncode_rsp,
-		ap_uint<48> 					myMacAddress,
-		ap_uint<32> 					myIpAddress);
+		ap_uint<48>& 					myMacAddress,
+		ap_uint<32>& 					myIpAddress);
+
+#endif

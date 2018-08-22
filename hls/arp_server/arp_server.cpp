@@ -32,12 +32,14 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
  *
  */
 void arp_pkg_receiver(
-	  	stream<axiWord>			 	&arpDataIn,
-      	stream<arpReplyMeta>		&arpReplyMetaFifo,
-      	stream<arpTableEntry>		&arpTableInsertFifo,
-      	ap_uint<32>             	myIpAddress) {
+	  	stream<axiWord>&			arpDataIn,
+      	stream<arpReplyMeta>& 		arpReplyMetaFifo,
+      	stream<arpTableEntry>& 		arpTableInsertFifo,
+      	ap_uint<32>&             	myIpAddress) {
 
 #pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
   static ap_uint<3> 	wordCount = 0;
   static ap_uint<16>	opCode;
   static ap_uint<32>	protoAddrDst;
@@ -85,10 +87,12 @@ void arp_pkg_sender(
 		stream<arpReplyMeta>&     arpReplyMetaFifo,
         stream<ap_uint<32> >&     arpRequestMetaFifo,
         stream<axiWord>&          arpDataOut,
-        ap_uint<48>				  myMacAddress,
-        ap_uint<32>               myIpAddress) {
+        ap_uint<48>&			  myMacAddress,
+        ap_uint<32>&              myIpAddress) {
 
 #pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
 	enum arpSendStateType {ARP_IDLE, ARP_REPLY, ARP_SENTRQ};
   	static arpSendStateType aps_fsmState = ARP_IDLE;
   
@@ -162,12 +166,13 @@ void arp_pkg_sender(
  *
  */
 void arp_table( 
-		stream<arpTableEntry>		&arpTableInsertFifo,
-        stream<ap_uint<32> >		&macIpEncode_req,
-        stream<arpTableReply> 		&macIpEncode_rsp,
-        stream<ap_uint<32> > 		&arpRequestMetaFifo){
+		stream<arpTableEntry>& 		arpTableInsertFifo,
+        stream<ap_uint<32> >& 		macIpEncode_req,
+        stream<arpTableReply>& 		macIpEncode_rsp,
+        stream<ap_uint<32> >& 		arpRequestMetaFifo){
 
 #pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
 
 	static 	arpTableEntry		arpTable[256];
 	#pragma HLS RESOURCE variable=arpTable core=RAM_1P_BRAM
@@ -196,6 +201,79 @@ void arp_table(
 
 }
 
+#ifdef SCANNING
+
+void genInitARP (
+		ap_uint<32>& 				myIpAddress,
+		stream<ap_uint<32> >& 		macIpEncodeIn,
+		stream<arpTableReply>&    	macIpEncode_rsp_i,
+		stream<arpTableReply>&    	macIpEncode_rsp_o,
+		stream<ap_uint<32> >& 		macIpEncodeOut){
+
+#pragma HLS PIPELINE II=1
+#pragma INLINE off
+
+	enum gia_states {SETUP, WAIT_TIME, GEN_IP, CONSUME,FWD};
+	static gia_states gia_fsm_state = SETUP;
+#pragma HLS RESET variable=gia_fsm_state
+
+
+	static ap_uint<8> 	ip_lsb;
+	static ap_uint<10>	time_counter;
+	ap_uint<32>			ip_aux;
+	arpTableReply 		macEnc_i;
+	static ap_uint<9>	encode_rsp;
+
+	switch (gia_fsm_state){
+		case SETUP: 
+			ip_lsb = 0;
+			time_counter = 0;
+			encode_rsp = 0;
+			gia_fsm_state = WAIT_TIME;
+			break;
+		case WAIT_TIME:	
+			time_counter++;
+			if (time_counter == 99)
+				gia_fsm_state = GEN_IP;
+			break;
+		case GEN_IP:
+			ip_aux =  (ip_lsb,myIpAddress(23,0));
+			if (ip_lsb != myIpAddress(31,24)){
+				macIpEncodeOut.write(ip_aux);
+			}
+			if (ip_lsb == 0xFF){
+				gia_fsm_state = CONSUME;
+			}
+			ip_lsb++;
+			if (!macIpEncode_rsp_i.empty()){
+				macIpEncode_rsp_i.read(macEnc_i);
+				encode_rsp++;
+			}
+			break;
+		case CONSUME:
+			if (!macIpEncode_rsp_i.empty()){
+				macIpEncode_rsp_i.read(macEnc_i);
+				encode_rsp++;
+				if (encode_rsp == 255) {
+					gia_fsm_state = FWD;
+				}
+			}
+			break;	
+		case FWD: 
+			if (!macIpEncodeIn.empty()){
+				macIpEncodeOut.write(macIpEncodeIn.read());
+			}
+			if (!macIpEncode_rsp_i.empty()){
+				macIpEncode_rsp_i.read(macEnc_i);
+				macIpEncode_rsp_o.write(macEnc_i);
+			}
+			break;
+	}
+
+}
+
+#endif
+
 /** @ingroup arp_server
  *
  */
@@ -204,9 +282,8 @@ void arp_server(
     	stream<ap_uint<32> >&     		macIpEncode_req,
 		stream<axiWord>&          		arpDataOut,
 		stream<arpTableReply>&    		macIpEncode_rsp,
-
-		ap_uint<48> 					myMacAddress,
-		ap_uint<32> 					myIpAddress)	{
+		ap_uint<48>& 					myMacAddress,
+		ap_uint<32>& 					myIpAddress)	{
 
 
 #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -235,9 +312,42 @@ void arp_server(
 #pragma HLS STREAM variable=arpTableInsertFifo depth=4
 #pragma HLS DATA_PACK variable=arpTableInsertFifo
 
-  arp_pkg_receiver(arpDataIn, arpReplyMetaFifo, arpTableInsertFifo, myIpAddress);
-  
-  arp_pkg_sender(arpReplyMetaFifo, arpRequestMetaFifo, arpDataOut, myMacAddress, myIpAddress);
+#if SCANNING
+ 	static stream<ap_uint<32> >     		macIpEncode_i("macIpEncode_i");
+ 	#pragma HLS STREAM variable=macIpEncode_i depth=4
 
-  arp_table(arpTableInsertFifo, macIpEncode_req, macIpEncode_rsp, arpRequestMetaFifo);
+ 	static stream<arpTableReply> 		macIpEncode_rsp_i("macIpEncode_rsp_i");
+ 	#pragma HLS STREAM variable=macIpEncode_rsp_i depth=4
+ 	
+	genInitARP (
+		myIpAddress,
+		macIpEncode_req,
+		macIpEncode_rsp_i,
+		macIpEncode_rsp,
+		macIpEncode_i);
+ #endif		
+
+  	arp_pkg_receiver(
+  		arpDataIn, 
+  		arpReplyMetaFifo, 
+  		arpTableInsertFifo, 
+  		myIpAddress);
+  
+  	arp_pkg_sender(
+  		arpReplyMetaFifo, 
+  		arpRequestMetaFifo, 
+  		arpDataOut, 
+  		myMacAddress, 
+  		myIpAddress);
+
+  	arp_table(
+  		arpTableInsertFifo, 
+#if SCANNING
+  		macIpEncode_i,
+  		macIpEncode_rsp_i,
+#else  		
+  		macIpEncode_req, 
+  		macIpEncode_rsp, 
+#endif  		
+  		arpRequestMetaFifo);
 }

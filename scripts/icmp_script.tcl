@@ -2,7 +2,8 @@ open_project ICMP_hls_prj
 
 set_top icmp_server
 
-add_files hls/icmp_server//icmp_server.cpp
+add_files hls/icmp_server/icmp_server.cpp
+add_files hls/TOE/common_utilities/common_utilities.cpp
 add_files -tb hls/icmp_server/test_icmp_server.cpp
 
 open_solution "ultrascale_plus"
