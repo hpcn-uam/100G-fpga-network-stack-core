@@ -221,9 +221,8 @@ void rxParseTcpOptions (
 
 		case PARSE_DATA: 
 
-			bitOffset 	 = byte_offset*8;
-			optionKind 	 = metaInfo.tcpOptions(bitOffset +  7 ,     bitOffset);
-			optionLength = metaInfo.tcpOptions(bitOffset + 15 , bitOffset + 8);
+			optionKind 	 = metaInfo.tcpOptions(7 , 0);
+			optionLength = metaInfo.tcpOptions(15, 8);
 			//std::cout << "RxParse. byte_offset " << std::dec << byte_offset << "\tOption Kind: " << std::hex << optionKind << "\toptionLength: " << std::dec << optionLength;
 			//std::cout << "\toptionsSize " << optionsSize;
 
@@ -234,13 +233,12 @@ void rxParseTcpOptions (
 						sendMeta = true;
 						break;
 					case 1:	// No Operation
-						//byte_offset++;
 						optionLength = 1;
 						break;
 					case 3: // Window Scale option
 						sendMeta = true;
 						if (optionLength == 3){ // Double check
-							metaInfo.digest.recv_window_scale = metaInfo.tcpOptions(bitOffset + 19 , bitOffset + 16);
+							metaInfo.digest.recv_window_scale = metaInfo.tcpOptions(19 ,16);
 							//std::cout << "\t Window shift " << metaInfo.tcpOptions(bitOffset + 19 , bitOffset + 16);
 						}
 						break;	
@@ -249,6 +247,7 @@ void rxParseTcpOptions (
 					break;
 						
 				}
+				metaInfo.tcpOptions = metaInfo.tcpOptions >> (optionLength*8);
 				byte_offset = byte_offset + optionLength;
 			}
 			else {
