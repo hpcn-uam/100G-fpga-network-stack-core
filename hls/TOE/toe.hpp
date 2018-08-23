@@ -564,6 +564,20 @@ struct mmCmd
 		:bbt(len), type(1), dsa(0), eof(1), drr(1), saddr(addr), tag(0), rsvd(0) {}
 };
 
+struct cmd_internal {
+	ap_uint<16>				length;
+	ap_uint<32>				addr;
+	ap_uint<WINDOW_BITS+1>	next_addr;
+
+	cmd_internal() {}
+	cmd_internal(ap_uint<32>	addr, ap_uint<16> length)
+		:addr(addr), length(length), next_addr(addr + length) {}
+
+//	ap_uint<WINDOW_BITS+1> compute_next_address (){
+//		return addr(WINDOW_BITS-1,0) + length;
+//	}	
+};
+
 struct mmStatus
 {
 	ap_uint<4>	tag;
@@ -573,17 +587,6 @@ struct mmStatus
 	ap_uint<1>	okay;
 };
 
-//TODO is this required??
-struct mm_ibtt_status
-{
-	ap_uint<4>	tag;
-	ap_uint<1>	interr;
-	ap_uint<1>	decerr;
-	ap_uint<1>	slverr;
-	ap_uint<1>	okay;
-	ap_uint<22>	brc_vd;
-	ap_uint<1>	eop;
-};
 
 struct openStatus
 {

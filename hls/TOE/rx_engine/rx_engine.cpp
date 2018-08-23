@@ -183,6 +183,7 @@ void rxEngPseudoHeaderInsert(
  * @param      metaDataFifoIn   The meta data fifo in
  * @param      metaDataFifoOut  The meta data fifo out
  */
+#if WINDOW_SCALE
 void rxParseTcpOptions (
 							stream<rxEngPktMetaInfo>&		metaDataFifoIn,
 							stream<rxEngPktMetaInfo>&		metaDataFifoOut
@@ -233,7 +234,8 @@ void rxParseTcpOptions (
 						sendMeta = true;
 						break;
 					case 1:	// No Operation
-						byte_offset++;
+						//byte_offset++;
+						optionLength = 1;
 						break;
 					case 3: // Window Scale option
 						sendMeta = true;
@@ -244,10 +246,10 @@ void rxParseTcpOptions (
 						break;	
 
 					default:
-						byte_offset = byte_offset + optionLength;
 					break;
 						
 				}
+				byte_offset = byte_offset + optionLength;
 			}
 			else {
 				sendMeta = true;
@@ -266,6 +268,7 @@ void rxParseTcpOptions (
 
 }
 
+#endif
 /** @ingroup rx_engine
  *  This module gets the packet at Pseudo TCP layer.
  *  First of all, it removes the pseudo TCP header and forward the payload if any.
@@ -647,7 +650,7 @@ void rxEngTcpFSM(
 			switch (control_bits) {
 				case 1: //ACK
 					if (fsm_state == LOAD) {
-						std::cout << "RX_engine state " << std::dec << tcpState << "\tacknum " << std::hex << fsm_meta.meta.ackNumb <<  "\tat " << std::dec << simCycleCounter << std::endl;
+						//std::cout << "RX_engine state " << std::dec << tcpState << "\tacknum " << std::hex << fsm_meta.meta.ackNumb <<  "\tat " << std::dec << simCycleCounter << std::endl;
 						rxEng2timer_clearRetransmitTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID, (fsm_meta.meta.ackNumb == txSar.nextByte))); 		// Reset Retransmit Timer
 						if (tcpState == ESTABLISHED || tcpState == SYN_RECEIVED || tcpState == FIN_WAIT_1 || tcpState == CLOSING || tcpState == LAST_ACK) {
 							// Check if new ACK arrived
@@ -814,7 +817,7 @@ void rxEngTcpFSM(
 #if (WINDOW_SCALE)							
 								rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
 								tx_win_shift = (fsm_meta.meta.recv_window_scale > WINDOW_SCALE_BITS) ? ((ap_uint<4>) WINDOW_SCALE_BITS) : fsm_meta.meta.recv_window_scale; // Limit the maximum scale to the actual value of the buffer size
-								std::cout << std::endl << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
+								//std::cout << std::endl << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
 								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift)); 
 								// TX Sar table is initialized with the received window scale 
 								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
@@ -877,7 +880,7 @@ void rxEngTcpFSM(
 							}
 							else {//FIN_WAIT_1 || FIN_WAIT_2
 								if (fsm_meta.meta.ackNumb == txSar.nextByte) {//check if final FIN is ACK'd -> LAST_ACK
-									std::cout << std::endl << "TCP FSM going to TIME_WAIT state " << std::endl << std::endl;
+									//std::cout << std::endl << "TCP FSM going to TIME_WAIT state " << std::endl << std::endl;
 									rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, TIME_WAIT, 1));
 									rxEng2timer_setCloseTimer.write(fsm_meta.sessionID);
 								}

@@ -31,12 +31,12 @@ using namespace hls;
 
 
 void app_ReadMemAccessBreakdown(
-					stream<mmCmd>& 				inputMemAccess, 
+					stream<cmd_internal>& 		inputMemAccess, 
 					stream<mmCmd>& 				outputMemAccess, 
 					stream<memDoubleAccess>& 	memAccessBreakdown);
 
 void tx_ReadMemAccessBreakdown(
-					stream<mmCmd>& 				inputMemAccess, 
+					stream<cmd_internal>& 		inputMemAccess, 
 					stream<mmCmd>& 				outputMemAccess, 
 					stream<memDoubleAccess>& 	memAccessBreakdown);
 

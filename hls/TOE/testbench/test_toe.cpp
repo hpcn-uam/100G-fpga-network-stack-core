@@ -37,9 +37,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "../../iperf2_tcp/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 0
+#define ECHO_REPLAY 1
 
-#define totalSimCycles 500000
+#define totalSimCycles 5000000
 
 using namespace std;
 
@@ -500,7 +500,7 @@ void simulateRx(
 		//cout << "Rx WRITE command [" << setw(3) << write_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
-			//cout << endl << endl << "Rx WRITE ERROR memory write overflow!!!!!!!" << endl << endl;
+			cout << endl << endl << "Rx WRITE ERROR memory write overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
 		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
@@ -527,6 +527,10 @@ void simulateRx(
 		wrBufferReadCounter = cmd.bbt;
 		stx_read = true;
 		//cout << "Rx  READ command [" << setw(3) << read_command_number++<< "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		address_comparator = cmd.saddr + cmd.bbt;
+		if (address_comparator > BUFFER_SIZE){
+			cout << endl << endl << "Rx READ ERROR memory read overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
+		}
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);
@@ -576,7 +580,7 @@ void simulateTx(
 		//cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
-			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!!" << endl << endl ;
+			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
 		}
 	}
 	else if (!BufferIn.empty() && stx_write) {
@@ -596,6 +600,10 @@ void simulateTx(
 		memory->setReadCmd(cmd);
 		stx_read = true;
 		//cout << endl << "Tx READ command address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl << endl;
+		address_comparator = cmd.saddr + cmd.bbt;
+		if (address_comparator > BUFFER_SIZE){
+			cout << endl << endl << "Tx READ ERROR memory read overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
+		}
 	}
 	else if(stx_read) {
 		memory->readWord(outWord);

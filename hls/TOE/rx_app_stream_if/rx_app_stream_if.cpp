@@ -46,7 +46,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 					  stream<rxSarAppd>&			rxSar2rxApp_upd_rsp,
 					  stream<ap_uint<16> >&			appRxDataRspIDsession,
 #if (!RX_DDR_BYPASS)
-					  stream<mmCmd>&				rxBufferReadCmd,
+					  stream<cmd_internal>&			rxBufferReadCmd,
 #else
 					  stream<ap_uint<1> >&			rxBufferReadCmd,
 #endif
@@ -83,7 +83,7 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 				
 				pkgAddr(29, WINDOW_BITS) = rxSar.sessionID(13, 0);
 				pkgAddr(WINDOW_BITS-1, 0) = rxSar.appd;
-				rxBufferReadCmd.write(mmCmd(pkgAddr, rasi_readLength));
+				rxBufferReadCmd.write(cmd_internal(pkgAddr, rasi_readLength));
 #else
 				rxBufferReadCmd.write(1);
 #endif

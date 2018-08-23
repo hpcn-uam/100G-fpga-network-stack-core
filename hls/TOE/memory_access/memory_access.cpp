@@ -28,84 +28,84 @@ using namespace std;
 
 
 void app_ReadMemAccessBreakdown(
-					stream<mmCmd>& 				inputMemAccess, 
-					stream<mmCmd>& 				outputMemAccess, 
-					stream<memDoubleAccess>& 	memAccessBreakdown) {
-
-#pragma HLS pipeline II=1
-#pragma HLS INLINE off
-	static bool 		appBreakdown = false;
-	static mmCmd 		appTempCmd;
-	static ap_uint<16> 	appBreakTemp = 0;
-	//static ap_uint<16> 	txPktCounter = 0;
-	memDoubleAccess 	double_access=memDoubleAccess(false,0);
-
-	if (appBreakdown == false) {
-		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
-			appTempCmd = inputMemAccess.read();
-			mmCmd tempCmd = appTempCmd;
-			if ((appTempCmd.saddr.range(WINDOW_BITS-1, 0) + appTempCmd.bbt) > BUFFER_SIZE) { // TODO this sum could get precomputed 
-				appBreakTemp = BUFFER_SIZE - appTempCmd.saddr;
-				tempCmd = mmCmd(appTempCmd.saddr, appBreakTemp);
-				appBreakdown = true;
-
-				double_access.double_access = true;
-				double_access.offset 		= appBreakTemp(5,0);	// Offset of MSB byte valid in the last transaction of the first burst
-			}
-			outputMemAccess.write(tempCmd);
-			memAccessBreakdown.write(double_access);
-			//txPktCounter++;
-			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << endl;
-		}
-	}
-	else if (appBreakdown == true) {
-		if (!outputMemAccess.full()) {
-			appTempCmd.saddr.range(WINDOW_BITS-1, 0) = 0;
-			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << appTempCmd.saddr << " - " << appTempCmd.bbt - appBreakTemp << endl;
-			outputMemAccess.write(mmCmd(appTempCmd.saddr, appTempCmd.bbt - appBreakTemp));
-			appBreakdown = false;
-		}
-	}
-}
-
-void tx_ReadMemAccessBreakdown(
-					stream<mmCmd>& 				inputMemAccess, 
+					stream<cmd_internal>& 		inputMemAccess, 
 					stream<mmCmd>& 				outputMemAccess, 
 					stream<memDoubleAccess>& 	memAccessBreakdown) {
 
 #pragma HLS pipeline II=1
 #pragma HLS INLINE off
 	static bool txEngBreakdown = false;
-	static mmCmd txEngTempCmd;
+	static cmd_internal txEngTempCmd;
 	static ap_uint<16> 	txEngBreakTemp = 0;
 	//static ap_uint<16> 	txPktCounter = 0;
+	mmCmd 				tempCmd;
 	memDoubleAccess 	double_access=memDoubleAccess(false,0);
 
 	if (txEngBreakdown == false) {
-		if (!inputMemAccess.empty() && !outputMemAccess.full()) {
-			txEngTempCmd = inputMemAccess.read();
-			mmCmd tempCmd = txEngTempCmd;
-			if ((txEngTempCmd.saddr.range(WINDOW_BITS-1, 0) + txEngTempCmd.bbt) > BUFFER_SIZE) {
-				txEngBreakTemp = BUFFER_SIZE - txEngTempCmd.saddr;
-				tempCmd = mmCmd(txEngTempCmd.saddr, txEngBreakTemp);
-				txEngBreakdown = true;
+		if (!inputMemAccess.empty()) {
+			inputMemAccess.read(txEngTempCmd);
+			tempCmd = mmCmd(txEngTempCmd.addr, txEngTempCmd.length);
 
+			if (txEngTempCmd.next_addr.bit(WINDOW_BITS)) {	// Check for overflow
+				txEngBreakTemp = BUFFER_SIZE - txEngTempCmd.addr;		// Compute remaining space in the buffer before overflow
+				tempCmd = mmCmd(txEngTempCmd.addr, txEngBreakTemp);
+
+				txEngBreakdown = true;
 				double_access.double_access = true;
 				double_access.offset 		= txEngBreakTemp(5,0);	// Offset of MSB byte valid in the last transaction of the first burst
 			}
 			outputMemAccess.write(tempCmd);
 			memAccessBreakdown.write(double_access);
 			//txPktCounter++;
-			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.bbt << endl;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.length << endl;
 		}
 	}
 	else if (txEngBreakdown == true) {
-		if (!outputMemAccess.full()) {
-			txEngTempCmd.saddr.range(WINDOW_BITS-1, 0) = 0;
-			//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.bbt - txEngBreakTemp << endl;
-			outputMemAccess.write(mmCmd(txEngTempCmd.saddr, txEngTempCmd.bbt - txEngBreakTemp));
-			txEngBreakdown = false;
+		txEngTempCmd.addr.range(WINDOW_BITS-1, 0) = 0;	// Clear the least significant bits of the address
+		outputMemAccess.write(mmCmd(txEngTempCmd.addr, txEngTempCmd.length - txEngBreakTemp));
+		txEngBreakdown = false;
+		//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.length - txEngBreakTemp << endl;
+	}
+}
+
+void tx_ReadMemAccessBreakdown(
+					stream<cmd_internal>& 		inputMemAccess, 
+					stream<mmCmd>& 				outputMemAccess, 
+					stream<memDoubleAccess>& 	memAccessBreakdown) {
+
+#pragma HLS pipeline II=1
+#pragma HLS INLINE off
+	static bool txEngBreakdown = false;
+	static cmd_internal txEngTempCmd;
+	static ap_uint<16> 	txEngBreakTemp = 0;
+	//static ap_uint<16> 	txPktCounter = 0;
+	mmCmd 				tempCmd;
+	memDoubleAccess 	double_access=memDoubleAccess(false,0);
+
+	if (txEngBreakdown == false) {
+		if (!inputMemAccess.empty()) {
+			inputMemAccess.read(txEngTempCmd);
+			tempCmd = mmCmd(txEngTempCmd.addr, txEngTempCmd.length);
+
+			if (txEngTempCmd.next_addr.bit(WINDOW_BITS)) {	// Check for overflow
+				txEngBreakTemp = BUFFER_SIZE - txEngTempCmd.addr;		// Compute remaining space in the buffer before overflow
+				tempCmd = mmCmd(txEngTempCmd.addr, txEngBreakTemp);
+
+				txEngBreakdown = true;
+				double_access.double_access = true;
+				double_access.offset 		= txEngBreakTemp(5,0);	// Offset of MSB byte valid in the last transaction of the first burst
+			}
+			outputMemAccess.write(tempCmd);
+			memAccessBreakdown.write(double_access);
+			//txPktCounter++;
+			//cerr << dec << "MemCmd: " << cycleCounter << " - " << txPktCounter << " - " << hex << " - " << tempCmd.saddr << " - " << tempCmd.length << endl;
 		}
+	}
+	else if (txEngBreakdown == true) {
+		txEngTempCmd.addr.range(WINDOW_BITS-1, 0) = 0;	// Clear the least significant bits of the address
+		outputMemAccess.write(mmCmd(txEngTempCmd.addr, txEngTempCmd.length - txEngBreakTemp));
+		txEngBreakdown = false;
+		//cerr << dec << "MemCmd: " << cycleCounter << " - " << hex << " - " << txEngTempCmd.saddr << " - " << txEngTempCmd.length - txEngBreakTemp << endl;
 	}
 }
 

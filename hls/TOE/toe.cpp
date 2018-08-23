@@ -205,7 +205,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 	 // RX Application Stream Interface
 #if (!RX_DDR_BYPASS)
 
-	static stream<mmCmd>			rxAppStreamIf2memAccessBreakdown("rxAppStreamIf2memAccessBreakdown");
+	static stream<cmd_internal>			rxAppStreamIf2memAccessBreakdown("rxAppStreamIf2memAccessBreakdown");
 	#pragma HLS STREAM variable=rxAppStreamIf2memAccessBreakdown	depth=16
 
 	static stream<memDoubleAccess>		rxAppDoubleAccess("rxAppDoubleAccess");

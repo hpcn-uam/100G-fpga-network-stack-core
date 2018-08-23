@@ -74,7 +74,8 @@ void rx_sar_table(	stream<rxSarRecvd>&			rxEng2rxSar_upd_req,
 		response2_metaloader.windowSize  = real_window_size >> tmp_entry.rx_win_shift;
 		response2_metaloader.rx_win_shift = tmp_entry.rx_win_shift;
 #else
-		response2_metaloader.rx_win_shift = real_window_size;
+		response2_metaloader.windowSize  = real_window_size;
+//		response2_metaloader.rx_win_shift = real_window_size;
 #endif 		
 
 		rxSar2txEng_rsp.write(response2_metaloader);

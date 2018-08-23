@@ -185,8 +185,10 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 #endif				
 			if (tst_rxEngUpdate.cong_window < scaled_recv_window) {
 				minWindow = tst_rxEngUpdate.cong_window;
+#if (WINDOW_SCALE)					
 				std::cout << "Using Congestion win " << std::dec << tst_rxEngUpdate.cong_window << "\tshift: " << tst_rxEngUpdate.tx_win_shift;
 				std::cout << "\trecv_window " << tst_rxEngUpdate.recv_window << "\t scaled recv_wind: " << scaled_recv_window << std::endl;
+#endif				
 			}
 			else {
 				minWindow = scaled_recv_window;			

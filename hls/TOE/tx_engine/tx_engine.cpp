@@ -65,7 +65,7 @@ void txEng_metaLoader(
 				stream<ap_uint<16> >&				txEng2timer_setProbeTimer,
 				stream<ap_uint<16> >&				txEng_ipMetaFifoOut,
 				stream<tx_engine_meta>&				txEng_tcpMetaFifoOut,
-				stream<mmCmd>&						txBufferReadCmd,
+				stream<cmd_internal>&				txBufferReadCmd,
 				stream<ap_uint<16> >&				txEng2sLookup_rev_req,
 				stream<bool>&						txEng_isLookUpFifoOut,
 #if (TCP_NODELAY)
@@ -315,7 +315,7 @@ void txEng_metaLoader(
 					}
 
 					if (meta.length != 0) {
-						txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
+						txBufferReadCmd.write(cmd_internal(pkgAddr, meta.length));
 					// Send a packet only if there is data or we want to send an empty probing message
 						txEng_ipMetaFifoOut.write(meta.length);
 						txEng_tcpMetaFifoOut.write(meta);
@@ -404,7 +404,7 @@ void txEng_metaLoader(
 
 					// Only send a packet if there is data
 					if (meta.length != 0) {
-						txBufferReadCmd.write(mmCmd(pkgAddr, meta.length));
+						txBufferReadCmd.write(cmd_internal(pkgAddr, meta.length));
 						txEng_ipMetaFifoOut.write(meta.length);
 						txEng_tcpMetaFifoOut.write(meta);
 						txEng_isLookUpFifoOut.write(true);
@@ -1192,7 +1192,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txEng_tcpTupleFifo depth=4
 	#pragma HLS DATA_PACK variable=txEng_tcpTupleFifo
 
-	static stream<mmCmd> txMetaloader2memAccessBreakdown("txMetaloader2memAccessBreakdown");
+	static stream<cmd_internal> txMetaloader2memAccessBreakdown("txMetaloader2memAccessBreakdown");
 	#pragma HLS stream variable=txMetaloader2memAccessBreakdown depth=32
 	#pragma HLS DATA_PACK variable=txMetaloader2memAccessBreakdown
 	
