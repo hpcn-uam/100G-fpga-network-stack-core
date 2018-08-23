@@ -110,6 +110,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			tmp_replay.finSent		= tmp_entry_read.finSent;	
 			tmp_replay.currLength	= tmp_entry_read.app - tmp_entry_read.not_ackd(WINDOW_BITS-1,0);	
 			tmp_replay.usedLength	= tmp_entry_read.not_ackd(WINDOW_BITS-1,0) - tmp_entry_read.ackd;	
+			tmp_replay.usedLength_rst	= tmp_entry_read.not_ackd(WINDOW_BITS-1,0) - tmp_entry_read.ackd - tmp_entry_read.finSent;	
 			
 			tmp_replay.ackd_eq_not_ackd	= (tmp_entry_read.ackd == tmp_entry_read.not_ackd);	
 			tmp_replay.not_ackd_plus_mss	= tmp_entry_read.not_ackd + MSS;	

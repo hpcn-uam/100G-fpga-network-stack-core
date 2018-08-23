@@ -349,7 +349,7 @@ void txEng_metaLoader(
 					}
 
 					// Compute how many bytes have to be retransmitted, If the fin was sent, subtract 1 byte
-					currLength = txSar.usedLength - txSar.finSent;
+					currLength = txSar.usedLength_rst;
 
 					meta.ackNumb = rxSar.recvd;
 					meta.seqNumb = txSar.ackd;
@@ -382,7 +382,7 @@ void txEng_metaLoader(
 						// We stay in this state and sent immediately another packet
 						meta.length = MSS;
 						txSar.ackd += MSS;
-						txSar.usedLength	-= MSS;	
+						txSar.usedLength_rst	-= MSS;	
 						// TODO replace with dynamic count, remove this
 						if (ml_segmentCount == 3) {
 							// Should set a probe or sth??

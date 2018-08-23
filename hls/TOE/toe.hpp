@@ -457,6 +457,7 @@ struct txTxSarReply
 	bool					finSent;
 	ap_uint<WINDOW_BITS> 	currLength;
 	ap_uint<WINDOW_BITS> 	usedLength;
+	ap_uint<WINDOW_BITS> 	usedLength_rst;
 	ap_uint<WINDOW_BITS> 	UsableWindow;
 
 	bool 					ackd_eq_not_ackd;

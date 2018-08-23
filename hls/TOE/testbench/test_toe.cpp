@@ -37,9 +37,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "../../iperf2_tcp/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 1
+#define ECHO_REPLAY 0
 
-#define totalSimCycles 5000000
+#define totalSimCycles 100000
 
 using namespace std;
 
@@ -782,7 +782,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (simCycleCounter == 10){
-			//iperf_runExperiment = 1;
+			iperf_runExperiment = 1;
 		}
 		else {
 			iperf_runExperiment = 0;	
