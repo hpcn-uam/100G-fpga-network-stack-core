@@ -168,8 +168,8 @@ void client(
                 txStatus.read(space_responce);
 
                 if (space_responce.error==0){
-                    std::cout << "Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                    std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl;
+                    //std::cout << "Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                    //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl;
                     
                     if (useTimer_r) {
                         currWord.data( 63,  0) = 0x3736353400000000;
@@ -229,7 +229,7 @@ void client(
                 remaining_bytes_to_send = transfer_size_r - bytes_already_sent;
             }
 
-            std::cout << "COMPUTE_NECESSARY_SPACE remaining_bytes_to_send:  " << std::dec << remaining_bytes_to_send;
+            //std::cout << "COMPUTE_NECESSARY_SPACE remaining_bytes_to_send:  " << std::dec << remaining_bytes_to_send;
 
             if (remaining_bytes_to_send > 0){
                 if (remaining_bytes_to_send >= packet_mss_r){           // Check if we can send a packet
@@ -264,7 +264,7 @@ void client(
             }
 
 
-            std::cout << "\ttransactions: " << transactions << "\tbytes_last_word: " << bytes_last_word << std::endl;
+            //std::cout << "\ttransactions: " << transactions << "\tbytes_last_word: " << bytes_last_word << std::endl;
 
             transaction_length = meta_i.length;
             wordSentCount = 1;
@@ -275,8 +275,8 @@ void client(
             if (!txStatus.empty()){
                 txStatus.read(space_responce);
 
-                std::cout << "SPACE_RESPONSE Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                //std::cout << "SPACE_RESPONSE Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
                 
                 if (space_responce.error==0){
                     sessionIt++;
@@ -337,8 +337,8 @@ void client(
             if (!txStatus.empty()){
                 txStatus.read(space_responce);
 
-                std::cout << "SPACE_RESPONSE_1 Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                //std::cout << "SPACE_RESPONSE_1 Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
                 
                 if (space_responce.error==0){
                     sessionIt++;
@@ -360,7 +360,7 @@ void client(
 
             break;    
         case CLOSE_CONN:
-            std::cout << std::endl << std::endl << "CLOSE_CONN closing connection" << std::endl << std::endl;
+            //std::cout << std::endl << std::endl << "CLOSE_CONN closing connection" << std::endl << std::endl;
             closeConnection.write(experimentID[sessionIt]);
             sessionIt++;
             if (sessionIt == numConnections_r){
@@ -397,7 +397,7 @@ void stopWatch (
         case RUNNING: 
             if (counter == max_count){
                 over.write(true);
-                std::cout << "IPERF2 time over at " << std::dec << simCycleCounter << std::endl;
+                //std::cout << "IPERF2 time over at " << std::dec << simCycleCounter << std::endl;
                 sw_fsm_state = WAIT_SIGNAL;
             }
             counter++;
@@ -440,7 +440,7 @@ void server(
         case OPEN_PORT:
             listen_port = 5001;
             listenPort.write(listen_port);              // Open port 5001
-            std::cout << "Request to listen to port: " << std::dec << listen_port << " has been issued." << std::endl;
+            //std::cout << "Request to listen to port: " << std::dec << listen_port << " has been issued." << std::endl;
             server_fsm_state = WAIT_RESPONSE;
             break;
         case WAIT_RESPONSE:
@@ -454,9 +454,9 @@ void server(
                         server_fsm_state = OPEN_PORT; // If the port was not opened successfully try again
                     }
                 }
-                std::cout << "Port: " << std::dec << listen_rsp.port_number << " has been opened successfully " << ((listen_rsp.open_successfully) ? "Yes." : "No.");
-                std::cout << "\twrong port number " << ((listen_rsp.wrong_port_number) ? "Yes." : "No.");
-                std::cout << "\tthe port is already open " << ((listen_rsp.already_open) ? "Yes." : "No.") << std::endl;
+                //std::cout << "Port: " << std::dec << listen_rsp.port_number << " has been opened successfully " << ((listen_rsp.open_successfully) ? "Yes." : "No.");
+                //std::cout << "\twrong port number " << ((listen_rsp.wrong_port_number) ? "Yes." : "No.");
+                //std::cout << "\tthe port is already open " << ((listen_rsp.already_open) ? "Yes." : "No.") << std::endl;
             }
             break;
         case IDLE:  // Stay here forever

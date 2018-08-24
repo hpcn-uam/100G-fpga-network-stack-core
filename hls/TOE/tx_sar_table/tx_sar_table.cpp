@@ -153,7 +153,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	else if (!txApp2txSar_app_push.empty()) {//write only
 		txApp2txSar_app_push.read(push);
 		tx_table[push.sessionID].app = push.app;
-		std::cout << "APP update  " << std::hex << push.app << std::endl;
+		//std::cout << "APP update  " << std::hex << push.app << std::endl;
 	}
 
 
@@ -173,7 +173,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			tx_table[tst_rxEngUpdate.sessionID].count = tst_rxEngUpdate.count;
 			tx_table[tst_rxEngUpdate.sessionID].fastRetransmitted = tst_rxEngUpdate.fastRetransmitted;
 
-			std::cout << "tx_table.not_ackd: " << std::hex << tx_table[tst_rxEngUpdate.sessionID].not_ackd << std::endl;
+			//std::cout << "tx_table.not_ackd: " << std::hex << tx_table[tst_rxEngUpdate.sessionID].not_ackd << std::endl;
 #if (!TCP_NODELAY)
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd));
 #else
@@ -187,13 +187,13 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 			if (tst_rxEngUpdate.cong_window < scaled_recv_window) {
 				minWindow = tst_rxEngUpdate.cong_window;
 #if (WINDOW_SCALE)					
-				std::cout << "Using Congestion win " << std::dec << tst_rxEngUpdate.cong_window << "\tshift: " << tst_rxEngUpdate.tx_win_shift;
-				std::cout << "\trecv_window " << tst_rxEngUpdate.recv_window << "\t scaled recv_wind: " << scaled_recv_window << std::endl;
+				//std::cout << "Using Congestion win " << std::dec << tst_rxEngUpdate.cong_window << "\tshift: " << tst_rxEngUpdate.tx_win_shift;
+				//std::cout << "\trecv_window " << tst_rxEngUpdate.recv_window << "\t scaled recv_wind: " << scaled_recv_window << std::endl;
 #endif				
 			}
 			else {
 				minWindow = scaled_recv_window;			
-				std::cout << "Scaling window size up " << std::dec << "\tmin wind " << minWindow << std::endl;
+				//std::cout << "Scaling window size up " << std::dec << "\tmin wind " << minWindow << std::endl;
 			}
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd, minWindow));
 #endif

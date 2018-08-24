@@ -86,6 +86,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #if (TCP_NODELAY)
 				stream<axiWord>&				txApp2txEng_data_stream,
 #endif
+#if (STATISTICS_MODULE)
+				stream<txStatsUpdate>&  		txEngStatsUpdate,
+#endif					
 				stream<fourTuple>&				sLookup2txEng_rev_rsp,
 				stream<ap_uint<16> >&			txEng2rxSar_req,
 				stream<txTxSarQuery>&			txEng2txSar_upd_req,

@@ -577,6 +577,9 @@ void rxEngTcpFSM(
 			stream<openStatus>&						openConStatusOut,
 			stream<event>&							rxEng2eventEng_setEvent,
 			stream<bool>&							dropDataFifoOut,
+#if (STATISTICS_MODULE)
+			stream<rxStatsUpdate>&  				rxEngStatsUpdate,
+#endif				
 #if (!RX_DDR_BYPASS)
 			stream<mmCmd>&							rxBufferWriteCmd,
 #endif
@@ -745,6 +748,9 @@ void rxEngTcpFSM(
 								//rtTimer.write(rxRetransmitTimerUpdate(fsm_meta.sessionID));
 								rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1)); // or ESTABLISHED
 							}
+#if (STATISTICS_MODULE)							
+							rxEngStatsUpdate.write(rxStatsUpdate(fsm_meta.sessionID,fsm_meta.meta.length));
+#endif							
 						} //end state if
 						// TODO if timewait just send ACK, can it be time wait??
 						else {// state == (CLOSED || SYN_SENT || CLOSE_WAIT || FIN_WAIT_2 || TIME_WAIT)
@@ -801,6 +807,9 @@ void rxEngTcpFSM(
 							//rxEng2eventEng_setEvent.write(rstEvent(fsm_meta.sessionID, fsm_meta.meta.seqNumb+fsm_meta.meta.length+1)); // FIXME is that correct? MR
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
 						}
+#if (STATISTICS_MODULE)							
+							rxEngStatsUpdate.write(rxStatsUpdate(fsm_meta.sessionID,0,true,false,false));
+#endif		
 					}
 					break;
 				case 3: //SYN_ACK
@@ -837,6 +846,9 @@ void rxEngTcpFSM(
 							rxEng2eventEng_setEvent.write(event(ACK_NODELAY, fsm_meta.sessionID));
 							rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
 						}
+#if (STATISTICS_MODULE)							
+							rxEngStatsUpdate.write(rxStatsUpdate(fsm_meta.sessionID,0,false,true,false));
+#endif							
 					}
 					break;
 				case 5: //FIN (_ACK)
@@ -897,6 +909,9 @@ void rxEngTcpFSM(
 								dropDataFifoOut.write(true);
 							}
 						}
+#if (STATISTICS_MODULE)							
+							rxEngStatsUpdate.write(rxStatsUpdate(fsm_meta.sessionID,0,false,false,true));
+#endif								
 					}
 					break;
 				default: //TODO MAYBE load everything all the time
@@ -1136,6 +1151,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 				stream<extendedEvent>&				rxEng2eventEng_setEvent,
 				stream<appNotification>&			rxEng2rxApp_notification,
 				stream<txApp_client_status>& 		rxEng2txApp_client_notification,
+#if (STATISTICS_MODULE)
+				stream<rxStatsUpdate>&  			rxEngStatsUpdate,
+#endif			
 				stream<axiWord>&					rxEng_pseudo_packet_to_checksum,
 				stream<ap_uint<16> >&				rxEng_pseudo_packet_res_checksum)
 {
@@ -1258,6 +1276,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 			openConStatusOut,
 			rxEng_fsmEventFifo,
 			rxEng_fsmDropFifo,
+#if (STATISTICS_MODULE)
+			rxEngStatsUpdate,
+#endif			
 #if (!RX_DDR_BYPASS)
 			rxTcpFsm2wrAccessBreakdown,
 			rx_internalNotificationFifo,

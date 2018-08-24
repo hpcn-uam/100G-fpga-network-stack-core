@@ -39,15 +39,12 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "event_engine/event_engine.hpp"
 #include "ack_delay/ack_delay.hpp"
 #include "port_table/port_table.hpp"
-
-
 #include "rx_engine/rx_engine.hpp"
 #include "tx_engine/tx_engine.hpp"
-
 #include "rx_app_stream_if/rx_app_stream_if.hpp"
 #include "tx_app_interface/tx_app_interface.hpp"
 #include "memory_access/memory_access.hpp"
-
+#include "statistics/statistics.hpp"
 
 /** @ingroup timer
  *
@@ -290,7 +287,8 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  *  @param[out]		rxEng_pseudo_packet_to_checksum		: RX pseudo TCP packet
  *  @param[in]		rxEng_pseudo_packet_res_checksum	: RX TCP checksum
  */
-void toe(	// Data & Memory Interface
+void toe(	
+			// Data & Memory Interface
 			stream<axiWord>&						ipRxData,
 #if (!RX_DDR_BYPASS)
 			stream<mmStatus>&						rxBufferWriteStatus,
@@ -326,6 +324,17 @@ void toe(	// Data & Memory Interface
 			stream<axiWord>&						rxDataRsp,							
 			stream<openStatus>&						openConnRsp,
 			stream<appTxRsp>&						txAppDataRsp,
+
+#if (STATISTICS_MODULE)
+		   	bool&                   				readEnable,
+    		ap_uint<16>&            				userID,
+    		ap_uint<64>&            				txBytes,
+    		ap_uint<54>&            				txPackets,
+    		ap_uint<54>&            				txRetransmissions,
+    		ap_uint<64>&            				rxBytes,
+    		ap_uint<54>&            				rxPackets,
+    		ap_uint<32>&            				connectionRTT,
+#endif	
 
 			//IP Address Input
 			ap_uint<32>&							myIpAddress,
@@ -598,7 +607,24 @@ void toe(	// Data & Memory Interface
    	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
    	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=128
 #endif
-	
+
+#if (STATISTICS_MODULE)
+	static stream<rxStatsUpdate>  rxEngStatsUpdate("rxEngStatsUpdate");
+	static stream<txStatsUpdate>  txEngStatisUpdate("txEngStatisUpdate");
+	#pragma HLS STREAM variable=rxEngStatsUpdate   depth=8
+	#pragma HLS STREAM variable=txEngStatisUpdate   depth=8
+	#pragma HLS DATA_PACK variable=rxEngStatsUpdate
+	#pragma HLS DATA_PACK variable=txEngStatisUpdate
+
+	#pragma HLS INTERFACE s_axilite port=readEnable bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=userID bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=txBytes bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=txPackets bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=txRetransmissions bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=rxBytes bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=rxPackets bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=connectionRTT bundle=toe_stats
+#endif
 	/*
 	 * Data Structures
 	 */
@@ -702,6 +728,9 @@ void toe(	// Data & Memory Interface
 					rxEng2eventEng_setEvent,
 					rxEng2rxApp_notification,
 					rxEng2txAppNewClientNoty,
+#if (STATISTICS_MODULE)
+					rxEngStatsUpdate,
+#endif						
 					rxEng_pseudo_packet_to_checksum,
 					rxEng_pseudo_packet_res_checksum);
 	// TX Engine
@@ -712,6 +741,9 @@ void toe(	// Data & Memory Interface
 #if (TCP_NODELAY)
             		txApp2txEng_data_stream,
 #endif
+#if (STATISTICS_MODULE)
+					txEngStatisUpdate,
+#endif	            		
 					sLookup2txEng_rev_rsp,
 					txEng2rxSar_req,
 					txEng2txSar_upd_req,
@@ -770,6 +802,21 @@ void toe(	// Data & Memory Interface
 					txApp2eventEng_setEvent,
 					timer2txApp_notification,
 					myIpAddress);
+
+#if (STATISTICS_MODULE)
+	toeStatistics (
+				    rxEngStatsUpdate,
+				    txEngStatisUpdate,
+				    readEnable,
+				    userID,
+				    txBytes,
+				    txPackets,
+				    txRetransmissions,
+				    rxBytes,
+				    rxPackets,
+				    connectionRTT);
+#endif	
+
 
 }
 

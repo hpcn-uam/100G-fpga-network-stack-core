@@ -71,6 +71,9 @@ void txEng_metaLoader(
 #if (TCP_NODELAY)
 				stream<bool>&						txEng_isDDRbypass,
 #endif
+#if (STATISTICS_MODULE)
+				stream<txStatsUpdate>&  			txEngStatsUpdate,
+#endif				
 				stream<fourTuple>&					txEng_tupleShortCutFifoOut,
 				stream<ap_uint<1> >&				readCountFifo)
 {
@@ -213,6 +216,9 @@ void txEng_metaLoader(
 						txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
 					}//TODO if probe send msg length 1
 					ml_sarLoaded = true;
+#if (STATISTICS_MODULE)					
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,meta.length)); // Update Statistics
+#endif
 				}
 
 				break;
@@ -334,6 +340,9 @@ void txEng_metaLoader(
 					ackd_eq_not_ackd = (txSar.ackd == txSar_not_ackd_w) ? true : false;
 					txSar_r = txSar;
 					ml_sarLoaded = true;
+#if (STATISTICS_MODULE)						
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,meta.length)); // Update Statistics
+#endif
 
 				}
 				break;
@@ -417,6 +426,7 @@ void txEng_metaLoader(
 					}
 					ml_sarLoaded = true;
 					txSar_r = txSar;
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,true)); // Update Statistics retransmission
 				}
 				break;
 			case ACK:
@@ -438,6 +448,9 @@ void txEng_metaLoader(
 					txEng_isLookUpFifoOut.write(true);
 					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
 					ml_FsmState = 0;
+#if (STATISTICS_MODULE)						
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID)); // Update Statistics ACK number of packets
+#endif				
 				}
 				break;
 			case SYN:
@@ -475,6 +488,9 @@ void txEng_metaLoader(
 					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN));
 					//txSar_r = txSar ;
 					ml_FsmState = 0;
+#if (STATISTICS_MODULE)						
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,true,false,false,false)); // Initialize Statistics SYN
+#endif				
 				}
 				break;
 			case SYN_ACK:
@@ -513,6 +529,9 @@ void txEng_metaLoader(
 					// set retransmit timer
 					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID, SYN_ACK));
 					ml_FsmState = 0;
+#if (STATISTICS_MODULE)						
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,false,true,false,false)); // Initialize Statistics SYN-ACK
+#endif				
 				}
 				break;
 			case FIN:
@@ -570,6 +589,9 @@ void txEng_metaLoader(
 
 //					txSar_r = txSar ;
 					ml_FsmState = 0;
+#if (STATISTICS_MODULE)						
+					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,false,false,true,false)); // Update Statistics FIN
+#endif				
 				}
 				break;
 			case RST:
@@ -1124,6 +1146,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #if (TCP_NODELAY)
 				stream<axiWord>&				txApp2txEng_data_stream,
 #endif
+#if (STATISTICS_MODULE)
+				stream<txStatsUpdate>&  		txEngStatsUpdate,
+#endif					
 				stream<fourTuple>&				sLookup2txEng_rev_rsp,
 				stream<ap_uint<16> >&			txEng2rxSar_req,
 				stream<txTxSarQuery>&			txEng2txSar_upd_req,
@@ -1225,6 +1250,9 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 #if (TCP_NODELAY)
 				txEng_isDDRbypass,
 #endif
+#if (STATISTICS_MODULE)
+				txEngStatsUpdate,
+#endif						
 				txEng_tupleShortCutFifo,
 				readCountFifo);
 	tx_ReadMemAccessBreakdown(

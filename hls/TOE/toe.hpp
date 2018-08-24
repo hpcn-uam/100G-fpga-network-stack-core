@@ -65,6 +65,8 @@ static const ap_uint<16> MSS=1460; //536
 // It is used to extend the window size, increasing the throughput.
 static const uint8_t WINDOW_SCALE_BITS = 7;
 
+// Statistics such as number of packets, bytes and retransmissions are implemented
+#define STATISTICS_MODULE 1
 
 // If the window scale option is enable the the MAX session have to be computed
 #if (WINDOW_SCALE)
@@ -687,22 +689,60 @@ struct listenPortStatus
 };
 
 
+struct rxStatsUpdate {
+	ap_uint<16> 	id;
+	ap_uint<16>		length;
+	bool 			syn;
+	bool 			syn_ack;
+	bool 			fin;
 
-void toe(	// Data & Memory Interface
-			stream<axiWord>&						ipRxData,				
+	rxStatsUpdate(){}
+	rxStatsUpdate(ap_uint<16> id)
+		: id(id), length(0), syn(0), syn_ack(0), fin(0){}
+	rxStatsUpdate(ap_uint<16> id, ap_uint<16> length)
+		: id(id), length(length), syn(0), syn_ack(0), fin(0){}		
+	rxStatsUpdate(ap_uint<16> id, ap_uint<16> length, bool syn, bool syn_ack, bool fin)
+		: id(id), length(length), syn(syn), syn_ack(syn_ack), fin(fin) {}		
+
+};
+
+struct txStatsUpdate {
+	ap_uint<16> 	id;
+	ap_uint<16>		length;
+	bool 			syn;
+	bool 			syn_ack;
+	bool 			fin;
+	bool 			reTx;
+
+	txStatsUpdate(){}
+	txStatsUpdate(ap_uint<16> id)
+		: id(id), length(0), syn(0), syn_ack(0), fin(0), reTx(0) {}
+	txStatsUpdate(ap_uint<16> id, ap_uint<16> length)
+		: id(id), length(length), syn(0), syn_ack(0), fin(0), reTx(0) {}
+	txStatsUpdate(ap_uint<16> id, ap_uint<16> length, bool reTx)
+		: id(id), length(length), syn(0), syn_ack(0), fin(0), reTx(reTx) {}	
+	txStatsUpdate(ap_uint<16> id, ap_uint<16> length, bool syn, bool syn_ack, bool fin, bool reTx)
+		: id(id), length(length), syn(syn), syn_ack(syn_ack), fin(fin), reTx(reTx) {}		
+
+};
+
+
+void toe(	
+			// Data & Memory Interface
+			stream<axiWord>&						ipRxData,
 #if (!RX_DDR_BYPASS)
 			stream<mmStatus>&						rxBufferWriteStatus,
 			stream<mmCmd>&							rxBufferWriteCmd,
 			stream<mmCmd>&							rxBufferReadCmd,
-			stream<axiWord>&						rxBufferReadData,				
-			stream<axiWord>&						rxBufferWriteData,				
+			stream<axiWord>&						rxBufferReadData,
+			stream<axiWord>&						rxBufferWriteData,
 #endif
 			stream<mmStatus>&						txBufferWriteStatus,
-			stream<axiWord>&						txBufferReadData,				
-			stream<axiWord>&						ipTxData,						
+			stream<axiWord>&						txBufferReadData,
+			stream<axiWord>&						ipTxData,		
 			stream<mmCmd>&							txBufferWriteCmd,
 			stream<mmCmd>&							txBufferReadCmd,
-			stream<axiWord>&						txBufferWriteData,				
+			stream<axiWord>&						txBufferWriteData,
 			// SmartCam Interface
 			stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 			stream<rtlSessionUpdateReply>&			sessionUpdate_rsp,
@@ -715,15 +755,26 @@ void toe(	// Data & Memory Interface
 			stream<ipTuple>&						openConnReq,
 			stream<ap_uint<16> >&					closeConnReq,
 			stream<appTxMeta>&					   	txDataReqMeta,
-			stream<axiWord>&						txApp_Data2send, 				
+			stream<axiWord>&						txApp_Data2send, 
 
 			stream<listenPortStatus>&				listenPortResponse, 				
 			stream<appNotification>&				rxAppNotification,
 			stream<txApp_client_status>& 			rxEng2txAppNewClientNoty,
 			stream<ap_uint<16> >&					rxApp_readRequest_RspID,
-			stream<axiWord>&						rxDataRsp,						
+			stream<axiWord>&						rxDataRsp,							
 			stream<openStatus>&						openConnRsp,
 			stream<appTxRsp>&						txAppDataRsp,
+
+#if (STATISTICS_MODULE)
+		   	bool&                   				readEnable,
+    		ap_uint<16>&            				userID,
+    		ap_uint<64>&            				txBytes,
+    		ap_uint<54>&            				txPackets,
+    		ap_uint<54>&            				txRetransmissions,
+    		ap_uint<64>&            				rxBytes,
+    		ap_uint<54>&            				rxPackets,
+    		ap_uint<32>&            				connectionRTT,
+#endif	
 
 			//IP Address Input
 			ap_uint<32>&							myIpAddress,
@@ -731,6 +782,6 @@ void toe(	// Data & Memory Interface
 			ap_uint<16>&							regSessionCount,
 			stream<axiWord>&						tx_pseudo_packet_to_checksum,	
 			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum,
-			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,  
+			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,
 			stream<ap_uint<16> >&					rxEng_pseudo_packet_res_checksum);
 #endif

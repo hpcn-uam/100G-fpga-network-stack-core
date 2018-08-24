@@ -37,9 +37,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "../../iperf2_tcp/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 0
+#define ECHO_REPLAY 1
 
-#define totalSimCycles 100000
+#define totalSimCycles 5000000
 
 using namespace std;
 
@@ -655,6 +655,15 @@ int main(int argc, char **argv) {
 	stream<ap_uint<16> >				rxEng_pseudo_packet_res_checksum("rxEng_pseudo_packet_res_checksum");
 	stream<txApp_client_status> 		rxEng2txApp_client_notification("rxEng2txApp_client_notification");
 
+   	bool                     			readEnable = false;
+	ap_uint<16>             			userID = 0;
+	ap_uint<64>             			txBytes;
+	ap_uint<54>             			txPackets;
+	ap_uint<54>             			txRetransmissions;
+	ap_uint<64>             			rxBytes;
+	ap_uint<54>             			rxPackets;
+	ap_uint<32>             			connectionRTT;
+
 
 	dummyMemory rxMemory;
 	dummyMemory txMemory;
@@ -788,6 +797,10 @@ int main(int argc, char **argv) {
 			iperf_runExperiment = 0;	
 		}
 
+		if (simCycleCounter == totalSimCycles-5){
+			readEnable = true;
+		}
+
 		toe(
 			ipRxData,
 #if (!RX_DDR_BYPASS)				
@@ -824,6 +837,17 @@ int main(int argc, char **argv) {
 			rxData_to_rxApp, 		
 			openConnRsp, 
 			txApp_data_write_response, 	
+
+#ifdef STATISTICS_MODULE
+		   	readEnable,
+    		userID,
+    		txBytes,
+    		txPackets,
+    		txRetransmissions,
+    		rxBytes,
+    		rxPackets,
+    		connectionRTT,
+#endif	
 
 			myIP_address, 						// 192.168.0.5
 			regSessionCount,
@@ -947,7 +971,17 @@ int main(int argc, char **argv) {
 	stream2pcap(output_file,false,true,ipTxData,true);
 
 	cout << "regSessionCount " << dec << regSessionCount << endl; 
-	
+
+#if (STATISTICS_MODULE)
+    cout << "  ------- Statistics ------- " << dec << endl;
+	cout << "           txBytes -> " << txBytes << endl; 
+	cout << "         txPackets -> " << txPackets << endl; 
+	cout << " txRetransmissions -> " << txRetransmissions << endl; 
+	cout << "           rxBytes -> " << rxBytes << endl; 
+	cout << "         rxPackets -> " << rxPackets << endl; 
+	cout << "     connectionRTT -> " << connectionRTT << endl; 
+#endif	
+
 	packet=0;
 	transaction=0;
 		
