@@ -42,7 +42,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 
 #define ETH_INTERFACE_WIDTH 512
 
-static const ap_uint<16> MSS=1460; //536
+static const ap_uint<16> MSS=9000; //536
 
 
 // TCP_NODELAY flag, to disable Nagle's Algorithm

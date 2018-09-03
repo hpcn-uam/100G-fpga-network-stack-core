@@ -48,7 +48,7 @@ void iperf2_client(
                     ap_uint<64>&                    runTime,         
                     ap_uint<14>&                    numConnections,         
                     ap_uint<32>&                    transfer_size,      
-                    ap_uint<12>&                    packet_mss,     
+                    ap_uint<16>&                    packet_mss,
                     ap_uint<32>&                    ipDestination,
                     ap_uint<16>&                    dstPort,
                     ap_uint<16>&                    maxConnections);

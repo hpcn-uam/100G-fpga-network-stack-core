@@ -816,12 +816,12 @@ void txEng_pseudoHeader_Const(
 		sendWord.data(255, 224) = 0; //urgPointer & checksum
 
 		if (phc_meta.syn) {
-			sendWord.data(263, 256) = 0x02; 	// Option Kind
-			sendWord.data(271, 264) = 0x04; 	// Option length
-			sendWord.data(287, 272) = 0xB405; 	// 0x05B4 = 1460
+			sendWord.data(263, 256) = 0x02; 			// Option Kind
+			sendWord.data(271, 264) = 0x04; 			// Option length
+			sendWord.data(287, 272) = byteSwap16(MSS); 	// Set Maximum MSS
 
 #if WINDOW_SCALE
-			// Only send WINDOW SCALE in SYN and SYN-ACK, in the latest only send if WSopt was received RFC 7323 1.3
+			// Only send WINDOW SCALE in SYN and SYN-ACK, in the latter only send if WSopt was received RFC 7323 1.3
 			if (phc_meta.rx_win_shift !=0){
 				sendWord.data(199, 196) = 0x7; 		//data offset
 				sendWord.data(295, 288) = 0x03; 	// Option Kind

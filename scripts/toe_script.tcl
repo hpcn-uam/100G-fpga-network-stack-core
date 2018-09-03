@@ -21,6 +21,7 @@ add_files hls/TOE/tx_app_interface/tx_app_interface.cpp
 add_files hls/TOE/tx_app_stream_if/tx_app_stream_if.cpp
 add_files hls/TOE/tx_engine/tx_engine.cpp
 add_files hls/TOE/tx_sar_table/tx_sar_table.cpp
+add_files hls/TOE/statistics/statistics.cpp
 
 add_files -tb hls/iperf2_tcp/iperf_client.cpp
 add_files -tb hls/echo_replay/echo_server_application.cpp

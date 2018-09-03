@@ -40,7 +40,7 @@ void client(
                 ap_uint<64>&                runTime,              
                 ap_uint<14>&                numConnections,
                 ap_uint<32>&                transfer_size,
-                ap_uint<12>&                packet_mss,
+                ap_uint<16>&                packet_mss,
                 ap_uint<32>&                ipDestination,
                 ap_uint<16>&                dstPort)
 {
@@ -59,14 +59,14 @@ void client(
 
     static ap_uint<32>          bytes_already_sent;
     static ap_uint< 6>          bytes_last_word;
-    static ap_uint< 5>          transactions;
-    static ap_uint< 5>          wordSentCount;
+    static ap_uint<10>          transactions;
+    static ap_uint<10>          wordSentCount;
     static ap_uint<16>          transaction_length;
     static ap_uint<16>          waitCounter;
     
 
     static ap_uint<32>          transfer_size_r;
-    static ap_uint<12>          packet_mss_r;
+    static ap_uint<16>          packet_mss_r;
     static ap_uint<14>          numConnections_r;
     static ap_uint<1>           runExperiment_r;
     static ap_uint<16>          dstPort_r;
@@ -236,10 +236,10 @@ void client(
                     
                     bytes_last_word     = packet_mss_r(5,0);            // How many bytes are necessary for the last transaction
                     if (packet_mss_r(5,0) == 0){                        // compute how many transactions are necessary
-                        transactions        =  packet_mss_r(11,6);  
+                        transactions        =  packet_mss_r(15,6);  
                     }
                     else {
-                        transactions        =  packet_mss_r(11,6) + 1;  
+                        transactions        =  packet_mss_r(15,6) + 1;  
                     }
                     meta_i.length    = packet_mss_r;
                 }
@@ -247,10 +247,10 @@ void client(
                     
                     bytes_last_word     = remaining_bytes_to_send(5,0);            // How many bytes are necessary for the last transaction
                     if (remaining_bytes_to_send(5,0) == 0){                        // compute how many transactions are necessary
-                        transactions        =  remaining_bytes_to_send(11,6);  
+                        transactions        =  remaining_bytes_to_send(15,6);  
                     }
                     else {
-                        transactions        =  remaining_bytes_to_send(11,6) + 1;  
+                        transactions        =  remaining_bytes_to_send(15,6) + 1;  
                     }
                     meta_i.length    = remaining_bytes_to_send;
                 }
@@ -353,7 +353,7 @@ void client(
 
         case WAIT_TIME:
             
-            if (waitCounter == 30)
+            if (waitCounter == 1)
                 iperfFsmState = COMPUTE_NECESSARY_SPACE;
 
             waitCounter++;
@@ -540,7 +540,7 @@ void iperf2_client(
                     ap_uint<64>&                    runTime,         
                     ap_uint<14>&                    numConnections,         
                     ap_uint<32>&                    transfer_size,      
-                    ap_uint<12>&                    packet_mss,     
+                    ap_uint<16>&                    packet_mss,     
                     ap_uint<32>&                    ipDestination,
                     ap_uint<16>&                    dstPort,
                     ap_uint<16>&                    maxConnections)

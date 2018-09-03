@@ -37,9 +37,9 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "../../iperf2_tcp/iperf_client.hpp"
 #include <iomanip>
 
-#define ECHO_REPLAY 1
+#define ECHO_REPLAY 0
 
-#define totalSimCycles 5000000
+#define totalSimCycles 50000
 
 using namespace std;
 
@@ -577,7 +577,7 @@ void simulateTx(
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		//cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
 			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
@@ -586,7 +586,7 @@ void simulateTx(
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
 		memory->writeWord(inWord);
-		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 		if (inWord.last) {
 			//fake_txBuffer.write(inWord); // RT hack
 			stx_write = false;
@@ -697,7 +697,7 @@ int main(int argc, char **argv) {
 	ap_uint<1> 							iperf_useTimer 			= 0;
 	ap_uint<64> 						iperf_runTime 			= 1000;
 	ap_uint<14> 						iperf_num_useConn 		= 1;
-	ap_uint<12> 						iperf_packetMSS 		= 1460;
+	ap_uint<16> 						iperf_packetMSS 		= MSS;
 	ap_uint<16> 						iperf_dstPort 			= 5001;
 	ap_uint<16> 						iperf_maxConnections 	;
 
