@@ -726,6 +726,17 @@ struct txStatsUpdate {
 
 };
 
+struct statsRegs {
+	bool 			readEnable;
+    ap_uint<16> 	userID;
+    ap_uint<64> 	txBytes;
+    ap_uint<54> 	txPackets;
+    ap_uint<54> 	txRetransmissions;
+    ap_uint<64> 	rxBytes;
+    ap_uint<54> 	rxPackets;
+    ap_uint<32> 	connectionRTT;
+};
+
 
 void toe(	
 			// Data & Memory Interface
@@ -766,14 +777,7 @@ void toe(
 			stream<appTxRsp>&						txAppDataRsp,
 
 #if (STATISTICS_MODULE)
-		   	bool&                   				readEnable,
-    		ap_uint<16>&            				userID,
-    		ap_uint<64>&            				txBytes,
-    		ap_uint<54>&            				txPackets,
-    		ap_uint<54>&            				txRetransmissions,
-    		ap_uint<64>&            				rxBytes,
-    		ap_uint<54>&            				rxPackets,
-    		ap_uint<32>&            				connectionRTT,
+		   	statsRegs& 								stat_regs,			
 #endif	
 
 			//IP Address Input
@@ -784,4 +788,5 @@ void toe(
 			stream<ap_uint<16> >&					tx_pseudo_packet_res_checksum,
 			stream<axiWord>&						rxEng_pseudo_packet_to_checksum,
 			stream<ap_uint<16> >&					rxEng_pseudo_packet_res_checksum);
+
 #endif

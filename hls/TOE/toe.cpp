@@ -326,14 +326,7 @@ void toe(
 			stream<appTxRsp>&						txAppDataRsp,
 
 #if (STATISTICS_MODULE)
-		   	bool&                   				readEnable,
-    		ap_uint<16>&            				userID,
-    		ap_uint<64>&            				txBytes,
-    		ap_uint<54>&            				txPackets,
-    		ap_uint<54>&            				txRetransmissions,
-    		ap_uint<64>&            				rxBytes,
-    		ap_uint<54>&            				rxPackets,
-    		ap_uint<32>&            				connectionRTT,
+		   	statsRegs& 								stat_regs,			
 #endif	
 
 			//IP Address Input
@@ -616,14 +609,8 @@ void toe(
 	#pragma HLS DATA_PACK variable=rxEngStatsUpdate
 	#pragma HLS DATA_PACK variable=txEngStatisUpdate
 
-	#pragma HLS INTERFACE s_axilite port=readEnable bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=userID bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=txBytes bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=txPackets bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=txRetransmissions bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=rxBytes bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=rxPackets bundle=toe_stats
-	#pragma HLS INTERFACE s_axilite port=connectionRTT bundle=toe_stats
+	#pragma HLS INTERFACE s_axilite port=stat_regs bundle=toe_stats
+
 #endif
 	/*
 	 * Data Structures
@@ -807,14 +794,7 @@ void toe(
 	toeStatistics (
 				    rxEngStatsUpdate,
 				    txEngStatisUpdate,
-				    readEnable,
-				    userID,
-				    txBytes,
-				    txPackets,
-				    txRetransmissions,
-				    rxBytes,
-				    rxPackets,
-				    connectionRTT);
+				   	stat_regs);
 #endif	
 
 

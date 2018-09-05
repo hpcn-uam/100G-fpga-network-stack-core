@@ -40,13 +40,6 @@ struct statsTxEntry {
 void toeStatistics (
     stream<rxStatsUpdate>&  rxStatsUpd,
     stream<txStatsUpdate>&  txStatsUpd,
-    bool&                   readEnable,
-    ap_uint<16>&            userID,
-    ap_uint<64>&            txBytes,
-    ap_uint<54>&            txPackets,
-    ap_uint<54>&            txRetransmissions,
-    ap_uint<64>&            rxBytes,
-    ap_uint<54>&            rxPackets,
-    ap_uint<32>&            connectionRTT);
+    statsRegs&              stat_regs);
 
 #endif

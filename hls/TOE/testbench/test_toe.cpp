@@ -577,7 +577,7 @@ void simulateTx(
 		WriteCmdFifo.read(cmd);
 		memory->setWriteCmd(cmd);
 		stx_write = true;
-		cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
+		//cout << endl << "Tx WRITE command [" << setw(3) << write_command_number++ << "] address: " << hex << cmd.saddr << "\tlength: " << dec << cmd.bbt << "\ttime: " << simCycleCounter << endl;
 		address_comparator = cmd.saddr + cmd.bbt;
 		if (address_comparator > BUFFER_SIZE){
 			cout << endl << endl << "Tx WRITE ERROR memory write overflow!!!!!!! Trying to read from " << hex << address_comparator << endl << endl ;
@@ -586,7 +586,7 @@ void simulateTx(
 	else if (!BufferIn.empty() && stx_write) {
 		BufferIn.read(inWord);
 		memory->writeWord(inWord);
-		cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
+		//cout << "Tx WRITE app2mem[" << dec << setw(3) << app2mem_word++ << "] data: " << hex << setw(130) << inWord.data << "\tkeep: " << hex << setw(18) << inWord.keep << "\tlast: " << inWord.last << "\ttime: " << dec << simCycleCounter << endl;
 		if (inWord.last) {
 			//fake_txBuffer.write(inWord); // RT hack
 			stx_write = false;
@@ -655,6 +655,9 @@ int main(int argc, char **argv) {
 	stream<ap_uint<16> >				rxEng_pseudo_packet_res_checksum("rxEng_pseudo_packet_res_checksum");
 	stream<txApp_client_status> 		rxEng2txApp_client_notification("rxEng2txApp_client_notification");
 
+   	
+	statsRegs 							stat_registers;
+
    	bool                     			readEnable = false;
 	ap_uint<16>             			userID = 0;
 	ap_uint<64>             			txBytes;
@@ -694,10 +697,10 @@ int main(int argc, char **argv) {
 	stream<ap_int<17> > 				tx_iperf_Status("tx_iperf_Status");
 	ap_uint<1> 							iperf_runExperiment 	= 0;
 	ap_uint<1> 							iperf_dualModeEn 		= 0;
-	ap_uint<1> 							iperf_useTimer 			= 0;
-	ap_uint<64> 						iperf_runTime 			= 1000;
+	ap_uint<1> 							iperf_useTimer 			= 1;
+	ap_uint<64> 						iperf_runTime 			= 25000;
 	ap_uint<14> 						iperf_num_useConn 		= 1;
-	ap_uint<16> 						iperf_packetMSS 		= MSS;
+	ap_uint<16> 						iperf_packetMSS 		= 9000;
 	ap_uint<16> 						iperf_dstPort 			= 5001;
 	ap_uint<16> 						iperf_maxConnections 	;
 
@@ -801,6 +804,9 @@ int main(int argc, char **argv) {
 			readEnable = true;
 		}
 
+		stat_registers.readEnable 	= readEnable;
+		stat_registers.userID 		= userID;
+
 		toe(
 			ipRxData,
 #if (!RX_DDR_BYPASS)				
@@ -839,14 +845,7 @@ int main(int argc, char **argv) {
 			txApp_data_write_response, 	
 
 #ifdef STATISTICS_MODULE
-		   	readEnable,
-    		userID,
-    		txBytes,
-    		txPackets,
-    		txRetransmissions,
-    		rxBytes,
-    		rxPackets,
-    		connectionRTT,
+			stat_registers,
 #endif	
 
 			myIP_address, 						// 192.168.0.5

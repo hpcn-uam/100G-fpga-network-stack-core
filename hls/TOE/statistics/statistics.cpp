@@ -39,14 +39,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 void toeStatistics (
     stream<rxStatsUpdate>&  rxStatsUpd,
     stream<txStatsUpdate>&  txStatsUpd,
-    bool&                   readEnable,
-    ap_uint<16>&            userID,
-    ap_uint<64>&            txBytes,
-    ap_uint<54>&            txPackets,
-    ap_uint<54>&            txRetransmissions,
-    ap_uint<64>&            rxBytes,
-    ap_uint<54>&            rxPackets,
-    ap_uint<32>&            connectionRTT){
+    statsRegs&              stat_regs){
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1   
 
@@ -68,13 +61,13 @@ void toeStatistics (
     statsRxEntry stats_rx_table_a;
     statsTxEntry stats_tx_table_a;
 
-    if (readEnable && !readEnable_r){   // Only update user output with a rising edge
-        txBytes             = stats_tx_table[userID].txBytes; 
-        txPackets           = stats_tx_table[userID].txPackets;
-        txRetransmissions   = stats_tx_table[userID].ReTx;
-        rxBytes             = stats_rx_table[userID].rxBytes;
-        rxPackets           = stats_rx_table[userID].rxPackets;
-        connectionRTT       = 0;
+    if (stat_regs.readEnable && !readEnable_r){   // Only update user output with a rising edge
+        stat_regs.txBytes             = stats_tx_table[stat_regs.userID].txBytes; 
+        stat_regs.txPackets           = stats_tx_table[stat_regs.userID].txPackets;
+        stat_regs.txRetransmissions   = stats_tx_table[stat_regs.userID].ReTx;
+        stat_regs.rxBytes             = stats_rx_table[stat_regs.userID].rxBytes;
+        stat_regs.rxPackets           = stats_rx_table[stat_regs.userID].rxPackets;
+        stat_regs.connectionRTT       = 0;
     }
     else{
         if (!rxStatsUpd.empty()){
@@ -141,7 +134,7 @@ void toeStatistics (
     } 
 
 
-    readEnable_r = readEnable;
+    readEnable_r = stat_regs.readEnable;
     cycle_counter++;    // Increment cycle counter every cycle
 
 }
