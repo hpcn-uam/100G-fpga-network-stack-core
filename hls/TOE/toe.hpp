@@ -42,7 +42,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 
 #define ETH_INTERFACE_WIDTH 512
 
-static const ap_uint<16> MSS=9000; //536
+static const ap_uint<16> MSS=4096; //536
 
 
 // TCP_NODELAY flag, to disable Nagle's Algorithm
@@ -63,7 +63,7 @@ static const ap_uint<16> MSS=9000; //536
 
 // This macro defines the amount of bits for the window scale option
 // It is used to extend the window size, increasing the throughput.
-static const uint8_t WINDOW_SCALE_BITS = 7;
+static const uint8_t WINDOW_SCALE_BITS = 2;
 
 // Statistics such as number of packets, bytes and retransmissions are implemented
 #define STATISTICS_MODULE 1
@@ -76,12 +76,14 @@ static const uint16_t WINDOW_BITS=(16+WINDOW_SCALE_BITS);
 
 // If the Window is 64 KB there are 64K possible sessions.
 // Since we want to scale the window size the number of connection is reduced by the (2^WINDOW_SCALE_BITS)
-static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
+//static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
 
 #else
 static const uint8_t  WINDOW_BITS=16;
-static const uint16_t MAX_SESSIONS = 10000;
+//static const uint16_t MAX_SESSIONS = 10000;
 #endif
+// Delete afterwards
+static const uint16_t MAX_SESSIONS = 5;
 
 static const uint32_t BUFFER_SIZE=(1<<WINDOW_BITS);
 static const ap_uint<WINDOW_BITS> CONGESTION_WINDOW_MAX = (BUFFER_SIZE-2048);
@@ -666,7 +668,7 @@ struct appTxRsp
 	ap_uint<WINDOW_BITS> 		remaining_space;
 	txApp_error_msg				error;
 	appTxRsp() {}
-	appTxRsp(ap_uint<12> len, ap_uint<WINDOW_BITS> rem_space, txApp_error_msg err)
+	appTxRsp(ap_uint<16> len, ap_uint<WINDOW_BITS> rem_space, txApp_error_msg err)
 		:length(len), remaining_space(rem_space), error(err) {}
 };
 

@@ -64,7 +64,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	txSarEntry 				tmp_entry_read;
 	txTxSarReply 			tmp_replay;
 	ap_uint<WINDOW_BITS> 	minWindow;
-	ap_uint<WINDOW_BITS>	scaled_recv_window = 0;
+	ap_uint<30>				scaled_recv_window = 0;
 
 	// TX Engine
 	if (!txEng2txSar_upd_req.empty()) {
@@ -162,9 +162,9 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 		rxEng2txSar_upd_req.read(tst_rxEngUpdate);
 		if (tst_rxEngUpdate.write) {
 #if (WINDOW_SCALE)
-			//std::cout << "TX Sar updating table  write_ws " << std::dec << tst_rxEngUpdate.write_ws << "\trecv_window_scale" << tst_rxEngUpdate.recv_window_scale << std::endl;
 			if (tst_rxEngUpdate.tx_win_shift_write){
 				tx_table[tst_rxEngUpdate.sessionID].tx_win_shift = tst_rxEngUpdate.tx_win_shift;
+				//std::cout << "TX Sar init window scale shift " << std::dec << tst_rxEngUpdate.tx_win_shift << std::endl;
 			}
 #endif			
 			tx_table[tst_rxEngUpdate.sessionID].ackd = tst_rxEngUpdate.ackd;

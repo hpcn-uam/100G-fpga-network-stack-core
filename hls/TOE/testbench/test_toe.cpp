@@ -700,7 +700,7 @@ int main(int argc, char **argv) {
 	ap_uint<1> 							iperf_useTimer 			= 1;
 	ap_uint<64> 						iperf_runTime 			= 25000;
 	ap_uint<14> 						iperf_num_useConn 		= 1;
-	ap_uint<16> 						iperf_packetMSS 		= 9000;
+	ap_uint<16> 						iperf_packetMSS 		= 1460;
 	ap_uint<16> 						iperf_dstPort 			= 5001;
 	ap_uint<16> 						iperf_maxConnections 	;
 
