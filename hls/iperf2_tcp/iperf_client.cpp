@@ -23,8 +23,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 #include "iperf_client.hpp"
 #include <iostream>
 
-using namespace hls;
-
 void client(    
                 stream<ipTuple>&            openConnection, 
                 stream<openStatus>&         openConStatus,
@@ -34,15 +32,7 @@ void client(
                 stream<axiWord>&            txData,
                 stream<ap_uint<64> >&       clockStart,
                 stream<bool > &             clockOver,
-                ap_uint< 1>&                runExperiment,
-                ap_uint< 1>&                dualModeEn,  
-                ap_uint< 1>&                useTimer,         
-                ap_uint<64>&                runTime,              
-                ap_uint<14>&                numConnections,
-                ap_uint<32>&                transfer_size,
-                ap_uint<16>&                packet_mss,
-                ap_uint<32>&                ipDestination,
-                ap_uint<16>&                dstPort)
+                iperf_regs&                 settings_regs)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -68,7 +58,7 @@ void client(
     static ap_uint<32>          transfer_size_r;
     static ap_uint<16>          packet_mss_r;
     static ap_uint<14>          numConnections_r;
-    static ap_uint<1>           runExperiment_r;
+    static ap_uint<1>           runExperiment_r = 1;
     static ap_uint<16>          dstPort_r;
     static ap_uint<32>          ipDestination_r;
     static ap_uint<1>           useTimer_r;
@@ -81,6 +71,8 @@ void client(
 
     axiWord                     currWord;
 
+    settings_regs.maxConnections = MAX_SESSIONS;
+
     /*
      * CLIENT FSM
      */
@@ -90,22 +82,22 @@ void client(
         case WAIT_USER_START:
             
             sessionIt   = 0;
-            if (runExperiment && !runExperiment_r) {    // Rising edge 
+            if (settings_regs.runExperiment && !runExperiment_r) {    // Rising edge 
                 std::cout << "runExperiment set " << std::endl;  
-                if ((numConnections > 0) && (numConnections <= MAX_SESSIONS)) {  // Start experiment only if the user specifies a valid number of connection
-                    numConnections_r    = numConnections;
-                    transfer_size_r     = transfer_size;
-                    useTimer_r          = useTimer;
-                    ipDestination_r     = ipDestination;
-                    dstPort_r           = dstPort;
-                    packet_mss_r        = packet_mss;       // Register input variables
-                    if (useTimer) {
-                        clockStart.write(runTime);              // Start stopwatch
+                if ((settings_regs.numConnections > 0) && (settings_regs.numConnections <= MAX_SESSIONS)) {  // Start experiment only if the user specifies a valid number of connection
+                    numConnections_r    = settings_regs.numConnections;
+                    transfer_size_r     = settings_regs.transfer_size;
+                    useTimer_r          = settings_regs.useTimer;
+                    ipDestination_r     = settings_regs.ipDestination;
+                    dstPort_r           = settings_regs.dstPort;
+                    packet_mss_r        = settings_regs.packet_mss;       // Register input variables
+                    if (settings_regs.useTimer) {
+                        clockStart.write(settings_regs.runTime);              // Start stopwatch
                     }
                     iperfFsmState       = INIT_CON;
                 }
             }
-            runExperiment_r = runExperiment;                // Register run Experiment
+            runExperiment_r = settings_regs.runExperiment;                // Register run Experiment
             break;
         case INIT_CON:
            // Open as many connection as the user wants
@@ -114,9 +106,9 @@ void client(
             openTuple.ip_port    = dstPort_r + sessionIt;      // For the time being all the connections are done to the same machine and a incremental port number     
             openConnection.write(openTuple);
 
-            std::cout << "IPERF request to establish a new connection socket " << std::dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
-            std::cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
-            std::cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port << std::endl;
+            cout << "IPERF request to establish a new connection socket " << dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
+            cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
+            cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port << endl;
 
             sessionIt++;
             if (sessionIt == numConnections_r) {
@@ -143,13 +135,19 @@ void client(
                     sessionIt = 0;
                     iperfFsmState = REQ_WRITE_FIRST;
                 }
+
+                cout << " read status" << endl;
             }
+
+            cout << endl;
 
             break;
 
 
         /* Request space and send the first packet per every connection */    
         case REQ_WRITE_FIRST:
+
+            cout << "REQ_WRITE_FIRST " << endl;
 
             meta_i.sessionID = experimentID[sessionIt];
             if (useTimer_r) {
@@ -164,6 +162,9 @@ void client(
             break; 
 
         case INIT_RUN:
+
+            cout << "INIT_RUN " << endl;
+
             if (!txStatus.empty()){
                 txStatus.read(space_responce);
 
@@ -179,7 +180,7 @@ void client(
                         currWord.last          = 1;
                     }
                     else {
-                        if (dualModeEn) {
+                        if (settings_regs.dualModeEn) {
                             currWord.data( 63,  0) = 0x0100000001000080;            //run now
                         }
                         else {
@@ -534,16 +535,7 @@ void iperf2_client(
                     stream<txApp_client_status>&    txAppNewClientNoty, 
 
                     /* AXI4-Lite registers */
-                    ap_uint< 1>&                    runExperiment,      
-                    ap_uint< 1>&                    dualModeEn,         
-                    ap_uint< 1>&                    useTimer,         
-                    ap_uint<64>&                    runTime,         
-                    ap_uint<14>&                    numConnections,         
-                    ap_uint<32>&                    transfer_size,      
-                    ap_uint<16>&                    packet_mss,     
-                    ap_uint<32>&                    ipDestination,
-                    ap_uint<16>&                    dstPort,
-                    ap_uint<16>&                    maxConnections)
+                    iperf_regs&                     settings_regs)
 {
 #pragma HLS DATAFLOW
 #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -571,18 +563,7 @@ void iperf2_client(
 #pragma HLS DATA_PACK variable=txAppDataReqStatus
 #pragma HLS DATA_PACK variable=txAppNewClientNoty
 
-#pragma HLS INTERFACE s_axilite port=runExperiment bundle=settings
-#pragma HLS INTERFACE s_axilite port=dualModeEn bundle=settings
-#pragma HLS INTERFACE s_axilite port=useTimer bundle=settings
-#pragma HLS INTERFACE s_axilite port=runTime bundle=settings
-#pragma HLS INTERFACE s_axilite port=numConnections bundle=settings
-#pragma HLS INTERFACE s_axilite port=transfer_size bundle=settings
-#pragma HLS INTERFACE s_axilite port=packet_mss bundle=settings
-#pragma HLS INTERFACE s_axilite port=ipDestination bundle=settings
-#pragma HLS INTERFACE s_axilite port=dstPort bundle=settings
-#pragma HLS INTERFACE s_axilite port=maxConnections bundle=settings
-
-    maxConnections = MAX_SESSIONS;
+#pragma HLS INTERFACE s_axilite port=settings_regs bundle=settings
 
     static stream<ap_uint<64> >             clockStart("clockStart");
     #pragma HLS STREAM variable=clockStart           depth=4
@@ -601,15 +582,7 @@ void iperf2_client(
             txAppData_to_TOE,
             clockStart,
             clockOver,
-            runExperiment,
-            dualModeEn,
-            useTimer,
-            runTime,
-            numConnections,
-            transfer_size,
-            packet_mss,
-            ipDestination,
-            dstPort);
+            settings_regs);
 
     stopWatch (
             clockStart,

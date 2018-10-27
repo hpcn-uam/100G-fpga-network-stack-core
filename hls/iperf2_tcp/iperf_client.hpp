@@ -22,8 +22,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 ************************************************/
 #include "../TOE/toe.hpp"
 #include "../TOE/common_utilities/common_utilities.hpp"
+#include <iostream>
 
 using namespace hls;
+using namespace std;
+
 
 
 void iperf2_client( 
@@ -42,13 +45,4 @@ void iperf2_client(
                     stream<txApp_client_status>&    txAppNewClientNoty, 
 
                     /* AXI4-Lite registers */
-                    ap_uint< 1>&                    runExperiment,      
-                    ap_uint< 1>&                    dualModeEn,         
-                    ap_uint< 1>&                    useTimer,         
-                    ap_uint<64>&                    runTime,         
-                    ap_uint<14>&                    numConnections,         
-                    ap_uint<32>&                    transfer_size,      
-                    ap_uint<16>&                    packet_mss,
-                    ap_uint<32>&                    ipDestination,
-                    ap_uint<16>&                    dstPort,
-                    ap_uint<16>&                    maxConnections);
+                    iperf_regs&                     settings_regs);

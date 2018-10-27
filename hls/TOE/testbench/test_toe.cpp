@@ -695,21 +695,23 @@ int main(int argc, char **argv) {
 	stream<axiWord> 					tx_iperf_data("tx_iperf_data");						
   	stream<ap_uint<16> > 				tx_iperf_MetaData("tx_iperf_MetaData");
 	stream<ap_int<17> > 				tx_iperf_Status("tx_iperf_Status");
-	ap_uint<1> 							iperf_runExperiment 	= 0;
-	ap_uint<1> 							iperf_dualModeEn 		= 0;
-	ap_uint<1> 							iperf_useTimer 			= 1;
-	ap_uint<64> 						iperf_runTime 			= 25000;
-	ap_uint<14> 						iperf_num_useConn 		= 1;
-	ap_uint<16> 						iperf_packetMSS 		= 1460;
-	ap_uint<16> 						iperf_dstPort 			= 5001;
-	ap_uint<16> 						iperf_maxConnections 	;
 
 
 	ap_uint<32> 						iperf_ipAddress0 		= 0xC0A80008;
 	ap_uint<32> 						iperf_ipAddress1 		= 0xC0A80009;
 	ap_uint<32> 						iperf_ipAddress2 		= 0xC0A8000A;
 	ap_uint<32> 						iperf_ipAddress3 		= 0xC0A8000B;
-	ap_uint<32> 						bytes_to_send 			= 12543;
+
+	iperf_regs  						iperf_settings;
+
+	iperf_settings.dualModeEn 								= 0;
+	iperf_settings.transfer_size 							= 12543;
+	iperf_settings.useTimer 								= 1;
+	iperf_settings.runTime 									= 25000;
+	iperf_settings.numConnections							= 1;
+	iperf_settings.ipDestination 							= iperf_ipAddress0;
+	iperf_settings.packet_mss 								= 1460;
+	iperf_settings.dstPort 									= 5001;
 	
 	char 								*input_file;
 	char 								*output_file;
@@ -733,7 +735,7 @@ int main(int argc, char **argv) {
 		testTxPath = true;
 
 		if (argc == 5){
-			bytes_to_send = atoi(argv[4]);		// get the amount of bytes to send from argument
+			iperf_settings.transfer_size = atoi(argv[4]);		// get the amount of bytes to send from argument
 		}
 	}
 	else{
@@ -794,10 +796,10 @@ int main(int argc, char **argv) {
 		}
 
 		if (simCycleCounter == 10){
-			iperf_runExperiment = 1;
+			iperf_settings.runExperiment = 1;
 		}
 		else {
-			iperf_runExperiment = 0;	
+			iperf_settings.runExperiment = 0;
 		}
 
 		if (simCycleCounter == totalSimCycles-5){
@@ -874,17 +876,7 @@ int main(int argc, char **argv) {
             txApp_write_Data,
             rxEng2txApp_client_notification,
 
-            iperf_runExperiment,
-            iperf_dualModeEn,
-            iperf_useTimer,
-            iperf_runTime,
-            iperf_num_useConn,
-            bytes_to_send,		// it could be passed as argument
-            iperf_packetMSS,
-            iperf_ipAddress0,
-            iperf_dstPort,
-            iperf_maxConnections
-            );
+            iperf_settings);
 
 /*		
 		rxApp_sim (

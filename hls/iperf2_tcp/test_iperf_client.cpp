@@ -42,32 +42,32 @@ int main()
     stream<axiWord> txData("txData");
     stream<appTxRsp> txStatus("txStatus");
     stream<txApp_client_status> newClientNoty("newClientNoty");
-    ap_uint<1> runExperiment;
-    ap_uint<1> dualModeEn;
-    ap_uint<14> useConn;
+
+    iperf_regs  settings_regs;
+
     ap_uint<8> pkgWordCount;
-    ap_uint<32> ipDestination = 0x01010101;
-    ap_uint<32> transfer_size = 1000;
-    ap_uint<12> packet_mss = 1460;
-    ap_uint< 1> useTimer=0; 
-    ap_uint<64> runTime= 0;
-    ap_uint<16> dstPort = 5001;
-    ap_uint<16> maxConnections;
 
     ap_uint<16> sessionID;
     appTxMeta txMetaDataReq;
     axiWord currWord;
     int count = 0;
-    dualModeEn = 0;
     pkgWordCount = 8;
+ 
+    settings_regs.dualModeEn    = 0;
+    settings_regs.useTimer      = 0; 
+    settings_regs.runTime       = 0;
+    settings_regs.transfer_size = 1000;
+    settings_regs.packet_mss    = 1460;
+    settings_regs.ipDestination = 0x01010101;
+    settings_regs.dstPort       = 5001;
 
     while (count < 10000)
     {
-        useConn = 2;
-        runExperiment = 0;
+        settings_regs.numConnections = 2;
+        settings_regs.runExperiment = 0;
         if (count == 20)
         {
-            runExperiment = 1;
+            settings_regs.runExperiment = 1;
         }
         iperf2_client(  listenPortReq,
                         listenPortRes,
@@ -82,17 +82,9 @@ int main()
                         txStatus,
                         txData,
                         newClientNoty,
+                        // registers
+                        settings_regs);
 
-                        runExperiment,
-                        dualModeEn,
-                        useTimer,
-                        runTime,
-                        useConn,
-                        transfer_size,
-                        packet_mss,
-                        ipDestination,
-                        dstPort,
-                        maxConnections);
 
         if (!openConnection.empty()) {
             openConnection.read();
