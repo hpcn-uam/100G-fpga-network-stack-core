@@ -30,8 +30,6 @@ void client(
                 stream<appTxMeta>&          txMetaData,
                 stream<appTxRsp>&           txStatus,
                 stream<axiWord>&            txData,
-                stream<ap_uint<64> >&       clockStart,
-                stream<bool > &             clockOver,
                 iperf_regs&                 settings_regs)
 {
 #pragma HLS PIPELINE II=1
@@ -63,6 +61,12 @@ void client(
     static ap_uint<32>          ipDestination_r;
     static ap_uint<1>           useTimer_r;
 
+    static ap_uint<1>           stopWatchStart   = 0;
+    static ap_uint<1>           stopWatchRunning = 0;
+    static ap_uint<1>           stopWatchEnd     = 0;
+    static ap_uint<64>          runTime_r           ;
+    static ap_uint<64>          timeCounter      =0 ;
+
     ipTuple                     openTuple;
     openStatus                  status;
     appTxMeta                   meta_i;
@@ -92,7 +96,8 @@ void client(
                     dstPort_r           = settings_regs.dstPort;
                     packet_mss_r        = settings_regs.packet_mss;       // Register input variables
                     if (settings_regs.useTimer) {
-                        clockStart.write(settings_regs.runTime);              // Start stopwatch
+                        stopWatchStart = 1;                               // Start stopwatch
+                        runTime_r      =  settings_regs.runTime;
                     }
                     iperfFsmState       = INIT_CON;
                 }
@@ -101,7 +106,7 @@ void client(
             break;
         case INIT_CON:
            // Open as many connection as the user wants
-
+            stopWatchStart = 0;
             openTuple.ip_address = ipDestination_r;            // Conform the socket
             openTuple.ip_port    = dstPort_r + sessionIt;      // For the time being all the connections are done to the same machine and a incremental port number     
             openConnection.write(openTuple);
@@ -147,8 +152,6 @@ void client(
         /* Request space and send the first packet per every connection */    
         case REQ_WRITE_FIRST:
 
-            cout << "REQ_WRITE_FIRST " << endl;
-
             meta_i.sessionID = experimentID[sessionIt];
             if (useTimer_r) {
                 //meta_i.length    = packet_mss_r;
@@ -162,8 +165,6 @@ void client(
             break; 
 
         case INIT_RUN:
-
-            cout << "INIT_RUN " << endl;
 
             if (!txStatus.empty()){
                 txStatus.read(space_responce);
@@ -218,8 +219,7 @@ void client(
             meta_i.sessionID = experimentID[sessionIt];
 
             if (useTimer_r) {               // If the timer is being used send the maximum packet
-                if (!clockOver.empty()) {             // When time is over finish
-                    clockOver.read();
+                if (stopWatchEnd) {             // When time is over finish
                     remaining_bytes_to_send = 0;
                 }
                 else {
@@ -371,41 +371,23 @@ void client(
             break;    
     }
 
-}
-
-void stopWatch (
-                stream<ap_uint<64> >&            start,
-                stream<bool > &                  over){
-
-
-#pragma HLS PIPELINE II=1
-#pragma HLS INLINE off
-
-    enum sw_states {WAIT_SIGNAL, RUNNING};
-    static sw_states sw_fsm_state = WAIT_SIGNAL;
-
-    static ap_uint<64>  max_count;
-    static ap_uint<64>  counter;
-
-    switch (sw_fsm_state){
-        case WAIT_SIGNAL: 
-            if (!start.empty()){
-                start.read(max_count);
-                counter = 1;
-                sw_fsm_state = RUNNING;
+    if (stopWatchStart || stopWatchRunning){
+        if (stopWatchStart){
+            timeCounter      = 0;
+            stopWatchRunning = 1;
+            stopWatchEnd     = 0;
+        }
+        else if (stopWatchRunning){
+            if (timeCounter == runTime_r) {
+                stopWatchRunning = 0;
+                stopWatchEnd     = 1;
             }
-            break;
-        case RUNNING: 
-            if (counter == max_count){
-                over.write(true);
-                //std::cout << "IPERF2 time over at " << std::dec << simCycleCounter << std::endl;
-                sw_fsm_state = WAIT_SIGNAL;
-            }
-            counter++;
-            break;
+            timeCounter++;
+        }
     }
 
 }
+
 
 void server(    
                 stream<ap_uint<16> >&           listenPort, 
@@ -565,12 +547,6 @@ void iperf2_client(
 
 #pragma HLS INTERFACE s_axilite port=settings_regs bundle=settings
 
-    static stream<ap_uint<64> >             clockStart("clockStart");
-    #pragma HLS STREAM variable=clockStart           depth=4
-
-    static stream<bool >             clockOver("clockOver");
-    #pragma HLS STREAM variable=clockOver           depth=4
-
     /*
      * Client
      */
@@ -580,13 +556,7 @@ void iperf2_client(
             txAppDataReqMeta,
             txAppDataReqStatus,
             txAppData_to_TOE,
-            clockStart,
-            clockOver,
             settings_regs);
-
-    stopWatch (
-            clockStart,
-            clockOver);
 
     /*
      * Server
