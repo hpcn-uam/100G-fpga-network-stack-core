@@ -93,9 +93,11 @@ void lookupReplyHandler(
 
 	static stream<threeTupleInternal>		slc_insertTuples("slc_insertTuples2");
 	#pragma HLS STREAM variable=slc_insertTuples depth=4
+	#pragma HLS DATA_PACK variable=slc_insertTuples2
 
 	static stream<sessionLookupQueryInternal>		slc_queryCache("slc_queryCache");
 	#pragma HLS STREAM variable=slc_queryCache depth=8
+	#pragma HLS DATA_PACK variable=slc_queryCache
 
 	fourTuple 					toeTuple;
 	threeTupleInternal 			tuple;
@@ -339,26 +341,27 @@ void session_lookup_controller(
 //#pragma HLS INLINE
 
 	// Fifos
-//	static stream<sessionLookupQueryInternal> slc_lookups("slc_lookups");
-//	#pragma HLS stream variable=slc_lookups depth=4
-//	#pragma HLS DATA_PACK variable=slc_lookups
 
 	static stream<ap_uint<14> > slc_sessionIdFreeList("slc_sessionIdFreeList");
 	static stream<ap_uint<14> > slc_sessionIdFinFifo("slc_sessionIdFinFifo");
 	#pragma HLS stream variable=slc_sessionIdFreeList depth=16384
-	#pragma HLS stream variable=slc_sessionIdFinFifo depth=2
+	#pragma HLS stream variable=slc_sessionIdFinFifo depth=4
 
 	static stream<rtlSessionUpdateReply>	slc_sessionInsert_rsp("slc_sessionInsert_rsp");
 	#pragma HLS STREAM variable=slc_sessionInsert_rsp depth=4
+	#pragma HLS DATA_PACK variable=slc_sessionInsert_rsp
 
 	static stream<rtlSessionUpdateRequest>  sessionInsert_req("sessionInsert_req");
 	#pragma HLS STREAM variable=sessionInsert_req depth=4
+	#pragma HLS DATA_PACK variable=sessionInsert_req
 
 	static stream<rtlSessionUpdateRequest>  sessionDelete_req("sessionDelete_req");
 	#pragma HLS STREAM variable=sessionDelete_req depth=4
+	#pragma HLS DATA_PACK variable=sessionDelete_req
 
 	static stream<revLupInsert>				reverseLupInsertFifo("reverseLupInsertFifo");
 	#pragma HLS STREAM variable=reverseLupInsertFifo depth=4
+	#pragma HLS DATA_PACK variable=reverseLupInsertFifo
 
 
 	sessionIdManager(

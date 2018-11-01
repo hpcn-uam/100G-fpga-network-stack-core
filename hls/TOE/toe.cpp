@@ -105,16 +105,18 @@ void timerWrapper(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetransmitT
 	//#pragma HLS PIPELINE II=1
 	
 	static stream<ap_uint<16> > closeTimer2stateTable_releaseState("closeTimer2stateTable_releaseState");
-	#pragma HLS STREAM variable=closeTimer2stateTable_releaseState		depth=2
+	#pragma HLS STREAM variable=closeTimer2stateTable_releaseState		depth=4
 
 	static stream<ap_uint<16> > rtTimer2stateTable_releaseState("rtTimer2stateTable_releaseState");
-	#pragma HLS STREAM variable=rtTimer2stateTable_releaseState			depth=2
+	#pragma HLS STREAM variable=rtTimer2stateTable_releaseState			depth=4
 
 	static stream<event> rtTimer2eventEng_setEvent("rtTimer2eventEng_setEvent");
-	#pragma HLS STREAM variable=rtTimer2eventEng_setEvent		depth=2
+	#pragma HLS STREAM variable=rtTimer2eventEng_setEvent		depth=4
+	#pragma HLS DATA_PACK variable=rtTimer2eventEng_setEvent
 
 	static stream<event> probeTimer2eventEng_setEvent("probeTimer2eventEng_setEvent");
-	#pragma HLS STREAM variable=probeTimer2eventEng_setEvent	depth=2
+	#pragma HLS STREAM variable=probeTimer2eventEng_setEvent	depth=4
+	#pragma HLS DATA_PACK variable=probeTimer2eventEng_setEvent
 
 	// Merge Events, Order: rtTimer has to be before probeTimer
 	stream_merger(
@@ -146,43 +148,6 @@ void timerWrapper(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetransmitT
 }
 
 
-#if (RX_DDR_BYPASS)
-void rxAppMemDataRead(	stream<ap_uint<1> >&	rxBufferReadCmd,
-						stream<axiWord>&		rxBufferReadData,
-						stream<axiWord>&		rxDataRsp)
-{
-#pragma HLS PIPELINE II=1
-#pragma HLS INLINE off
-
-	enum ramdr_states {READ_CMD , FWD_DATA};
-	static ramdr_states ramdr_fsm_state = READ_CMD;
-
-	axiWord currWord;
-
-	switch (ramdr_fsm_state){					// FIXME Unnecessary 
-		case READ_CMD:
-			if (!rxBufferReadCmd.empty()) {
-				rxBufferReadCmd.read();
-				ramdr_fsm_state = FWD_DATA;
-			}
-			break;
-		case FWD_DATA:
-			if (!rxBufferReadData.empty()){
-				rxBufferReadData.read(currWord);
-
-				if (currWord.last){
-					ramdr_fsm_state = READ_CMD;
-				}
-				rxDataRsp.write(currWord);
-			}
-			break;	
-	}
-
-}
-#endif
-
-
-
 void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					stream<rxSarAppd>&				rxSar2rxApp_upd_rsp,
 					stream<appNotification>&		rxEng2rxApp_notification,
@@ -191,9 +156,9 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					stream<rxSarAppd>&				rxApp2rxSar_upd_req,
 #if (!RX_DDR_BYPASS)
 					stream<mmCmd>&					rxBufferReadCmd,
-#endif
 					stream<axiWord>& 				rxBufferReadData,
 					stream<axiWord>& 				rxDataRsp,
+#endif
 					stream<appNotification>&		appNotification)
 {
 	#pragma HLS INLINE
@@ -204,9 +169,11 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 
 	static stream<cmd_internal>			rxAppStreamIf2memAccessBreakdown("rxAppStreamIf2memAccessBreakdown");
 	#pragma HLS STREAM variable=rxAppStreamIf2memAccessBreakdown	depth=16
+	#pragma HLS DATA_PACK variable=rxAppStreamIf2memAccessBreakdown
 
 	static stream<memDoubleAccess>		rxAppDoubleAccess("rxAppDoubleAccess");
 	#pragma HLS STREAM variable=rxAppDoubleAccess					depth=16
+	#pragma HLS DATA_PACK variable=rxAppDoubleAccess
 
 	rx_app_stream_if(
 					appRxDataReq, 
@@ -225,21 +192,12 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
 					rxAppDoubleAccess,
 					rxDataRsp);
 #else
-
-	static stream<ap_uint<1> >		rxBufferReadCmd("rxBufferReadCmd");
-	#pragma HLS STREAM variable=rxBufferReadCmd					depth=4
-
 	rx_app_stream_if(
 					appRxDataReq,
 					rxSar2rxApp_upd_rsp,
 					appRxDataRspIDsession,
-					rxBufferReadCmd,
 					rxApp2rxSar_upd_req);
 
-	rxAppMemDataRead(
-					rxBufferReadCmd,
-					rxBufferReadData,
-					rxDataRsp);
 #endif
 
 	stream_merger(
@@ -445,7 +403,8 @@ void toe(
 	#pragma HLS DATA_PACK variable=rxEng2stateTable_upd_req
 
 	static stream<sessionState>			stateTable2rxEng_upd_rsp("stateTable2rxEng_upd_rsp");
-	#pragma HLS STREAM variable=stateTable2rxEng_upd_rsp			depth=2
+	#pragma HLS STREAM variable=stateTable2rxEng_upd_rsp			depth=4
+	#pragma HLS DATA_PACK variable=stateTable2rxEng_upd_rsp
 
 	static stream<stateQuery>			txApp2stateTable_upd_req("txApp2stateTable_upd_req");
 	#pragma HLS STREAM variable=txApp2stateTable_upd_req			depth=2
@@ -453,12 +412,14 @@ void toe(
 
 	static stream<sessionState>			stateTable2txApp_upd_rsp("stateTable2txApp_upd_rsp");
 	#pragma HLS STREAM variable=stateTable2txApp_upd_rsp			depth=2
+	#pragma HLS DATA_PACK variable=stateTable2txApp_upd_rsp
 
 	static stream<ap_uint<16> >			txApp2stateTable_req("txApp2stateTable_req");
 	#pragma HLS STREAM variable=txApp2stateTable_req				depth=2
 
 	static stream<sessionState>			stateTable2txApp_rsp("stateTable2txApp_rsp");
 	#pragma HLS STREAM variable=stateTable2txApp_rsp				depth=2
+	#pragma HLS DATA_PACK variable=stateTable2txApp_rsp
 
 	static stream<ap_uint<16> >			stateTable2sLookup_releaseSession("stateTable2sLookup_releaseSession");
 	#pragma HLS STREAM variable=stateTable2sLookup_releaseSession	depth=2
@@ -522,6 +483,7 @@ void toe(
 	#pragma HLS DATA_PACK variable=txEng2timer_setRetransmitTimer
 	// Probe Timer
 	static stream<ap_uint<16> >					rxEng2timer_clearProbeTimer("rxEng2timer_clearProbeTimer");
+	#pragma HLS STREAM variable=rxEng2timer_clearProbeTimer depth=2
 
 	static stream<ap_uint<16> >					txEng2timer_setProbeTimer("txEng2timer_setProbeTimer");
 	#pragma HLS STREAM variable=txEng2timer_setProbeTimer depth=2
@@ -571,11 +533,11 @@ void toe(
 	#pragma HLS DATA_PACK variable=timer2txApp_notification
 
 	// Port Table
-	static stream<ap_uint<16> >				rxEng2portTable_check_req("rxEng2portTable_check_req");
-	#pragma HLS STREAM variable=rxEng2portTable_check_req			depth=4
+	static stream<ap_uint<16> >				rxEng2portTable_req("rxEng2portTable_req");
+	#pragma HLS STREAM variable=rxEng2portTable_req			depth=4
 
-	static stream<bool>						portTable2rxEng_check_rsp("portTable2rxEng_check_rsp");
-	#pragma HLS STREAM variable=portTable2rxEng_check_rsp			depth=4
+	static stream<bool>						portTable2rxEng_rsp("portTable2rxEng_rsp");
+	#pragma HLS STREAM variable=portTable2rxEng_rsp			depth=4
 
 	static stream<ap_uint<16> >				portTable2txApp_free_port("portTable2txApp_free_port");
 	#pragma HLS STREAM variable=portTable2txApp_free_port			depth=4
@@ -592,21 +554,19 @@ void toe(
 	static stream<ap_uint<1> > txEngFifoReadCount("txEngFifoReadCount");
 	#pragma HLS STREAM variable=txEngFifoReadCount depth=2
 
-#if (RX_DDR_BYPASS)
-	static stream<axiWord>                 rxData2AppNoDDR("rxData2AppNoDDR");
-   	#pragma HLS STREAM variable=rxData2AppNoDDR   depth=128
-#endif
 #if (TCP_NODELAY)	
    	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
    	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=128
+   	#pragma HLS DATA_PACK variable=txApp2txEng_data_stream
 #endif
 
 #if (STATISTICS_MODULE)
 	static stream<rxStatsUpdate>  rxEngStatsUpdate("rxEngStatsUpdate");
-	static stream<txStatsUpdate>  txEngStatisUpdate("txEngStatisUpdate");
 	#pragma HLS STREAM variable=rxEngStatsUpdate   depth=8
-	#pragma HLS STREAM variable=txEngStatisUpdate   depth=8
 	#pragma HLS DATA_PACK variable=rxEngStatsUpdate
+
+	static stream<txStatsUpdate>  txEngStatisUpdate("txEngStatisUpdate");
+	#pragma HLS STREAM variable=txEngStatisUpdate   depth=8
 	#pragma HLS DATA_PACK variable=txEngStatisUpdate
 
 	#pragma HLS INTERFACE s_axilite port=stat_regs bundle=toe_stats
@@ -656,10 +616,10 @@ void toe(
 					txSar2txEng_upd_rsp,
 					txSar2txApp_ack_push);
 	// Port Table
-	port_table(		rxEng2portTable_check_req,
+	port_table(		rxEng2portTable_req,
 					listenPortRequest,
 					sLookup2portTable_releasePort,
-					portTable2rxEng_check_rsp,
+					portTable2rxEng_rsp,
 					listenPortResponse,
 					portTable2txApp_free_port);
 
@@ -693,7 +653,7 @@ void toe(
 	rx_engine(		ipRxData,
 					sLookup2rxEng_rsp,
 					stateTable2rxEng_upd_rsp,
-					portTable2rxEng_check_rsp,
+					portTable2rxEng_rsp,
 					rxSar2rxEng_upd_rsp,
 					txSar2rxEng_upd_rsp,
 #if !(RX_DDR_BYPASS)
@@ -701,11 +661,11 @@ void toe(
 					rxBufferWriteCmd,
 					rxBufferWriteData,
 #else					
-					rxData2AppNoDDR,
+					rxDataRsp,
 #endif
 					rxEng2sLookup_req,
 					rxEng2stateTable_upd_req,
-					rxEng2portTable_check_req,
+					rxEng2portTable_req,
 					rxEng2rxSar_upd_req,
 					rxEng2txSar_upd_req,
 					rxEng2timer_clearRetransmitTimer,
@@ -755,10 +715,7 @@ void toe(
 #if !(RX_DDR_BYPASS)
 			 	 	rxBufferReadCmd,
 			 	 	rxBufferReadData,
-#else
-			 	 	rxData2AppNoDDR,
 #endif
-					rxDataRsp,
 			 	 	rxAppNotification);
 
 	tx_app_interface(

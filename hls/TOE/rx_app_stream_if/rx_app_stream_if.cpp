@@ -47,8 +47,6 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 					  stream<ap_uint<16> >&			appRxDataRspIDsession,
 #if (!RX_DDR_BYPASS)
 					  stream<cmd_internal>&			rxBufferReadCmd,
-#else
-					  stream<ap_uint<1> >&			rxBufferReadCmd,
 #endif
 					  stream<rxSarAppd>&			rxApp2rxSar_upd_req)
 {
@@ -81,11 +79,9 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 				appRxDataRspIDsession.write(rxSar.sessionID);
 #if (!RX_DDR_BYPASS)
 				
-				pkgAddr(29, WINDOW_BITS) = rxSar.sessionID(13, 0);
+				pkgAddr(31, WINDOW_BITS) = rxSar.sessionID(13, 0);
 				pkgAddr(WINDOW_BITS-1, 0) = rxSar.appd;
 				rxBufferReadCmd.write(cmd_internal(pkgAddr, rasi_readLength));
-#else
-				rxBufferReadCmd.write(1);
 #endif
 				// Update app read pointer
 				rxApp2rxSar_upd_req.write(rxSarAppd(rxSar.sessionID, rxSar.appd+rasi_readLength)); // Update me

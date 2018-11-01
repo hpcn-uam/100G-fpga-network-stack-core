@@ -406,24 +406,36 @@ void rxEngVerifyCheckSum (
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
+	enum vc_states {READ_META_INFO, READ_CHECKSUM};
+	static vc_states fsm_vc_state = READ_META_INFO;
+	static rxEngPktMetaInfo	meta_VCS;
+
 	ap_uint<16>			checksum_i;
-	rxEngPktMetaInfo	meta_VCS;
 	bool 				checksum_correct;
 
-	if (!rtl_checksum.empty() && !metaPacketInfoIn.empty()){
-		rtl_checksum.read(checksum_i);
-		metaPacketInfoIn.read(meta_VCS);
-		checksum_correct = (checksum_i==0) ? true : false;	// Compare
+	switch (fsm_vc_state){
+		case READ_META_INFO :
+			if (!metaPacketInfoIn.empty()){
+				metaPacketInfoIn.read(meta_VCS);
+				fsm_vc_state = READ_CHECKSUM;
+			}
+			break;
+		case READ_CHECKSUM :
+			if (!rtl_checksum.empty()){
+				rtl_checksum.read(checksum_i);
+				checksum_correct = (checksum_i==0) ? true : false;	// Compare
+				if (checksum_correct) {
+					metaPacketInfoOut.write(meta_VCS);
+					portTableOut.write(meta_VCS.tuple.dstPort);
+				}
+				if (meta_VCS.digest.length!=0)				
+					drop_payload.write(!checksum_correct); // the value is inverted because it indicates dropping
+				fsm_vc_state = READ_META_INFO;
+			}
 
-		if (checksum_correct){
-			metaPacketInfoOut.write(meta_VCS);
-			portTableOut.write(meta_VCS.tuple.dstPort);
-		}
-
-		// If the packet has payload write if the payload has to be forwarded
-		if (meta_VCS.digest.length!=0)				
-			drop_payload.write(!checksum_correct); // the value is inverted because it indicates dropping
+			break;
 	}
+
 }
 	
 /**
@@ -1165,11 +1177,11 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	// AXIS Streams
 
 	static stream<axiWord>		rxEng_pseudo_packet_to_metadata("rxEng_pseudo_packet_to_metadata");
-	#pragma HLS STREAM variable=rxEng_pseudo_packet_to_metadata depth=8
+	#pragma HLS STREAM variable=rxEng_pseudo_packet_to_metadata depth=16
 	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet_to_metadata
 
 	static stream<axiWord>		rxEng_tcp_payload("rxEng_tcp_payload");
-	#pragma HLS STREAM variable=rxEng_tcp_payload depth=512 //critical, store the payload until is forwarded or dropped
+	#pragma HLS STREAM variable=rxEng_tcp_payload depth=256 //critical, store the payload until is forwarded or dropped
 	#pragma HLS DATA_PACK variable=rxEng_tcp_payload
 
 #if (!RX_DDR_BYPASS)
@@ -1180,7 +1192,7 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 	// Meta Streams/FIFOs
 	static stream<bool >			rxEng_VerifyChecksumDrop("rxEng_VerifyChecksumDrop");
-	#pragma HLS STREAM variable=rxEng_VerifyChecksumDrop depth=2
+	#pragma HLS STREAM variable=rxEng_VerifyChecksumDrop depth=8
 
 	static stream<rxEngPktMetaInfo>		rxEngMetaInfoFifo("rxEngMetaInfoFifo");
 	#pragma HLS STREAM variable=rxEngMetaInfoFifo depth=8
@@ -1191,23 +1203,23 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	#pragma HLS DATA_PACK variable=rxEngMetaInfoValid
 
 	static stream<rxFsmMetaData>		rxEng_fsmMetaDataFifo("rxEng_fsmMetaDataFifo");
-	#pragma HLS STREAM variable=rxEng_fsmMetaDataFifo depth=2
+	#pragma HLS STREAM variable=rxEng_fsmMetaDataFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEng_fsmMetaDataFifo
 
 	static stream<extendedEvent>		rxEng_metaHandlerEventFifo("rxEng_metaHandlerEventFifo");
-	#pragma HLS STREAM variable=rxEng_metaHandlerEventFifo depth=2
+	#pragma HLS STREAM variable=rxEng_metaHandlerEventFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEng_metaHandlerEventFifo
 
 	static stream<event>				rxEng_fsmEventFifo("rxEng_fsmEventFifo");
-	#pragma HLS STREAM variable=rxEng_fsmEventFifo depth=2
+	#pragma HLS STREAM variable=rxEng_fsmEventFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEng_fsmEventFifo
 
 	static stream<bool>					rxEng_metaHandlerDropFifo("rxEng_metaHandlerDropFifo");
-	#pragma HLS STREAM variable=rxEng_metaHandlerDropFifo depth=2
+	#pragma HLS STREAM variable=rxEng_metaHandlerDropFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEng_metaHandlerDropFifo
 
 	static stream<bool>					rxEng_fsmDropFifo("rxEng_fsmDropFifo");
-	#pragma HLS STREAM variable=rxEng_fsmDropFifo depth=2
+	#pragma HLS STREAM variable=rxEng_fsmDropFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEng_fsmDropFifo
 
 	static stream<appNotification> rx_internalNotificationFifo("rx_internalNotificationFifo");

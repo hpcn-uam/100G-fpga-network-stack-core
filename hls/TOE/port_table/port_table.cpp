@@ -143,7 +143,7 @@ void free_port_table(	stream<ap_uint<16> >&	sLookup2portTable_releasePort,
 }
 
 
-void check_in_multiplexer(	stream<ap_uint<16> >&		rxEng2portTable_check_req,
+void check_in_multiplexer(	stream<ap_uint<16> >&		rxEng2portTable_req,
 							stream<ap_uint<15> >&		pt_portCheckListening_req_fifo,
 							stream<ap_uint<15> >&		pt_portCheckUsed_req_fifo,
 							stream<bool>&				pt_dstFifoOut)
@@ -158,8 +158,8 @@ void check_in_multiplexer(	stream<ap_uint<16> >&		rxEng2portTable_check_req,
 	ap_uint<16>			swappedCheckPort;
 
 	// Forward request according to port number, store table to keep order
-	if (!rxEng2portTable_check_req.empty()) {
-		rxEng2portTable_check_req.read(checkPort);
+	if (!rxEng2portTable_req.empty()) {
+		rxEng2portTable_req.read(checkPort);
 		swappedCheckPort = (checkPort( 7, 0), checkPort(15, 8));
 		if (swappedCheckPort < 32768) {
 			pt_portCheckListening_req_fifo.write(swappedCheckPort);
@@ -232,7 +232,7 @@ void check_out_multiplexer(	stream<bool>&				pt_dstFifoIn,
  *  It receives passive opening (listening) request from @ref rx_app_if, Request to check
  *  if the port is open from the @ref rx_engine and requests for a free port from the
  *  @ref tx_app_if.
- *  @param[in]		rxEng2portTable_check_req
+ *  @param[in]		rxEng2portTable_req
  *  @param[in]		rxApp2portTable_listen_req
  *  @param[in]		txApp2portTable_req
  *  @param[in]		sLookup2portTable_releasePort
@@ -240,7 +240,7 @@ void check_out_multiplexer(	stream<bool>&				pt_dstFifoIn,
  *  @param[out]		portTable2rxApp_listen_rsp
  *  @param[out]		portTable2txApp_rsp
  */
-void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
+void port_table(stream<ap_uint<16> >&		rxEng2portTable_req,
 				stream<ap_uint<16> >&		rxApp2portTable_listen_req,
 				//stream<ap_uint<1> >&		txApp2portTable_port_req,
 				stream<ap_uint<16> >&		sLookup2portTable_releasePort,
@@ -265,7 +265,7 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
 	#pragma HLS STREAM variable=pt_portCheckUsed_rsp_fifo depth=8
 
 	static stream<bool> pt_dstFifo("pt_dstFifo");
-	#pragma HLS STREAM variable=pt_dstFifo depth=4
+	#pragma HLS STREAM variable=pt_dstFifo depth=8
 
 	/*
 	 * Listening PortTable
@@ -290,7 +290,7 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_check_req,
 	 * Multiplex this query
 	 */
 	check_in_multiplexer(	
-					rxEng2portTable_check_req,
+					rxEng2portTable_req,
 					pt_portCheckListening_req_fifo,
 					pt_portCheckUsed_req_fifo,
 					pt_dstFifo);
