@@ -1025,59 +1025,61 @@ void txEng_PseudoHeader_Remover(
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
 
+	static axiWord prevWord;
+	static bool first_word = true;
 	axiWord currWord;
 	axiWord sendWord=axiWord(0,0,0);
-	static axiWord prevWord;
-	static bool extra_word = false;
-	static bool first_word = true;
+	enum tpr_states {READ, EXTRA_WORD};
+	static tpr_states tpr_fsm_state = READ;
 
-	if (!dataIn.empty() && !extra_word){
-		dataIn.read(currWord);
-		//cout << "HR In   : " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
-		if (first_word){
-			first_word = false;
-			if (currWord.last){										// Short packets such as ACK or SYN-ACK
-				sendWord.data(415,  0) 	= currWord.data(511, 96);
-				sendWord.keep( 51,  0) 	= currWord.keep( 63, 12);
+	switch (tpr_fsm_state){
+		case READ :
+			if(!dataIn.empty()){
+				dataIn.read(currWord);
+				//cout << "HR In   : " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
+				if (first_word){
+					first_word = false;
+					if (currWord.last){										// Short packets such as ACK or SYN-ACK
+						sendWord.data(415,  0) 	= currWord.data(511, 96);
+						sendWord.keep( 51,  0) 	= currWord.keep( 63, 12);
+						sendWord.last 			= 1;
+						dataOut.write(sendWord);
+						//cout << "HR Out 1   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+					}
+				}
+				else{
+					sendWord.data(415,  0) 	= prevWord.data(511, 96);
+					sendWord.data(511,416)	= currWord.data( 95,  0);
+					sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
+					sendWord.keep( 63, 52)	= currWord.keep( 11,  0);
+
+					sendWord.last = currWord.last;
+					
+					if (currWord.last){
+						if (currWord.keep.bit(12)){
+							tpr_fsm_state = EXTRA_WORD;
+							sendWord.last = 0;
+						}
+					}
+					//cout << "HR Out 2  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+					dataOut.write(sendWord);
+				}
+				if (currWord.last)
+					first_word = true;
+
+				prevWord = currWord;				
+			}
+			break;
+		case EXTRA_WORD :
+				sendWord.data(415,  0) 	= prevWord.data(511, 96);
+				sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
 				sendWord.last 			= 1;
 				dataOut.write(sendWord);
-				//cout << "HR Out 1   : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-			}
-		}
-		else{
-			sendWord.data(415,  0) 	= prevWord.data(511, 96);
-			sendWord.data(511,416)	= currWord.data( 95,  0);
-			sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
-			sendWord.keep( 63, 52)	= currWord.keep( 11,  0);
-
-			sendWord.last = currWord.last;
-			
-			if (currWord.last){
-				if (currWord.keep.bit(12)){
-					extra_word = true;
-					sendWord.last = 0;
-				}
-			}
-
-			//cout << "HR Out 2  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-			dataOut.write(sendWord);
-		}
-
-		if (currWord.last)
-			first_word = true;
-
-		prevWord = currWord;
-	
+				tpr_fsm_state = READ;
+				//cout << "HR Out Extra 3  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+			break;
 	}
-	else if(extra_word){
-		extra_word = false;
-		sendWord.data(415,  0) 	= prevWord.data(511, 96);
-		sendWord.keep( 51,  0) 	= prevWord.keep( 63, 12);
 
-		sendWord.last 			= 1;
-		//cout << "HR Out Extra 3  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		dataOut.write(sendWord);
-	}
 }
 
 /** @ingroup tx_engine
