@@ -38,22 +38,22 @@ void client(
 #pragma HLS INLINE off
 
     enum iperfFsmStateType {WAIT_USER_START, INIT_CON, WAIT_CON, REQ_WRITE_FIRST, INIT_RUN, COMPUTE_NECESSARY_SPACE,
-                            SPACE_RESPONSE, SEND_PACKET, REQUEST_SPACE, CLOSE_CONN};
+                            SPACE_RESPONSE, SEND_PACKET, REQUEST_SPACE, CLOSE_CONN, CLOSE_CONN1};
     static iperfFsmStateType    iperfFsmState = WAIT_USER_START;
     static ap_uint<16>          experimentID[MAX_SESSIONS];
 
-    #pragma HLS RESOURCE variable=experimentID core=RAM_2P_LUTRAM
+    #pragma HLS RESOURCE variable=experimentID core=RAM_2P_BRAM
     #pragma HLS DEPENDENCE variable=experimentID inter false
 
     static ap_uint<14>          sessionIt       = 0;
-    #pragma HLS DEPENDENCE variable=sessionIt inter false
+    //#pragma HLS DEPENDENCE variable=sessionIt inter false
 
     static ap_uint<32>          bytes_already_sent;
     static ap_uint< 6>          bytes_last_word;
     static ap_uint<10>          transactions;
     static ap_uint<10>          wordSentCount;
     static ap_uint<16>          transaction_length;
-    static ap_uint<16>          waitCounter;
+    static ap_uint<16>          waitCounter = 0;
     
 
     static ap_uint<32>          transfer_size_r;
@@ -65,6 +65,10 @@ void client(
     static ap_uint<1>           useTimer_r;
 
     static ap_uint<1>           stopWatchEnd     = 0;
+    static ap_uint<64>          last_transfer_keep;
+    #pragma HLS DEPENDENCE variable=last_transfer_keep inter false
+
+    static bool                 closecon_sig = false;
 
     ipTuple                     openTuple;
     openStatus                  status;
@@ -93,6 +97,7 @@ void client(
                     ipDestination_r     = settings_regs.ipDestination;
                     dstPort_r           = settings_regs.dstPort;
                     packet_mss_r        = settings_regs.packet_mss;       // Register input variables
+                    closecon_sig        = false;
                     if (settings_regs.useTimer) {
                         stopWatchStart.write(settings_regs.runTime);        // Start stopwatch
                     }
@@ -274,6 +279,8 @@ void client(
                 //cout << "SPACE_RESPONSE Response for transfer " << setw(5) << std::dec << sessionIt << " length : " << space_responce.length;
                 //cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
                 
+                last_transfer_keep = len2Keep(bytes_last_word);
+
                 if (space_responce.error==0){
                     sessionIt++;
                     iperfFsmState = SEND_PACKET;
@@ -303,12 +310,16 @@ void client(
                 if (!stopWatchEnd){
                     txMetaData.write(meta_i);
                 }
+                else {
+                    closecon_sig = true;
+                }
                 sessionIt++;
             }
 
 
             if (wordSentCount == transactions){
-                currWord.keep = len2Keep(bytes_last_word);
+                currWord.keep = last_transfer_keep;
+                //currWord.keep = len2Keep(bytes_last_word);
                 currWord.last = 1;            
 
                 if (sessionIt == numConnections_r){
@@ -316,7 +327,7 @@ void client(
                 }
 
                 if (useTimer_r){
-                    if (stopWatchEnd){
+                    if (closecon_sig){
                         iperfFsmState = CLOSE_CONN;
                         sessionIt=0;
                     }
@@ -352,6 +363,16 @@ void client(
             break;
 
         case CLOSE_CONN:
+            if (waitCounter == 10000){
+                iperfFsmState = CLOSE_CONN1;
+                waitCounter = 0;
+                sessionIt = 0;
+
+            }
+            waitCounter++;
+
+            break;
+        case CLOSE_CONN1:
             cout << endl << endl << "CLOSE_CONN closing connection: " << sessionIt << endl << endl << endl;
             closeConnection.write(experimentID[sessionIt]);
             sessionIt++;
@@ -361,6 +382,8 @@ void client(
             }
 
             break;    
+
+
     }
 
     runExperiment_r = settings_regs.runExperiment;                // Register run Experiment
