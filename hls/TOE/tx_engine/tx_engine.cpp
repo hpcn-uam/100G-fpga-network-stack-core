@@ -866,111 +866,66 @@ void txEng_payload_stitcher(
 #pragma HLS LATENCY max=1
 #pragma HLS pipeline II=1
 	
+	static axiWord 		prevWord;
 	axiWord 			payload_word;
 	axiWord 			sendWord = axiWord(0, 0, 0);
-	static axiWord 		pseudo_word;
-	static axiWord 		prevWord;
-
-	static ap_uint<3> 	ps_wordCount = 0;
-	static ap_uint<3>	tps_state = 0;
-	static ap_uint<1> 	txPkgStitcherAccBreakDown = 0;
-	static ap_uint<4> 	shiftBuffer = 0;
-	static bool 		txEngBrkDownReadIn = false;
 	bool 				packet_has_payload;
 
-	bool isShortCutData = false;
 
-	enum tx_payload_states {READ_PSEUDO_HEADER,READ_PAYLOAD};
-	static tx_payload_states tx_fsm= READ_PSEUDO_HEADER;
+	enum teps_states {READ_PSEUDO, READ_PAYLOAD, EXTRA_WORD};
+	static teps_states teps_fsm_state = READ_PSEUDO;
 
-	static bool read_pseudo_header=true;
-	static bool extra_word=false;
+	switch (teps_fsm_state) {
+		case READ_PSEUDO: 
+			if (!txEng_pseudo_tcpHeader.empty() && !txEng_packet_with_payload.empty()){
+				txEng_pseudo_tcpHeader.read(prevWord);
+				txEng_packet_with_payload.read(packet_has_payload);
 
+				if (!packet_has_payload){ 				// Payload is not needed because length==0 or is a SYN packet, send it immediately 
+					txEng_tcpSegOut.write(prevWord);
+				}
+				else {
+					teps_fsm_state = READ_PAYLOAD;
+				}
 
-	if (!txEng_pseudo_tcpHeader.empty() && !txEng_packet_with_payload.empty() && read_pseudo_header && !extra_word){
-		txEng_pseudo_tcpHeader.read(pseudo_word);
-		txEng_packet_with_payload.read(packet_has_payload);
-
-		if (!packet_has_payload){ 				// Payload is not needed because length==0 or is a SYN packet, send it immediately 
-			txEng_tcpSegOut.write(pseudo_word);
-			//cout << "pseudo 0: " << hex << pseudo_word.data << "\tkeep: " << pseudo_word.keep << "\tlast: " << dec << pseudo_word.last << endl;
-		}
-		else {
-
-			if (!txBufferReadData.empty()) {
+			}
+			break;
+		case READ_PAYLOAD: 
+			if (!txBufferReadData.empty()){
 				txBufferReadData.read(payload_word);
-				sendWord.data(255,  0) = pseudo_word.data (255,  0);		// TODO this is only valid with no TCP options
+				
+				sendWord.data(255,  0) = prevWord.data (255,  0);		// TODO this is only valid with no TCP options
 				sendWord.data(511,256) = payload_word.data(255,  0);
-				sendWord.keep( 31,  0) = pseudo_word.keep ( 31,  0);
+				sendWord.keep( 31,  0) = prevWord.keep ( 31,  0);
 				sendWord.keep( 63, 32) = payload_word.keep( 31,  0);
 				sendWord.last 		   = payload_word.last;
 
 				if (payload_word.last){
 					if (payload_word.keep.bit(32)){
 						sendWord.last 		   = 0;
-						read_pseudo_header = false;
-						extra_word = true;
+						teps_fsm_state = EXTRA_WORD;		// An extra word is necessary because the payload transaction has more than 32-bye
 					}
 					else {
-						read_pseudo_header = true;
+						teps_fsm_state = READ_PSEUDO;
 					}
 				}
-				else {
-					read_pseudo_header = false;
-				}
+
+				txEng_tcpSegOut.write(sendWord);
+				
 				prevWord.data(255,  0) 	= 	payload_word.data(511,256);
 				prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
 				prevWord.last       	= 	payload_word.last;
 
-			//cout << "pseudo 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-				txEng_tcpSegOut.write(sendWord);
 			}
-			else {
-				read_pseudo_header = false;
-				prevWord.data(255,  0) 	= 	pseudo_word.data(255,  0);
-				prevWord.keep( 31,  0) 	= 	pseudo_word.keep( 31,  0);
-				prevWord.last       	= 	pseudo_word.last;
-			}
-
-		}
-	}
-	else if (!txBufferReadData.empty() && !read_pseudo_header &&  !extra_word){ 									// 
-		txBufferReadData.read(payload_word);
-		sendWord.data(255,  0) = prevWord.data(255,  0);			// TODO this is only valid with no TCP options
-		sendWord.data(511,256) = payload_word.data(255,  0);
-		sendWord.keep( 31,  0) = prevWord.keep( 31,  0);
-		sendWord.keep( 63, 32) = payload_word.keep( 31,  0);
-		sendWord.last 		   = payload_word.last;
-
-		if (payload_word.last){
-			if (payload_word.keep.bit(32)){
-				sendWord.last 		   = 0;
-				extra_word = true;
-			}
-			else {
-				read_pseudo_header = true;
-			}
-		}
-
-		prevWord.data(255,  0) 	= 	payload_word.data(511,256);
-		prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
-		prevWord.last       	= 	payload_word.last;
-
-		//cout << "pseudo data: " << hex << payload_word.data << "\tkeep: " << payload_word.keep << "\tlast: " << dec << payload_word.last << endl;
-		//cout << "pseudo 2: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		txEng_tcpSegOut.write(sendWord);
-
-	}
-	else if (extra_word){
-		extra_word 				= false;
-		read_pseudo_header 		= true;
-		sendWord.data(255,  0) 	= prevWord.data(255,  0);			// TODO this is only valid with no TCP options
-		sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
-		sendWord.last 		   	= 1;
-
-		//cout << "pseudo 3: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		
-		txEng_tcpSegOut.write(sendWord);
+			break;
+		case EXTRA_WORD: 
+			sendWord.data(255,  0) 	= prevWord.data(255,  0);			// TODO this is only valid with no TCP options
+			sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
+			sendWord.last 		   	= 1;
+			//cout << "pseudo 3: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+			txEng_tcpSegOut.write(sendWord);
+			teps_fsm_state = READ_PSEUDO;
+			break;
 	}
 
 }
@@ -1186,6 +1141,8 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS DATA_PACK variable=txEng_pseudo_tcpHeader
 	
 	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");	// It carries pseudo header plus TCP payload if applies
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt depth=4
+	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt
 
 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_rm("tx_Eng_pseudo_pkt_2_rm");
 	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=16   // is forwarded immediately, size is not critical
@@ -1233,6 +1190,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 
 	static stream<bool>				txEng_packet_with_payload("txEng_packet_with_payload");
 	#pragma HLS stream variable=txEng_packet_with_payload depth=32
+	#pragma HLS DATA_PACK variable=txEng_packet_with_payload
 
 	txEng_metaLoader(	
 				eventEng2txEng_event,
