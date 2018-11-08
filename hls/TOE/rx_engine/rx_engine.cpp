@@ -736,6 +736,7 @@ void rxEngTcpFSM(
 							
 
 							if (fsm_meta.meta.ackNumb == txSar.nextByte) {
+								// This is necessary to unlock stateTable
 								switch (tcpState) {
 									case SYN_RECEIVED:
 										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, ESTABLISHED, 1)); //TODO MAYBE REARRANGE
@@ -751,7 +752,7 @@ void rxEngTcpFSM(
 										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, CLOSED, 1));
 										break;
 									default:
-										//rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));	// TODO I think this is not necessary
+										rxEng2stateTable_upd_req.write(stateQuery(fsm_meta.sessionID, tcpState, 1));
 										break;
 								}
 							}
