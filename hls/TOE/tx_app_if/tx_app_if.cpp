@@ -82,8 +82,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 	ap_uint<16> freePort;
 	openStatus openSessionStatus;
 
-	if (!appOpenConnReq.empty() && !portTable2txApp_port_rsp.empty() && !txApp2sLookup_req.full())
-	{
+	if (!appOpenConnReq.empty() && !portTable2txApp_port_rsp.empty()) {
 		appOpenConnReq.read(server_addr);
 		portTable2txApp_port_rsp.read(freePort);
 		// Implicit creationAllowed <= true
@@ -91,37 +90,30 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 		//tai_waitFreePort = false;
 	}
 
-	switch (tai_fsmState)
-	{
+	switch (tai_fsmState) {
 	case IDLE:
-		if (!sLookup2txApp_rsp.empty())
-		{
+		if (!sLookup2txApp_rsp.empty()) {
 			// Read session
 			sLookup2txApp_rsp.read(session);
 			// Get session state
-			if (session.hit)
-			{
+			if (session.hit) {
 				txApp2eventEng_setEvent.write(event(SYN, session.sessionID));
 				txApp2stateTable_upd_req.write(stateQuery(session.sessionID, SYN_SENT, 1));
 			}
-			else
-			{
+			else {
 				// Tell application that openConnection failed
 				appOpenConnRsp.write(openStatus(0, false));
 			}
 		}
-		else if (!conEstablishedIn.empty())
-		{
+		else if (!conEstablishedIn.empty()) {
 			//Maybe check if we are actually waiting for this one
 			conEstablishedIn.read(openSessionStatus);
 			appOpenConnRsp.write(openSessionStatus);
 		}
-		else if (!rtTimer2txApp_notification.empty())
-		{
+		else if (!rtTimer2txApp_notification.empty()) {
 			appOpenConnRsp.write(rtTimer2txApp_notification.read());
 		}
-		else if(!closeConnReq.empty()) // Close Request
-		{
+		else if(!closeConnReq.empty()) { // Close Request
 			closeConnReq.read(tai_closeSessionID);
 			txApp2stateTable_upd_req.write(stateQuery(tai_closeSessionID));
 			std::cout << "Closing ID " << std::dec << tai_closeSessionID << " has been requested" << std::endl;
@@ -129,19 +121,16 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 		}
 		break;
 	case CLOSE_CONN:
-		if (!stateTable2txApp_upd_rsp.empty())
-		{
+		if (!stateTable2txApp_upd_rsp.empty()) {
 			stateTable2txApp_upd_rsp.read(state);
 			//TODO might add CLOSE_WAIT here???
 			std::cout << "State " << std::dec << state;
-			if ((state == ESTABLISHED) || (state == FIN_WAIT_2) || (state == FIN_WAIT_1)) //TODO Why if FIN already SENT
-			{
+			if ((state == ESTABLISHED) || (state == FIN_WAIT_2) || (state == FIN_WAIT_1)) {//TODO Why if FIN already SENT
 				txApp2stateTable_upd_req.write(stateQuery(tai_closeSessionID, FIN_WAIT_1, 1));
 				txApp2eventEng_setEvent.write(event(FIN, tai_closeSessionID));
 				std::cout << " set event FIN " << std::endl << std::endl;
 			}
-			else
-			{
+			else {
 				// Have to release lock
 				txApp2stateTable_upd_req.write(stateQuery(tai_closeSessionID, state, 1));
 			}

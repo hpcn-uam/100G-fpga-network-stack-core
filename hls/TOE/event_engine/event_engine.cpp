@@ -73,23 +73,19 @@ void event_engine(	stream<event>&				txApp2eventEng_setEvent,
 		}
 		break;
 	case 1:*/
-		if (!rxEng2eventEng_setEvent.empty() && !eventEng2txEng_event.full())
-		{
+		if (!rxEng2eventEng_setEvent.empty()) {
 			rxEng2eventEng_setEvent.read(ev);
 			eventEng2txEng_event.write(ev);
 			ee_writeCounter++;
 		}
-		else if (ee_writeCounter == ee_adReadCounter && ee_adWriteCounter == ee_txEngReadCounter)
-		{
+		else if (ee_writeCounter == ee_adReadCounter && ee_adWriteCounter == ee_txEngReadCounter) {
 			// rtTimer and probeTimer events have priority
-			if (!timer2eventEng_setEvent.empty())
-			{
+			if (!timer2eventEng_setEvent.empty()) {
 				timer2eventEng_setEvent.read(ev);
 				eventEng2txEng_event.write(ev);
 				ee_writeCounter++;
 			}
-			else if (!txApp2eventEng_setEvent.empty())
-			{
+			else if (!txApp2eventEng_setEvent.empty()) {
 				txApp2eventEng_setEvent.read(ev);
 				eventEng2txEng_event.write(ev);
 				ee_writeCounter++;
@@ -98,18 +94,15 @@ void event_engine(	stream<event>&				txApp2eventEng_setEvent,
 		//break;
 	//} //switch
 	//eventEnginePriority++;
-	if (!ackDelayFifoReadCount.empty())
-	{
+	if (!ackDelayFifoReadCount.empty()) {
 		ackDelayFifoReadCount.read();
 		ee_adReadCounter++;
 	}
-	if (!ackDelayFifoWriteCount.empty())
-	{
+	if (!ackDelayFifoWriteCount.empty()) {
 		ee_adWriteCounter++;
 		ackDelayFifoWriteCount.read();
 	}
-	if (!txEngFifoReadCount.empty())
-	{
+	if (!txEngFifoReadCount.empty()) {
 		ee_txEngReadCounter++;
 		txEngFifoReadCount.read();
 	}

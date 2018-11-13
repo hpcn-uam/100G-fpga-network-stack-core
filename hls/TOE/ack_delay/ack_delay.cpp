@@ -31,23 +31,23 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 
 using namespace hls;
 
-void ack_delay(	stream<extendedEvent>&	input,
-				stream<extendedEvent>&	output,
-				stream<ap_uint<1> >&	readCountFifo,
-				stream<ap_uint<1> >&	writeCountFifo)
+void ack_delay(	stream<extendedEvent>&	eventEng2ackDelay_event,
+				stream<extendedEvent>&	eventEng2txEng_event,
+				stream<ap_uint<1> >&	ackDelayFifoReadCount,
+				stream<ap_uint<1> >&	ackDelayFifoWriteCount)
 {
+#pragma HLS INLINE off
 #pragma HLS PIPELINE II=1
 
-	static ap_uint<12> ack_table[MAX_SESSIONS]; //TODO why is it 12
+	static ap_uint<14> ack_table[MAX_SESSIONS];
 	#pragma HLS RESOURCE variable=ack_table core=RAM_2P_BRAM
 	#pragma HLS DEPENDENCE variable=ack_table inter false
 	static ap_uint<16>	ad_pointer = 0;
-	//static ap_uint<4>	ad_readCounter = 0;
 	extendedEvent ev;
 
-	if (!input.empty()) {
-		input.read(ev);
-		readCountFifo.write(1);
+	if (!eventEng2ackDelay_event.empty()) {
+		eventEng2ackDelay_event.read(ev);
+		ackDelayFifoReadCount.write(1);
 		// Check if there is a delayed ACK
 		if (ev.type == ACK && ack_table[ev.sessionID] == 0) {
 			ack_table[ev.sessionID] = TIME_64us;
@@ -55,15 +55,15 @@ void ack_delay(	stream<extendedEvent>&	input,
 		else {
 			// Assumption no SYN/RST
 			ack_table[ev.sessionID] = 0;
-			output.write(ev);
-			writeCountFifo.write(1);
+			eventEng2txEng_event.write(ev);
+			ackDelayFifoWriteCount.write(1);
 		}
 	}
 	else {
-		if (ack_table[ad_pointer] > 0 && !output.full()) {
+		if (ack_table[ad_pointer] > 0) {
 			if (ack_table[ad_pointer] == 1) {
-				output.write(event(ACK, ad_pointer));
-				writeCountFifo.write(1);
+				eventEng2txEng_event.write(event(ACK, ad_pointer));
+				ackDelayFifoWriteCount.write(1);
 			}
 			// Decrease value
 			ack_table[ad_pointer] -= 1;

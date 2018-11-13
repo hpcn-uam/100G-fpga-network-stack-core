@@ -565,9 +565,9 @@ void toe(
 	#pragma HLS STREAM variable=rxEngStatsUpdate   depth=8
 	#pragma HLS DATA_PACK variable=rxEngStatsUpdate
 
-	static stream<txStatsUpdate>  txEngStatisUpdate("txEngStatisUpdate");
-	#pragma HLS STREAM variable=txEngStatisUpdate   depth=8
-	#pragma HLS DATA_PACK variable=txEngStatisUpdate
+	static stream<txStatsUpdate>  txEngStatsUpdate("txEngStatsUpdate");
+	#pragma HLS STREAM variable=txEngStatsUpdate   depth=8
+	#pragma HLS DATA_PACK variable=txEngStatsUpdate
 
 	#pragma HLS INTERFACE s_axilite port=stat_regs bundle=toe_stats
 
@@ -689,7 +689,7 @@ void toe(
             		txApp2txEng_data_stream,
 #endif
 #if (STATISTICS_MODULE)
-					txEngStatisUpdate,
+					txEngStatsUpdate,
 #endif	            		
 					sLookup2txEng_rev_rsp,
 					txEng2rxSar_req,
@@ -750,7 +750,7 @@ void toe(
 #if (STATISTICS_MODULE)
 	toeStatistics (
 				    rxEngStatsUpdate,
-				    txEngStatisUpdate,
+				    txEngStatsUpdate,
 				   	stat_regs);
 #endif	
 
