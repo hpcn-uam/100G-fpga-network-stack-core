@@ -624,7 +624,7 @@ struct txApp_client_status
 {
 	ap_uint<16> 		sessionID;			// Tells to the tx application the ID
 	/* 
-	 * not used in the time being, tells to the app the negociated buffer size. 
+	 * not used for the time being, tells to the app the negotiated buffer size. 
 	 * 65536 * (buffersize+1) 
 	 */
 	ap_uint<8>			buffersize;			

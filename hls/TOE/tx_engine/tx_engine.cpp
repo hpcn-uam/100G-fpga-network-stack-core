@@ -1135,23 +1135,23 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS DATA_PACK variable=txEng_tcpMetaFifo
 
 	static stream<axiWord>		txEng_ipHeaderBuffer("txEng_ipHeaderBuffer");
-	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=32 // Ip header is 1 words, keep at least 32 headers
+	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=512 // Ip header is 1 words, keep at least 32 headers
 	#pragma HLS DATA_PACK variable=txEng_ipHeaderBuffer
 	
 	static stream<axiWord>		txEng_pseudo_tcpHeader("txEng_pseudo_tcpHeader");
-	#pragma HLS stream variable=txEng_pseudo_tcpHeader depth=32 // TCP pseudo header is 1 word, keep at least 32 headers
+	#pragma HLS stream variable=txEng_pseudo_tcpHeader depth=512 // TCP pseudo header is 1 word, keep at least 32 headers
 	#pragma HLS DATA_PACK variable=txEng_pseudo_tcpHeader
 	
 	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");	// It carries pseudo header plus TCP payload if applies
-	#pragma HLS stream variable=tx_Eng_pseudo_pkt depth=4
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt depth=512
 	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt
 
 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_rm("tx_Eng_pseudo_pkt_2_rm");
-	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=16   // is forwarded immediately, size is not critical
+	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=512   // is forwarded immediately, size is not critical
 	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_rm
 	
 	static stream<axiWord>		txEng_tcp_level_packet("txEng_tcp_level_packet");
-	#pragma HLS stream variable=txEng_tcp_level_packet depth=256  // critical, has to keep complete packet for checksum computation
+	#pragma HLS stream variable=txEng_tcp_level_packet depth=512  // critical, has to keep complete packet for checksum computation
 	#pragma HLS DATA_PACK variable=txEng_tcp_level_packet
 	
 // 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
@@ -1182,6 +1182,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	
 	static stream<memDoubleAccess> memAccessBreakdown("memAccessBreakdown");
 	#pragma HLS stream variable=memAccessBreakdown depth=32
+	#pragma HLS DATA_PACK variable=memAccessBreakdown
 	
 	static stream<bool> txEng_isDDRbypass("txEng_isDDRbypass");
 	#pragma HLS stream variable=txEng_isDDRbypass depth=32

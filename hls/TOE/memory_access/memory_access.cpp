@@ -643,6 +643,8 @@ void tx_Data_to_Memory(
 	static mmCmd 			input_command;
 	static ap_uint<23> 		bytes_first_command;
 	static mmCmd 			command_i;
+	static ap_uint<64> 		keep_last_word;
+#pragma HLS DEPENDENCE variable=keep_last_word inter false
 
 	bool 					rxWrBreakDown;
 	ap_uint<WINDOW_BITS+1> 	buffer_overflow;
@@ -666,6 +668,7 @@ void tx_Data_to_Memory(
 					command_i.saddr 	= input_command.saddr;
 					byte_offset 		= command_i.bbt.range(5,0);	// Determines the position of the MSB in the last word
 					bytes_first_command = command_i.bbt;
+					keep_last_word 	    = len2Keep(byte_offset);								// Get the keep of the last transaction of the first memory offset;
 
 					if (byte_offset != 0){ 								// Determines how many transaction are in the first memory access
 						number_of_words_to_send = command_i.bbt.range(WINDOW_BITS-1,6) + 1;
@@ -705,12 +708,12 @@ void tx_Data_to_Memory(
 			}
 			break;
 		case FWD_BREAKDOWN_0 :
-			if (!DataIn.empty()) {
+			if (!DataIn.empty()){
 				DataIn.read(currWord);
 				sendWord.last 	= 0;
 				if (count_word_sent == number_of_words_to_send){
 					sendWord.data = currWord.data;
-					sendWord.keep 	= len2Keep(byte_offset);								// Get the keep of the last transaction of the first memory offset;
+					sendWord.keep 	= keep_last_word;
 					sendWord.last 	= 1;
 					command_i.saddr(31,WINDOW_BITS) 	= input_command.saddr(31,WINDOW_BITS);
 					command_i.saddr(WINDOW_BITS-1,0) 		= 0;										// point to the beginning of the buffer
@@ -738,7 +741,7 @@ void tx_Data_to_Memory(
 			}
 			break;
 		case FWD_BREAKDOWN_1 :
-			if (!DataIn.empty()) {
+			if (!DataIn.empty()){
 				DataIn.read(currWord);
 				align_words_to_memory (currWord, prevWord, byte_offset, sendWord);
 

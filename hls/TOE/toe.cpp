@@ -231,7 +231,7 @@ void rxAppWrapper(	stream<appReadRequest>&			appRxDataReq,
  *  @param[in]		openConnReq
  *  @param[in]		closeConnReq
  *  @param[in]		txDataReqMeta
- *  @param[in]		txApp_Data2send
+ *  @param[in]		txApp_Data2send 					: Data coming from the application which have to be sent.
  *  @param[out]		listenPortResponse
  *  @param[out]		rxAppNotification
  *  @param[out]		rxApp_readRequest_RspID
@@ -556,7 +556,7 @@ void toe(
 
 #if (TCP_NODELAY)	
    	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
-   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=128
+   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=512
    	#pragma HLS DATA_PACK variable=txApp2txEng_data_stream
 #endif
 
