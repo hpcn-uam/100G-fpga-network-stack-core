@@ -955,64 +955,70 @@ void txEng_ip_pkt_stitcher(
 	static axiWord prevWord;
 	
 	ap_uint<16> tcp_checksum;
+	enum teips_states {READ_FIRST, READ_PAYLOAD, EXTRA_WORD};
+	static teips_states teips_fsm_state = READ_FIRST;
 
-	static bool writing_payload=false;
-	static bool writing_extra=false;
+	switch(teips_fsm_state){
+		case READ_FIRST :
+			if (!txEng_ipHeaderBufferIn.empty() && !txEng_tcp_level_packet.empty() && !txEng_tcpChecksumFifoIn.empty()){
+				txEng_ipHeaderBufferIn.read(ip_word);
+				txEng_tcp_level_packet.read(payload);
+				txEng_tcpChecksumFifoIn.read(tcp_checksum);
 
- 	if (!txEng_ipHeaderBufferIn.empty() && !txEng_tcp_level_packet.empty() && !txEng_tcpChecksumFifoIn.empty() && !writing_payload && !writing_extra) {
-		txEng_ipHeaderBufferIn.read(ip_word);
-		txEng_tcp_level_packet.read(payload);
-		txEng_tcpChecksumFifoIn.read(tcp_checksum);
+				sendWord.data(159,  0) = ip_word.data(159,  0); 			// TODO: no IP options supported
+				sendWord.keep( 19,  0) = 0xFFFFF;
+				sendWord.data(511,160) = payload.data(351,  0);
+				sendWord.data(304,288) = (tcp_checksum(7,0),tcp_checksum(15,8)); 	// insert checksum
+				sendWord.keep( 63, 20) = payload.keep( 43,  0);
 
-		sendWord.data(159,  0) = ip_word.data(159,  0); 			// TODO: no IP options supported
-		sendWord.keep( 19,  0) = 0xFFFFF;
-		sendWord.data(511,160) = payload.data(351,  0);
-		sendWord.data(304,288) = (tcp_checksum(7,0),tcp_checksum(15,8)); 	// insert checksum
-		sendWord.keep( 63, 20) = payload.keep( 43,  0);
-
-		sendWord.last 	= 0;
-
-		if (payload.last){
-			if (payload.keep.bit(44))
-				writing_extra 	= true;
-			else
-				sendWord.last 	= 1;
-		}
-		else
-			writing_payload 	= true;
-
-		prevWord = payload;
-		//cout << "IP Stitcher 0: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		DataOut.write(sendWord);
-	}
-	else if (!txEng_tcp_level_packet.empty() && writing_payload){
-		txEng_tcp_level_packet.read(payload);
-		
-		sendWord.data(159,  0) = prevWord.data(511,352);
-		sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
-		sendWord.data(511,160) = payload.data(351,  0);
-		sendWord.keep( 63, 20) = payload.keep( 43,  0);
-		sendWord.last 	= payload.last;
-
-		if (payload.last){
-			if (payload.keep.bit(44)){
 				sendWord.last 	= 0;
-				writing_extra 	= true;
+
+				if (payload.last){
+					if (payload.keep.bit(44))
+						teips_fsm_state = EXTRA_WORD;
+					else
+						sendWord.last 	= 1;
+				}
+				else
+					teips_fsm_state = READ_PAYLOAD;
+
+				prevWord = payload;
+				//cout << "IP Stitcher 0: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+				DataOut.write(sendWord);				
 			}
-			writing_payload = false;
-		}
+			break;
+		case READ_PAYLOAD :
+			if (!txEng_tcp_level_packet.empty()){
+					txEng_tcp_level_packet.read(payload);
 		
-		prevWord = payload;
-		//cout << "IP Stitcher 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		DataOut.write(sendWord);
-	}
-	else if (writing_extra){
-		sendWord.data(159,  0) = prevWord.data(511,352);
-		sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
-		sendWord.last 	= 1;
-		writing_extra   = false;
-		//cout << "IP Stitcher Extra  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-		DataOut.write(sendWord);
+					sendWord.data(159,  0) = prevWord.data(511,352);
+					sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
+					sendWord.data(511,160) = payload.data(351,  0);
+					sendWord.keep( 63, 20) = payload.keep( 43,  0);
+					sendWord.last 	= payload.last;
+
+					if (payload.last){
+						if (payload.keep.bit(44)){
+							sendWord.last 	= 0;
+							teips_fsm_state = EXTRA_WORD;
+						}
+						else
+							teips_fsm_state = READ_FIRST;
+					}
+					
+					prevWord = payload;
+					//cout << "IP Stitcher 1: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+					DataOut.write(sendWord);
+			}
+			break;
+		case EXTRA_WORD :
+			sendWord.data(159,  0) = prevWord.data(511,352);
+			sendWord.keep( 19,  0) = prevWord.keep( 63, 44);
+			sendWord.last 	= 1;
+			//cout << "IP Stitcher Extra  : " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
+			DataOut.write(sendWord);
+			teips_fsm_state = READ_FIRST;
+			break;
 	}
 
 }
