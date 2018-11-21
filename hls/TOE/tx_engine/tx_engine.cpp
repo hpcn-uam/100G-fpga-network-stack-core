@@ -860,7 +860,8 @@ void txEng_payload_stitcher(
 					stream<axiWord>&		txEng_pseudo_tcpHeader,
 					stream<bool>& 			txEng_packet_with_payload,
 					stream<axiWord>&		txBufferReadData,
-					stream<axiWord>&		txEng_tcpSegOut)
+					stream<axiWord>&		txEngTcpSegOut,
+					stream<axiWord>&		txEng2cksum)
 {
 #pragma HLS INLINE off
 #pragma HLS LATENCY max=1
@@ -882,7 +883,8 @@ void txEng_payload_stitcher(
 				txEng_packet_with_payload.read(packet_has_payload);
 
 				if (!packet_has_payload){ 				// Payload is not needed because length==0 or is a SYN packet, send it immediately 
-					txEng_tcpSegOut.write(prevWord);
+					txEngTcpSegOut.write(prevWord);
+					txEng2cksum.write(prevWord);
 				}
 				else {
 					teps_fsm_state = READ_PAYLOAD;
@@ -910,7 +912,8 @@ void txEng_payload_stitcher(
 					}
 				}
 
-				txEng_tcpSegOut.write(sendWord);
+				txEngTcpSegOut.write(sendWord);
+				txEng2cksum.write(sendWord);
 				
 				prevWord.data(255,  0) 	= 	payload_word.data(511,256);
 				prevWord.keep( 31,  0) 	= 	payload_word.keep( 63, 32);
@@ -923,7 +926,8 @@ void txEng_payload_stitcher(
 			sendWord.keep( 31,  0) 	= prevWord.keep( 31,  0);
 			sendWord.last 		   	= 1;
 			//cout << "pseudo 3: " << hex << sendWord.data << "\tkeep: " << sendWord.keep << "\tlast: " << dec << sendWord.last << endl;
-			txEng_tcpSegOut.write(sendWord);
+			txEngTcpSegOut.write(sendWord);
+			txEng2cksum.write(sendWord);
 			teps_fsm_state = READ_PSEUDO;
 			break;
 	}
@@ -1141,32 +1145,21 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS DATA_PACK variable=txEng_tcpMetaFifo
 
 	static stream<axiWord>		txEng_ipHeaderBuffer("txEng_ipHeaderBuffer");
-	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=512 // Ip header is 1 words, keep at least 32 headers
+	#pragma HLS stream variable=txEng_ipHeaderBuffer depth=512 					// Ip header is 1 word. We don't have to worry about the depth because it uses the same amount as depth=32
 	#pragma HLS DATA_PACK variable=txEng_ipHeaderBuffer
 	
 	static stream<axiWord>		txEng_pseudo_tcpHeader("txEng_pseudo_tcpHeader");
-	#pragma HLS stream variable=txEng_pseudo_tcpHeader depth=512 // TCP pseudo header is 1 word, keep at least 32 headers
+	#pragma HLS stream variable=txEng_pseudo_tcpHeader depth=512 				// TCP pseudo header is 1 word
 	#pragma HLS DATA_PACK variable=txEng_pseudo_tcpHeader
 	
-	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");	// It carries pseudo header plus TCP payload if applies
+	static stream<axiWord>		tx_Eng_pseudo_pkt("tx_Eng_pseudo_pkt");			// It carries pseudo header plus TCP payload if applies
 	#pragma HLS stream variable=tx_Eng_pseudo_pkt depth=512
 	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt
 
-	static stream<axiWord>		tx_Eng_pseudo_pkt_2_rm("tx_Eng_pseudo_pkt_2_rm");
-	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_rm depth=512   // is forwarded immediately, size is not critical
-	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_rm
-	
 	static stream<axiWord>		txEng_tcp_level_packet("txEng_tcp_level_packet");
-	#pragma HLS stream variable=txEng_tcp_level_packet depth=512  // critical, has to keep complete packet for checksum computation
+	#pragma HLS stream variable=txEng_tcp_level_packet depth=512  				// critical, has to keep complete packet for checksum computation
 	#pragma HLS DATA_PACK variable=txEng_tcp_level_packet
 	
-// 	static stream<axiWord>		tx_Eng_pseudo_pkt_2_checksum("tx_Eng_pseudo_pkt_2_checksum");
-//	#pragma HLS stream variable=tx_Eng_pseudo_pkt_2_checksum depth=16   
-//	#pragma HLS DATA_PACK variable=tx_Eng_pseudo_pkt_2_checksum
-
-//	static stream<ap_uint<16> >			txEng_tcpChecksumFifo("txEng_tcpChecksumFifo");
-//	#pragma HLS stream variable=txEng_tcpChecksumFifo depth=4
-
 	static stream<fourTuple> 		txEng_tupleShortCutFifo("txEng_tupleShortCutFifo");
 	#pragma HLS stream variable=txEng_tupleShortCutFifo depth=2
 	#pragma HLS DATA_PACK variable=txEng_tupleShortCutFifo
@@ -1194,7 +1187,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS stream variable=txEng_isDDRbypass depth=32
 
 	static stream<axiWord>		txBufferReadData_aligned("txBufferReadData_aligned");
-	#pragma HLS stream variable=txBufferReadData_aligned depth=16  
+	#pragma HLS stream variable=txBufferReadData_aligned depth=512  
 	#pragma HLS DATA_PACK variable=txBufferReadData_aligned
 
 	static stream<bool>				txEng_packet_with_payload("txEng_packet_with_payload");
@@ -1258,17 +1251,11 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				txEng_pseudo_tcpHeader,
 				txEng_packet_with_payload,
 				txBufferReadData_aligned,
-				tx_Eng_pseudo_pkt);
-
-
-	DataBroadcast(
 				tx_Eng_pseudo_pkt,
-				tx_Eng_pseudo_pkt_2_rm,
 				tx_pseudo_packet_to_checksum);
 
-
 	txEng_PseudoHeader_Remover(
-				tx_Eng_pseudo_pkt_2_rm,
+				tx_Eng_pseudo_pkt,
 				txEng_tcp_level_packet);
 
 	txEng_ip_pkt_stitcher(

@@ -66,9 +66,6 @@ void tx_Data_to_Memory(
 					stream<axiWord>& 				txMemWrDataIn,
 					stream<mmCmd>&					txMemWrCmdIn,
 					stream<mmCmd>&					txMemWrCmdOut,
-#if (TCP_NODELAY)					
-					stream<axiWord>&				txApp2txEng_data_stream,
-#endif
 					stream<axiWord>&				txMemWrDataOut);
 
 #endif

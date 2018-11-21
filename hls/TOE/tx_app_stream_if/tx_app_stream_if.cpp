@@ -140,9 +140,6 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 						stream<txAppTxSarQuery>&		txApp2txSar_upd_req, //TODO rename
 						stream<mmCmd>&					txBufferWriteCmd,
 						stream<axiWord>&				txBufferWriteData,
-#if (TCP_NODELAY)
-						stream<axiWord>&				txApp2txEng_data_stream,
-#endif
 						stream<event>&					txAppStream2eventEng_setEvent)
 {
 #pragma HLS INLINE
@@ -165,9 +162,6 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 			appTxDataReq,
 			tasiMetaLoaderCmd,			// Command with potential overflow
 			txBufferWriteCmd,			// Command without overflow
-#if (TCP_NODELAY)					
-			txApp2txEng_data_stream,
-#endif		
 			txBufferWriteData	
 		);
 

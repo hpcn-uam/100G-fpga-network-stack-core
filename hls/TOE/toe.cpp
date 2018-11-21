@@ -555,9 +555,13 @@ void toe(
 	#pragma HLS STREAM variable=txEngFifoReadCount depth=2
 
 #if (TCP_NODELAY)	
-   	static stream<axiWord>                 txApp2txEng_data_stream("txApp2txEng_data_stream");
-   	#pragma HLS STREAM variable=txApp2txEng_data_stream   depth=512
-   	#pragma HLS DATA_PACK variable=txApp2txEng_data_stream
+   	static stream<axiWord>                 txApp2txEng2PseudoHeader("txApp2txEng2PseudoHeader");
+   	#pragma HLS STREAM variable=txApp2txEng2PseudoHeader   depth=512
+   	#pragma HLS DATA_PACK variable=txApp2txEng2PseudoHeader
+
+	static stream<axiWord>                 txApp2ExtMemory("txApp2ExtMemory");
+   	#pragma HLS STREAM variable=txApp2ExtMemory   depth=512
+   	#pragma HLS DATA_PACK variable=txApp2ExtMemory
 #endif
 
 #if (STATISTICS_MODULE)
@@ -686,7 +690,7 @@ void toe(
 					txSar2txEng_upd_rsp,
 					txBufferReadData,
 #if (TCP_NODELAY)
-            		txApp2txEng_data_stream,
+            		txApp2txEng2PseudoHeader,
 #endif
 #if (STATISTICS_MODULE)
 					txEngStatsUpdate,
@@ -718,9 +722,21 @@ void toe(
 #endif
 			 	 	rxAppNotification);
 
+
+#if (TCP_NODELAY)
+	 DataBroadcast(
+					txApp_Data2send,
+					txApp2ExtMemory,
+					txApp2txEng2PseudoHeader);
+#endif
+
 	tx_app_interface(
 					txDataReqMeta,
+#if (TCP_NODELAY)				
+					txApp2ExtMemory,
+#else
 					txApp_Data2send,
+#endif					
 					stateTable2txApp_rsp,
 					txSar2txApp_ack_push,
 					txBufferWriteStatus,
@@ -736,9 +752,6 @@ void toe(
 					txApp2stateTable_req,
 					txBufferWriteCmd,
 					txBufferWriteData,
-#if (TCP_NODELAY)
-                  	txApp2txEng_data_stream,
-#endif
 					txApp2txSar_push,
 					openConnRsp,
 					txApp2sLookup_req,

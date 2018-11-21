@@ -91,9 +91,9 @@ void lookupReplyHandler(
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
 
-	static stream<threeTupleInternal>		slc_insertTuples("slc_insertTuples2");
+	static stream<threeTupleInternal>		slc_insertTuples("slc_insertTuples");
 	#pragma HLS STREAM variable=slc_insertTuples depth=4
-	#pragma HLS DATA_PACK variable=slc_insertTuples2
+	#pragma HLS DATA_PACK variable=slc_insertTuples
 
 	static stream<sessionLookupQueryInternal>		slc_queryCache("slc_queryCache");
 	#pragma HLS STREAM variable=slc_queryCache depth=8

@@ -361,7 +361,7 @@ void tx_MemDataRead_aligner(
 			}
 			break;
 		case NO_USE_DDR			:
-			if (!txAppDataIn.empty()){
+			if (!txAppDataIn.empty() && !DataOut.full()){
 				txAppDataIn.read(currWord);
 				DataOut.write(currWord);
 				if (currWord.last){
@@ -386,7 +386,7 @@ void tx_MemDataRead_aligner(
 			break;
 		case NO_BREAKDOWN:
 		case BREAKDOWN_ALIGNED:
-			if (!DtaInNoAlig.empty()){
+			if (!DtaInNoAlig.empty() && !DataOut.full()){
 				DtaInNoAlig.read(currWord);
 				DataOut.write(currWord);
 
@@ -396,7 +396,7 @@ void tx_MemDataRead_aligner(
 			}
 			break;
 		case BREAKDOWN_BLOCK_0:
-			if (!DtaInNoAlig.empty()){
+			if (!DtaInNoAlig.empty() && !DataOut.full()){
 				DtaInNoAlig.read(currWord);
 
 				sendWord.data = currWord.data;
@@ -419,7 +419,7 @@ void tx_MemDataRead_aligner(
 			}
 			break;
 		case FIRST_MERGE :	// Always the input word is unaligned otherwise there is a bug
-			if (!DtaInNoAlig.empty()){
+			if (!DtaInNoAlig.empty() && !DataOut.full()){
 				DtaInNoAlig.read(currWord);
 				align_words_from_memory(currWord,prevWord,offset_block0,sendWord);
 				sendWord.last = 0;
@@ -441,7 +441,7 @@ void tx_MemDataRead_aligner(
 			}
 			break;
 		case BREAKDOWN_BLOCK_1: // Always the input word is unaligned otherwise there is a bug
-			if (!DtaInNoAlig.empty()){
+			if (!DtaInNoAlig.empty() && !DataOut.full()){
 				DtaInNoAlig.read(currWord);
 				align_words_to_memory(currWord,prevWord,offset_block1,sendWord);
 
@@ -461,11 +461,13 @@ void tx_MemDataRead_aligner(
 			}
 			break;
 		case EXTRA_DATA:
-			align_words_to_memory(axiWord(0,0,1),prevWord,offset_block1,sendWord);
-			sendWord.last = 1;
+			if (!DataOut.full()) {
+				align_words_to_memory(axiWord(0,0,1),prevWord,offset_block1,sendWord);
+				sendWord.last = 1;
 
-			DataOut.write(sendWord);
-			tmra_fsm_state = INITIAL_STATE;
+				DataOut.write(sendWord);
+				tmra_fsm_state = INITIAL_STATE;
+			}
 			break;
 	}
 
@@ -624,9 +626,6 @@ void tx_Data_to_Memory(
 					stream<axiWord>& 				DataIn,
 					stream<mmCmd>&					CmdIn,
 					stream<mmCmd>&					CmdOut,
-#if (TCP_NODELAY)					
-					stream<axiWord>&				data2app,
-#endif
 					stream<axiWord>&				DataOut)
 
 {
@@ -701,9 +700,6 @@ void tx_Data_to_Memory(
 				if (currWord.last){
 					data2mem_state = WAIT_CMD;
 				}
-#if (TCP_NODELAY)
-				data2app.write(currWord);
-#endif 				
 				DataOut.write(sendWord);
 			}
 			break;
@@ -734,9 +730,6 @@ void tx_Data_to_Memory(
 
 				count_word_sent++;
 				prevWord = currWord;
-#if (TCP_NODELAY)
-				data2app.write(currWord);
-#endif 				
 				DataOut.write(sendWord);
 			}
 			break;
@@ -760,10 +753,6 @@ void tx_Data_to_Memory(
 				//cout << "TX APP to mem FWD_BREAKDOWN_1[ " << dec << setw(2)  << transaction++ <<  " ] DATA: " << setw(130) << hex <<  sendWord.data;
 				//cout << "\tkeep " << setw(30) << sendWord.keep  << "\tlast " << sendWord.last << endl;
 				prevWord = currWord;
-
-#if (TCP_NODELAY)
-				data2app.write(currWord);
-#endif 				
 				DataOut.write(sendWord);
 			}
 			break;

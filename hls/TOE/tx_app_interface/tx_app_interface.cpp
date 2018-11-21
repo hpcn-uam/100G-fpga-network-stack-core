@@ -194,9 +194,6 @@ void tx_app_interface(
 					stream<ap_uint<16> >&			txApp2stateTable_req,
 					stream<mmCmd>&					txBufferWriteCmd,
 					stream<axiWord>&				txBufferWriteData,
-#if (TCP_NODELAY)
-					stream<axiWord>&				txApp2txEng_data_stream,
-#endif
 					stream<txAppTxSarPush>&			txApp2txSar_push,
 
 					stream<openStatus>&				appOpenConnRsp,
@@ -264,9 +261,6 @@ void tx_app_interface(
 						txApp2txSar_upd_req,
 						txBufferWriteCmd,
 						txBufferWriteData,
-#if (TCP_NODELAY)
-						txApp2txEng_data_stream,
-#endif
 						txAppStream2event_mergeEvent);
 
 	// TX Application Interface
