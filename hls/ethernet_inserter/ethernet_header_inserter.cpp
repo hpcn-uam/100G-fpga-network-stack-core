@@ -30,98 +30,48 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include "ethernet_header_inserter.hpp"
 
 
-/** @ingroup mac_ip_encode
- *  This module requests the MAC address of the destination IP address and inserts the Ethener header to the IP packet
- */
-void ethernet_header_inserter(
-
-					stream<axiWord>&			dataIn, 					// Input packet (ip aligned)
-					stream<axiWord>&			dataOut,					// Output packet (ethernet aligned)
-					
-					stream<arpTableReply>&		arpTableReplay,					// ARP cache replay
-					stream<ap_uint<32> >&		arpTableRequest,				// ARP cache request
-					
-					ap_uint<48>					myMacAddress,				// Server MAC address
-					ap_uint<32>					regSubNetMask,				// Server subnet mask
-					ap_uint<32>					regDefaultGateway)			// Server default gateway
-{
-
-#pragma HLS DATAFLOW
-#pragma HLS INTERFACE ap_ctrl_none port=return
-
-#pragma HLS INTERFACE port=dataIn 		axis
-#pragma HLS INTERFACE port=dataOut 		axis
-
-#pragma HLS INTERFACE port=arpTableReplay 		axis
-#pragma HLS INTERFACE port=arpTableRequest 		axis
-
-
-#pragma HLS DATA_PACK variable=arpTableReplay
-
-#pragma HLS INTERFACE ap_none register port=myMacAddress
-#pragma HLS INTERFACE ap_none register port=regSubNetMask
-#pragma HLS INTERFACE ap_none register port=regDefaultGateway
-
-	// FIFOs
-	static stream<axiWord> ip_header_out;
-	static stream<axiWord> no_ip_header_out;
-	static stream<axiWord> ip_header_checksum;
-	
-#pragma HLS stream variable=ip_header_out depth=16 
-#pragma HLS stream variable=no_ip_header_out depth=16 
-#pragma HLS stream variable=ip_header_checksum depth=16 
-
-#pragma HLS DATA_PACK variable=ip_header_out
-#pragma HLS DATA_PACK variable=no_ip_header_out
-#pragma HLS DATA_PACK variable=ip_header_checksum
-
-
-	broadcaster_and_mac_request (dataIn, arpTableRequest, regSubNetMask, regDefaultGateway, ip_header_out, no_ip_header_out);
-
-	compute_and_insert_ip_checksum(ip_header_out,ip_header_checksum);
-
-	handle_output (arpTableReplay, ip_header_checksum, no_ip_header_out, myMacAddress, dataOut);
-}
-
-
-
 void broadcaster_and_mac_request(
 						stream<axiWord>&				dataIn,
-
 						stream<ap_uint<32> >&			arpTableRequest,				
-						ap_uint<32>						regSubNetMask,
-						ap_uint<32>						regDefaultGateway,
-
 						stream<axiWord>&				ip_header_out,
-						stream<axiWord>&				no_ip_header_out)
+						stream<axiWord>&				no_ip_header_out,
+						ap_uint<32>						regSubNetMask,
+						ap_uint<32>						regDefaultGateway)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
-	static int 		word_count = 0;
-	axiWord 	currWord;
-	ap_uint<32> dst_ip_addr;
 
-	if (!dataIn.empty()){		// There is data in the input stream
-		dataIn.read(currWord);	// Reading input data
+	enum bmr_states {FIRST_WORD, REMAINING};
+	static bmr_states bmr_fsm_state = FIRST_WORD;
 
-		if (word_count == 0) {
-			dst_ip_addr = currWord.data(159,128);		// getting the IP address
-			
-			if ((dst_ip_addr & regSubNetMask) == (regDefaultGateway & regSubNetMask))		// Check if the destination address is in the server subnetwork and asks for dst_ip_addr MAC if not asks for default gateway MAC address
-				arpTableRequest.write(dst_ip_addr);
-			else
-				arpTableRequest.write(regDefaultGateway);
+//	static int 		word_count = 0;
+	axiWord 		currWord;
+	ap_uint<32> 	dst_ip_addr;
 
-			ip_header_out.write(currWord); 				// Writing out first transaction 
-		}
-		else{
-			no_ip_header_out.write(currWord);			// Writing out rest of transactions
-		}
+	switch (bmr_fsm_state){
+		case FIRST_WORD : 
+			if (!dataIn.empty()){							// There are data in the input stream
+				dataIn.read(currWord);						// Reading input data
+				dst_ip_addr = currWord.data(159,128);		// getting the IP address
 
-		if (currWord.last==1)							// Checking if it is the last transaction and reset word_count
-			word_count = 0;
-		else
-			word_count++;
+				if ((dst_ip_addr & regSubNetMask) == (regDefaultGateway & regSubNetMask))		// Check if the destination address is in the server subnetwork and asks for dst_ip_addr MAC if not asks for default gateway MAC address
+					arpTableRequest.write(dst_ip_addr);
+				else
+					arpTableRequest.write(regDefaultGateway);
+
+				ip_header_out.write(currWord); 				// Writing out first transaction 
+				if (!currWord.last)
+					bmr_fsm_state = REMAINING;
+			}
+			break;
+		case REMAINING : 
+			if (!dataIn.empty()){							// There are data in the input stream
+				dataIn.read(currWord);	
+				no_ip_header_out.write(currWord);			// Writing out rest of transactions
+				if (currWord.last)
+					bmr_fsm_state = FIRST_WORD;
+			}
+			break;
 	}
 }
 
@@ -340,6 +290,72 @@ void compute_and_insert_ip_checksum (
 		currWord.data(87, 80) = ip_chksum(15,8);
 		dataOut.write(currWord);
 
-
 	}
+}
+
+
+
+/** @ingroup mac_ip_encode
+ *  This module requests the MAC address of the destination IP address and inserts the Ethener header to the IP packet
+ */
+void ethernet_header_inserter(
+
+					stream<axiWord>&			dataIn, 					// Input packet (ip aligned)
+					stream<axiWord>&			dataOut,					// Output packet (ethernet aligned)
+					
+					stream<arpTableReply>&		arpTableReplay,					// ARP cache replay
+					stream<ap_uint<32> >&		arpTableRequest,				// ARP cache request
+					
+					ap_uint<48>					myMacAddress,				// Server MAC address
+					ap_uint<32>					regSubNetMask,				// Server subnet mask
+					ap_uint<32>					regDefaultGateway)			// Server default gateway
+{
+
+#pragma HLS DATAFLOW
+#pragma HLS INTERFACE ap_ctrl_none port=return
+
+#pragma HLS INTERFACE axis register both port=dataIn
+#pragma HLS INTERFACE axis register both port=dataOut
+
+#pragma HLS INTERFACE axis register both port=arpTableReplay
+#pragma HLS INTERFACE axis register both port=arpTableRequest	
+#pragma HLS DATA_PACK variable=arpTableReplay
+
+
+#pragma HLS INTERFACE ap_stable register port=myMacAddress name=myMacAddress
+#pragma HLS INTERFACE ap_stable register port=regSubNetMask name=regSubNetMask
+#pragma HLS INTERFACE ap_stable register port=regDefaultGateway name=regDefaultGateway
+
+	// FIFOs
+	static stream<axiWord> ip_header_out;
+	#pragma HLS stream variable=ip_header_out depth=16 
+	#pragma HLS DATA_PACK variable=ip_header_out
+	
+	static stream<axiWord> no_ip_header_out;
+	#pragma HLS stream variable=no_ip_header_out depth=16 
+	#pragma HLS DATA_PACK variable=no_ip_header_out
+	
+	static stream<axiWord> ip_header_checksum;
+	#pragma HLS stream variable=ip_header_checksum depth=16 
+	#pragma HLS DATA_PACK variable=ip_header_checksum
+
+
+	broadcaster_and_mac_request (
+			dataIn, 
+			arpTableRequest, 
+			ip_header_out, 
+			no_ip_header_out,
+			regSubNetMask, 
+			regDefaultGateway);
+
+	compute_and_insert_ip_checksum(
+			ip_header_out,
+			ip_header_checksum);
+
+	handle_output (
+			arpTableReplay, 
+			ip_header_checksum, 
+			no_ip_header_out, 
+			myMacAddress, 
+			dataOut);
 }

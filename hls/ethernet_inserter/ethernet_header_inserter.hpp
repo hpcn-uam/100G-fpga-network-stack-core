@@ -80,27 +80,4 @@ void ethernet_header_inserter(
 					ap_uint<32>					regSubNetMask,				// Server subnet mask
 					ap_uint<32>					regDefaultGateway);			// Server default gateway
 
-void broadcaster_and_mac_request(
-						stream<axiWord>&				dataIn,
-
-						stream<ap_uint<32> >&			arpTableRequest,				
-						ap_uint<32>						regSubNetMask,
-						ap_uint<32>						regDefaultGateway,
-
-						stream<axiWord>&				ip_header_out,
-						stream<axiWord>&				no_ip_header_out);
-
-void handle_output(
-						stream<arpTableReply>& 			arpTableReplay,
-						stream<axiWord>&				ip_header_checksum,
-						stream<axiWord>&				no_ip_header_out,
-
-						ap_uint<48>						myMacAddress,
-
-						stream<axiWord>&				dataOut);
-
-void compute_and_insert_ip_checksum (
-						stream<axiWord>&			dataIn,
-					  	stream<axiWord>&			dataOut);
-
 #endif
