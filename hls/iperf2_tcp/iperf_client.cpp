@@ -23,6 +23,356 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>
 #include "iperf_client.hpp"
 #include <iostream>
 
+
+void client_r(    
+                stream<ipTuple>&            openConnection, 
+                stream<openStatus>&         openConStatus,
+                stream<ap_uint<16> >&       closeConnection,
+                stream<appTxMeta>&          txMetaData,
+                stream<appTxRsp>&           txStatus,
+                stream<axiWord>&            txData,
+                stream<ap_uint<64> >&       stopWatchStart,
+                stream<bool >&              stopWatchStop,
+                iperf_regs&                 settings_regs)
+{
+#pragma HLS PIPELINE II=1
+#pragma HLS INLINE off
+
+    enum iperfFsmStateType {WAIT_USER_START, INIT_CON, WAIT_CON, REQ_WRITE_FIRST, INIT_RUN, COMPUTE_NECESSARY_SPACE,
+                            SPACE_RESPONSE, SPACE_RESPONSE_1, SEND_PACKET, REQUEST_SPACE, WAIT_TIME, CLOSE_CONN};
+    static iperfFsmStateType    iperfFsmState = WAIT_USER_START;
+    static ap_uint<16>          experimentID[MAX_SESSIONS];
+
+    #pragma HLS RESOURCE variable=experimentID core=RAM_2P_LUTRAM
+    #pragma HLS DEPENDENCE variable=experimentID inter false
+
+    static ap_uint<14>          sessionIt       = 0;
+
+    static ap_uint<32>          bytes_already_sent;
+    static ap_uint< 6>          bytes_last_word;
+    static ap_uint<10>          transactions;
+    static ap_uint<10>          wordSentCount;
+    static ap_uint<16>          transaction_length;
+    static ap_uint<16>          waitCounter;
+    
+
+    static ap_uint<32>          transfer_size_r;
+    static ap_uint<16>          packet_mss_r;
+    static ap_uint<14>          numConnections_r;
+    static ap_uint<1>           runExperiment_r = 1;
+    static ap_uint<16>          dstPort_r;
+    static ap_uint<32>          ipDestination_r;
+    static ap_uint<1>           useTimer_r;
+
+    static ap_uint<1>           stopWatchEnd     = 0;
+
+    ipTuple                     openTuple;
+    openStatus                  status;
+    appTxMeta                   meta_i;
+    ap_uint<32>                 remaining_bytes_to_send;
+    appTxRsp                    space_responce;
+
+    axiWord                     currWord;
+
+    settings_regs.maxConnections = MAX_SESSIONS;
+
+    /*
+     * CLIENT FSM
+     */
+
+    switch (iperfFsmState) {
+        /* Wait until user star the client. Once the starting is detect all settings are registered*/
+        case WAIT_USER_START:
+            
+            sessionIt   = 0;
+            if (settings_regs.runExperiment && !runExperiment_r) {    // Rising edge 
+                std::cout << "runExperiment set " << std::endl;  
+                if ((settings_regs.numConnections > 0) && (settings_regs.numConnections <= MAX_SESSIONS)) {  // Start experiment only if the user specifies a valid number of connection
+                    numConnections_r    = settings_regs.numConnections;
+                    transfer_size_r     = settings_regs.transfer_size;
+                    useTimer_r          = settings_regs.useTimer;
+                    ipDestination_r     = settings_regs.ipDestination;
+                    dstPort_r           = settings_regs.dstPort;
+                    packet_mss_r        = settings_regs.packet_mss;       // Register input variables
+                    if (settings_regs.useTimer) {
+                        stopWatchStart.write(settings_regs.runTime);        // Start stopwatch
+                    }
+                    iperfFsmState       = INIT_CON;
+                }
+            }
+            break;
+        case INIT_CON:
+           // Open as many connection as the user wants
+            openTuple.ip_address = ipDestination_r;            // Conform the socket
+            openTuple.ip_port    = dstPort_r + sessionIt;      // For the time being all the connections are done to the same machine and a incremental port number     
+            openConnection.write(openTuple);
+
+            cout << "IPERF request to establish a new connection socket " << dec << ((openTuple.ip_address) >> 24 & 0xFF) <<".";
+            cout << ((openTuple.ip_address >> 16) & 0xFF) << "." << ((openTuple.ip_address >> 8) & 0xFF) << ".";
+            cout << (openTuple.ip_address & 0xFF) << ":" << openTuple.ip_port << endl;
+
+            sessionIt++;
+            if (sessionIt == numConnections_r) {
+                sessionIt = 0;
+                iperfFsmState = WAIT_CON;
+                if (useTimer_r) {               // If the timer is going to be used start timer
+                    std::cout << "IPERF2 Init timer at " << std::dec << simCycleCounter << std::endl;
+                }
+            }
+            break;
+        case WAIT_CON:
+
+            if (!openConStatus.empty()) {
+                openConStatus.read(status);
+                if (status.success) {
+                    experimentID[sessionIt] = status.sessionID;
+                    std::cout << "Connection successfully opened." << std::endl;
+                }
+                else {
+                    std::cout << "Connection could not be opened." << std::endl;
+                }
+                sessionIt++;
+                if (sessionIt == numConnections_r) { //maybe move outside
+                    sessionIt = 0;
+                    iperfFsmState = REQ_WRITE_FIRST;
+                }
+
+                cout << " read status" << endl;
+            }
+
+            cout << endl;
+
+            break;
+
+
+        /* Request space and send the first packet per every connection */    
+        case REQ_WRITE_FIRST:
+
+            meta_i.sessionID = experimentID[sessionIt];
+            if (useTimer_r) {
+                //meta_i.length    = packet_mss_r;
+                meta_i.length    = 64;
+            }
+            else {
+                meta_i.length    = 24;
+            }
+            txMetaData.write(meta_i);
+            iperfFsmState = INIT_RUN;
+            break; 
+
+        case INIT_RUN:
+
+            if (!txStatus.empty()){
+                txStatus.read(space_responce);
+
+                if (space_responce.error==0){
+                    //std::cout << "Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                    //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl;
+                    
+                    if (useTimer_r) {
+                        currWord.data( 63,  0) = 0x3736353400000000;
+                        currWord.data( 79, 64) = 0x3938;
+                        currWord.data(511, 80) = 0;
+                        currWord.keep          = 0xFFFFFFFFFFFFFFFF;
+                        currWord.last          = 1;
+                    }
+                    else {
+                        if (settings_regs.dualModeEn) {
+                            currWord.data( 63,  0) = 0x0100000001000080;            //run now
+                        }
+                        else {
+                            currWord.data( 63,  0) = 0x0100000000000000;
+                        }
+                        currWord.data(127, 64) = 0x0000000089130000;
+                        currWord.data(159,128) = 0x39383736;
+                        currWord.data(191,160) = byteSwap32(transfer_size_r);      // transfer size
+
+                        currWord.data(511,192) = 0;
+                        currWord.keep = 0xffffff;
+                        currWord.last = 1;
+                    }    
+                    
+                    sessionIt++;
+                    
+                    if (sessionIt == numConnections_r) {
+                        sessionIt = 0;
+                        bytes_already_sent = 0;
+                        iperfFsmState = COMPUTE_NECESSARY_SPACE;
+                    }
+                    else {
+                        iperfFsmState = REQ_WRITE_FIRST;
+                    }
+                    txData.write(currWord);
+                }
+                else {
+                    iperfFsmState = REQ_WRITE_FIRST;
+                }
+
+            }
+            break;
+
+        case COMPUTE_NECESSARY_SPACE:   
+            meta_i.sessionID = experimentID[sessionIt];
+
+            if (useTimer_r) {                   // If the timer is being used send the maximum packet
+                if (stopWatchEnd) {             // When time is over finish
+                    remaining_bytes_to_send = 0;
+                }
+                else {
+                    remaining_bytes_to_send = packet_mss_r;
+                }
+            }
+            else {
+                remaining_bytes_to_send = transfer_size_r - bytes_already_sent;
+            }
+
+            //std::cout << "COMPUTE_NECESSARY_SPACE remaining_bytes_to_send:  " << std::dec << remaining_bytes_to_send;
+
+            if (remaining_bytes_to_send > 0){
+                if (remaining_bytes_to_send >= packet_mss_r){           // Check if we can send a packet
+                    
+                    bytes_last_word     = packet_mss_r(5,0);            // How many bytes are necessary for the last transaction
+                    if (packet_mss_r(5,0) == 0){                        // compute how many transactions are necessary
+                        transactions        =  packet_mss_r(15,6);  
+                    }
+                    else {
+                        transactions        =  packet_mss_r(15,6) + 1;  
+                    }
+                    meta_i.length    = packet_mss_r;
+                }
+                else {
+                    
+                    bytes_last_word     = remaining_bytes_to_send(5,0);            // How many bytes are necessary for the last transaction
+                    if (remaining_bytes_to_send(5,0) == 0){                        // compute how many transactions are necessary
+                        transactions        =  remaining_bytes_to_send(15,6);  
+                    }
+                    else {
+                        transactions        =  remaining_bytes_to_send(15,6) + 1;  
+                    }
+                    meta_i.length    = remaining_bytes_to_send;
+                }
+                sessionIt     = 0;
+                txMetaData.write(meta_i);
+                iperfFsmState = SPACE_RESPONSE;
+            }
+            else {
+                sessionIt     = 0;
+                iperfFsmState = CLOSE_CONN;
+            }
+
+
+            //std::cout << "\ttransactions: " << transactions << "\tbytes_last_word: " << bytes_last_word << std::endl;
+
+            transaction_length = meta_i.length;
+            wordSentCount = 1;
+
+            break; 
+
+        case SPACE_RESPONSE:    
+            if (!txStatus.empty()){
+                txStatus.read(space_responce);
+
+                //std::cout << "SPACE_RESPONSE Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                
+                if (space_responce.error==0){
+                    sessionIt++;
+                    iperfFsmState = SEND_PACKET;
+                    bytes_already_sent = bytes_already_sent + transaction_length;
+                }
+                else {
+                    waitCounter = 0;
+                    iperfFsmState = WAIT_TIME;
+                }
+            }
+            break;
+
+        case SEND_PACKET:
+
+            currWord.data(63 ,  0) = 0x6d61752d6e637068;
+            currWord.data(127, 64) = 0x202020202073652e;
+            currWord.data(191,128) = 0x2e736d6574737973;
+            currWord.data(255,192) = 0x2068632e7a687465;
+            currWord.data(319,256) = 0x3736353433323130;
+            currWord.data(383,320) = 0x3736353433323130;
+            currWord.data(447,384) = 0x3736353433323130;
+            currWord.data(511,448) = 0x3736353433323130;    // Dummy data
+
+
+            if (wordSentCount == transactions){
+                currWord.keep = len2Keep(bytes_last_word);
+                currWord.last = 1;            
+                if (sessionIt == numConnections_r){
+                    iperfFsmState = COMPUTE_NECESSARY_SPACE;
+                }
+                else {
+                    iperfFsmState = REQUEST_SPACE;
+                }
+            }
+            else {
+                currWord.keep = 0xFFFFFFFFFFFFFFFF;
+                currWord.last = 0;
+            }
+            
+            wordSentCount++;
+
+            txData.write(currWord);
+            break;
+ 
+        case REQUEST_SPACE:
+            meta_i.sessionID = experimentID[sessionIt];
+            meta_i.length    = transaction_length;
+            txMetaData.write(meta_i);
+            iperfFsmState = SPACE_RESPONSE_1;
+            break;
+
+        case SPACE_RESPONSE_1:    
+            if (!txStatus.empty()){
+                txStatus.read(space_responce);
+
+                //std::cout << "SPACE_RESPONSE_1 Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
+                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                
+                if (space_responce.error==0){
+                    sessionIt++;
+                    iperfFsmState = SEND_PACKET;
+                    bytes_already_sent = bytes_already_sent + transaction_length;
+                }
+                else {
+                    iperfFsmState = REQUEST_SPACE;
+                }
+            }
+            break;            
+
+        case WAIT_TIME:
+            
+            if (waitCounter == 1)
+                iperfFsmState = COMPUTE_NECESSARY_SPACE;
+
+            waitCounter++;
+
+            break;    
+        case CLOSE_CONN:
+            //std::cout << std::endl << std::endl << "CLOSE_CONN closing connection" << std::endl << std::endl;
+            closeConnection.write(experimentID[sessionIt]);
+            sessionIt++;
+            if (sessionIt == numConnections_r){
+                iperfFsmState = WAIT_USER_START;
+            }
+
+            break;    
+    }
+
+    runExperiment_r = settings_regs.runExperiment;                // Register run Experiment
+
+
+    if(!stopWatchStop.empty()){
+        stopWatchStop.read();
+        stopWatchEnd = 1;
+    }
+
+}
+
 void client(    
                 stream<ipTuple>&            openConnection, 
                 stream<openStatus>&         openConStatus,
@@ -279,7 +629,6 @@ void client(
                 //cout << "SPACE_RESPONSE Response for transfer " << setw(5) << std::dec << sessionIt << " length : " << space_responce.length;
                 //cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
                 
-                last_transfer_keep = len2Keep(bytes_last_word);
 
                 if (space_responce.error==0){
                     sessionIt++;
@@ -291,6 +640,7 @@ void client(
                     iperfFsmState = REQUEST_SPACE;
                 }
             }
+            last_transfer_keep = len2Keep(bytes_last_word);
             break;
 
         case SEND_PACKET:
@@ -455,6 +805,8 @@ void server(
     appNotification         notification;
     axiWord                 currWord;
 
+    static ap_uint<16>      connectionID=0;
+
     if (!txAppNewClientNoty.empty()){
         txAppNewClientNoty.read(rx_client_notification);
     }
@@ -462,7 +814,7 @@ void server(
 
     switch (server_fsm_state){
         case OPEN_PORT:
-            listen_port = 5001;
+            listen_port = 5001 + connectionID;
             listenPort.write(listen_port);              // Open port 5001
             //std::cout << "Request to listen to port: " << std::dec << listen_port << " has been issued." << std::endl;
             server_fsm_state = WAIT_RESPONSE;
@@ -472,7 +824,13 @@ void server(
                 listenPortRes.read(listen_rsp);
                 if (listen_rsp.port_number == listen_port){
                     if (listen_rsp.open_successfully || listen_rsp.already_open) {
-                        server_fsm_state = IDLE;
+                        if (connectionID == MAX_SESSIONS-1){
+                            server_fsm_state = IDLE;
+                        }
+                        else{
+                            connectionID++;
+                            server_fsm_state = OPEN_PORT;
+                        }
                     }
                     else {
                         server_fsm_state = OPEN_PORT; // If the port was not opened successfully try again
@@ -597,7 +955,9 @@ void iperf2_client(
     /*
      * Client
      */
-    client( txApp_openConnection,
+    client( 
+    //squeze_client( 
+            txApp_openConnection,
             txApp_openConnStatus,
             closeConnection,
             txAppDataReqMeta,

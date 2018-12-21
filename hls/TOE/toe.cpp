@@ -391,7 +391,7 @@ void toe(
 	#pragma HLS DATA_PACK variable=sLookup2txApp_rsp
 
 	static stream<ap_uint<16> >				txEng2sLookup_rev_req("txEng2sLookup_rev_req");
-	#pragma HLS STREAM variable=txEng2sLookup_rev_req		depth=4
+	#pragma HLS STREAM variable=txEng2sLookup_rev_req		depth=32
 
 	static stream<fourTuple>				sLookup2txEng_rev_rsp("sLookup2txEng_rev_rsp");
 	#pragma HLS STREAM variable=sLookup2txEng_rev_rsp		depth=4

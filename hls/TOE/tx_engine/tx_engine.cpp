@@ -569,10 +569,11 @@ void txEng_metaLoader(
 							txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd+1, 1, 0, true, true));
 #endif						
 					}
-
+#ifndef __SYNTHESIS__
 					std::cout << "Generating a FIN packet rt_count: "<< std::dec << ml_curEvent.rt_count << "\tat " << simCycleCounter << std::endl ;
 					std::cout << "\ttxSar.app " << std::dec << txSar.app << "\ttxSar.not_ackd " << txSar.not_ackd(WINDOW_BITS-1, 0) << "\tmeta.seqNumb " << meta.seqNumb(WINDOW_BITS-1, 0) << std::endl;
 					std::cout << "\ttxSar.app " << std::hex << txSar.app << "\ttxSar.not_ackd " << txSar.not_ackd(WINDOW_BITS-1, 0) << "\tmeta.seqNumb " << meta.seqNumb(WINDOW_BITS-1, 0) << std::endl << std::endl;
+#endif
 #if (!TCP_NODELAY)
 					// Check if there is a FIN to be sent
 					if (meta.seqNumb(WINDOW_BITS-1, 0) == txSar.app) 
@@ -1111,7 +1112,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				stream<txTxSarReply>&			txSar2txEng_upd_rsp,
 				stream<axiWord>&				txBufferReadData_unaligned,
 #if (TCP_NODELAY)
-				stream<axiWord>&				txApp2txEng_data_stream,
+				stream<axiWord>&				txApp2txEng2PseudoHeader,
 #endif
 #if (STATISTICS_MODULE)
 				stream<txStatsUpdate>&  		txEngStatsUpdate,
@@ -1161,11 +1162,11 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 	#pragma HLS DATA_PACK variable=txEng_tcp_level_packet
 	
 	static stream<fourTuple> 		txEng_tupleShortCutFifo("txEng_tupleShortCutFifo");
-	#pragma HLS stream variable=txEng_tupleShortCutFifo depth=2
+	#pragma HLS stream variable=txEng_tupleShortCutFifo depth=4
 	#pragma HLS DATA_PACK variable=txEng_tupleShortCutFifo
 
 	static stream<bool>				txEng_isLookUpFifo("txEng_isLookUpFifo");
-	#pragma HLS stream variable=txEng_isLookUpFifo depth=4
+	#pragma HLS stream variable=txEng_isLookUpFifo depth=32
 
 	static stream<twoTuple>			txEng_ipTupleFifo("txEng_ipTupleFifo");
 	#pragma HLS stream variable=txEng_ipTupleFifo depth=4
@@ -1243,7 +1244,7 @@ void tx_engine(	stream<extendedEvent>&			eventEng2txEng_event,
 				memAccessBreakdown,
 	#if (TCP_NODELAY)
 				txEng_isDDRbypass,
-				txApp2txEng_data_stream,
+				txApp2txEng2PseudoHeader,
 	#endif
 				txBufferReadData_aligned);
 
