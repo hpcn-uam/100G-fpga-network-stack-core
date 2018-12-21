@@ -50,22 +50,28 @@ module tcp_checksum_axis (
 );
 
 
-    wire [ 15:  0]              result_computation_i;
-    reg  [ 15:  0]              previous_computation = 16'h0;
-
+    reg  [ 15:  0]              prevWord0_r = 16'h0;
+    reg  [ 15:  0]              prevWord1_r = 16'h0;
+    wire [ 15:  0]              ResWord0_w  ;
+    wire [ 15:  0]              ResWord1_w  ;
+    wire [ 15:  0]              result      ;
 
     /* Stage 0*/
-    
-    reg [511:  0]               data_r;
+
+    reg                         internal_ready = 1'b1;
+    integer                     i;
+    wire         [ 16 :  0]     final_add_r;
+    wire         [ 16 :  0]     final_add_o;
+
+    reg          [511 :  0]     data_r;
     reg                         valid_r;
     reg                         ready_r;
     reg                         last_r;
-    integer                     i;
 
     /* If the channel is busy clear s_ready*/
-    assign S_AXIS_TREADY = !M_AXIS_TVALID | M_AXIS_TREADY;
+    assign S_AXIS_TREADY = (!M_AXIS_TVALID || M_AXIS_TREADY) && internal_ready;
 
-    /* Register data in and verify keep signal to ensure that only the valid data is taken into account */
+    /* Register input data and verify keep signal to ensure that only the valid data is taken into account */
     always @(posedge clk) begin
       for (i = 0 ; i < 64 ; i=i+1) begin
         if (S_AXIS_TKEEP[i]) begin
@@ -80,15 +86,18 @@ module tcp_checksum_axis (
       last_r    <= S_AXIS_TLAST;
     end
 
+
     /* Register the output of the checksum computation, that it is the current checksum
        and clear it when the packet finishes*/
     always @(posedge clk) begin
       if (valid_r && ready_r) begin
         if (last_r) begin
-          previous_computation <= 16'h0;                        
+          prevWord0_r     <= 16'h0;
+          prevWord1_r     <= 16'h0;                      
         end
         else begin
-          previous_computation <= result_computation_i;
+          prevWord0_r     <= ResWord0_w;
+          prevWord1_r     <= ResWord1_w;
         end
       end
     end
@@ -100,23 +109,38 @@ module tcp_checksum_axis (
         M_AXIS_TVALID   <= 1'b0;
       end
       else begin
-        M_AXIS_TVALID <= M_AXIS_TVALID & !M_AXIS_TREADY; 
+        M_AXIS_TVALID   <= M_AXIS_TVALID & !M_AXIS_TREADY; 
         if (valid_r && ready_r && last_r) begin
-          M_AXIS_TDATA    <= ~result_computation_i;
+          M_AXIS_TDATA    <= ~result;
           M_AXIS_TVALID   <= 1'b1;
         end
       end
     end
 
+    /* Manage internal_ready */
+    always @(posedge clk) begin
+      if (S_AXIS_TVALID && S_AXIS_TREADY &&S_AXIS_TLAST) begin
+        internal_ready <= 1'b0;
+      end
+      else if (M_AXIS_TVALID && M_AXIS_TREADY) begin
+        internal_ready <= 1'b1;
+      end
+    end
 
-    cksum_528_r03 #(
-      .REGISTER_INPUT_DATA(               0)
-    )
-    checksum_i ( 
-      .SysClk_in   (                    clk),
-      .PktData     (                 data_r),
-      .pre_cks     (   previous_computation),
-      .ChksumFinal (   result_computation_i)
+
+    checksumRed34to2 checksumRed34to2_i (
+      .clk         (           clk),
+      .currentData (        data_r),
+
+      .prevWord0   (   prevWord0_r),
+      .prevWord1   (   prevWord1_r),
+      .ResWord0    (    ResWord0_w),
+      .ResWord1    (    ResWord1_w)
     );
+
+    assign  final_add_r  = ResWord0_w + ResWord1_w;  
+    assign  final_add_o  = ResWord0_w + ResWord1_w + 1;  
+
+    assign result = final_add_r[16] ? final_add_o : final_add_r;
 
 endmodule
