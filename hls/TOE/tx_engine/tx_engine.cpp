@@ -426,7 +426,9 @@ void txEng_metaLoader(
 					}
 					ml_sarLoaded = true;
 					txSar_r = txSar;
+#if (STATISTICS_MODULE)						
 					txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,true)); // Update Statistics retransmission
+#endif				
 				}
 				break;
 			case ACK:
