@@ -238,9 +238,8 @@ void genInitARP (
 			break;
 		case GEN_IP:
 			ip_aux =  (ip_lsb,myIpAddress(23,0));
-			if (ip_lsb != myIpAddress(31,24)){
-				macIpEncodeOut.write(ip_aux);
-			}
+			macIpEncodeOut.write(ip_aux);			// Support for Gratuitous ARP
+
 			if (ip_lsb == 0xFF){
 				gia_fsm_state = CONSUME;
 			}
