@@ -27,45 +27,38 @@ distclean: clean
 
 TOE_hls_prj: $(shell find $(TOESCR) -type f) \
 			 $(TCLDIR)/toe_script.tcl
-	rm -rf 	projects/TOE_hls_prj
+	rm -rf 	TOE_hls_prj
 	vivado_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(project)
-	#mv TOE_hls_prj projects
 
 IPERF2_TCP_hls_prj: $(shell find $(IPERFSRC) -type f) \
 			 $(TCLDIR)/iperf2_tcp_script.tcl
-	rm -rf 	projects/IPERF2_TCP_hls_prj
+	rm -rf 	IPERF2_TCP_hls_prj
 	vivado_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(project)
-	#mv IPERF2_TPC_hls_prj projects
 
 ECHOSERVER_hls_prj: $(shell find $(ECHOSRC) -type f) \
 			 $(TCLDIR)/echo_server_script.tcl
-	rm -rf 	projects/ECHOSERVER_hls_prj
+	rm -rf 	ECHOSERVER_hls_prj
 	vivado_hls -f $(TCLDIR)/echo_server_script.tcl -tclargs $(project)
-	#mv ECHOSERVER_hls_prj projects 
 
 ARP_hls_prj: $(shell find $(ARPSRC) -type f) \
 			 $(TCLDIR)/arp_script.tcl
-	rm -rf 	projects/ARP_hls_prj
+	rm -rf 	ARP_hls_prj
 	vivado_hls -f $(TCLDIR)/arp_script.tcl -tclargs $(project)	
-	#mv ARP_hls_prj projects
 
 ETH_inserter_hls_prj: $(shell find $(ETHSRC) -type f) \
 			 $(TCLDIR)/ethernet_inserter_script.tcl
-	rm -rf 	projects/ETH_inserter_hls_prj
+	rm -rf 	ETH_inserter_hls_prj
 	vivado_hls -f $(TCLDIR)/ethernet_inserter_script.tcl -tclargs $(project)
-	#mv ETH_inserter_hls_prj projects		
 
 ICMP_hls_prj: $(shell find $(ICMPSRC) -type f) \
 			 $(TCLDIR)/icmp_script.tcl
-	rm -rf 	projects/ICMP_hls_prj
+	rm -rf 	ICMP_hls_prj
 	vivado_hls -f $(TCLDIR)/icmp_script.tcl -tclargs $(project)
-	#mv ICMP_hls_prj projects
 
 PKT_HANDLER_prj: $(shell find $(PKTSRC) -type f) \
 			 $(TCLDIR)/packet_handler_script.tcl
-	rm -rf 	projects/PKT_HANDLER_prj
+	rm -rf 	PKT_HANDLER_prj
 	vivado_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(project)
-	#mv PKT_HANDLER_prj projects
 
 .PHONY: list help
 list:
