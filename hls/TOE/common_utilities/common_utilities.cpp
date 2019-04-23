@@ -905,7 +905,7 @@ void DataBroadcast(
 //	static int byte_count =0;
 //	ap_uint<7>  bytes;
 
-	if (!in.empty()) {
+	if (!in.empty() && !out1.full() && !out2.full()) {
 		in.read(currWord);
 		out1.write(currWord);
 		out2.write(currWord);
