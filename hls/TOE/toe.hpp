@@ -66,7 +66,7 @@ static const ap_uint<16> MSS=4096; //536
 static const uint8_t WINDOW_SCALE_BITS = 2;
 
 // Statistics such as number of packets, bytes and retransmissions are implemented
-#define STATISTICS_MODULE 1
+#define STATISTICS_MODULE 0
 
 // If the window scale option is enable the the MAX session have to be computed
 #if (WINDOW_SCALE)
