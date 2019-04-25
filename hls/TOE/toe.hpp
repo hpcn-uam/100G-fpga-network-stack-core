@@ -76,14 +76,14 @@ static const uint16_t WINDOW_BITS=(16+WINDOW_SCALE_BITS);
 
 // If the Window is 64 KB there are 64K possible sessions.
 // Since we want to scale the window size the number of connection is reduced by the (2^WINDOW_SCALE_BITS)
-static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
+//static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
 
 #else
-static const uint8_t  WINDOW_BITS=16;
+//static const uint8_t  WINDOW_BITS=16;
 //static const uint16_t MAX_SESSIONS = 10000;
 #endif
 // Delete afterwards
-//static const uint16_t MAX_SESSIONS = 64;
+static const uint16_t MAX_SESSIONS = 1024;
 
 static const uint32_t BUFFER_SIZE=(1<<WINDOW_BITS);
 static const ap_uint<WINDOW_BITS> CONGESTION_WINDOW_MAX = (BUFFER_SIZE-2048);
