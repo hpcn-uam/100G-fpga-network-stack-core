@@ -171,7 +171,7 @@ int open_file (
 
 	/* Read packets from pcapfile */
 	if(pcap_open (file2load,ethernet)) {
-		cout << "Error opening the input file"<< endl;
+		cout << "Error opening the input file with name: " << file2load << endl;
 		return -1;
 	}
 	//else
@@ -317,7 +317,6 @@ int stream2pcap(
 		file_open = false;
 	}
 
-
-
+	return 0;
 
 }

@@ -80,6 +80,7 @@ int pcap_open (char *path, bool ethernet)
 
 void pcap_close ()
 {
+  file_read = 0; // Releasing locking to read new file
   munmap(memfile, sr.st_size);
   close (file_read);
 }
