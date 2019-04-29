@@ -54,10 +54,6 @@ struct ipMetaData {
  *
  */
 void icmp_server(
-			stream<axiWord>&			dataIn,
-			stream<ap_uint<16> >&		input_icmp_checksum,
-			stream<ap_uint<16> >&		output_icmp_checksum,
-			ap_uint<32>&				myIpAddress,
-			stream<axiWord>&			inputIcmp2checksum,
-			stream<axiWord>&			outputIcmp2checksum,
-			stream<axiWord>&			dataOut);
+            stream<axiWord>&            dataIn,
+            ap_uint<32>&                myIpAddress,
+            stream<axiWord>&            dataOut);
