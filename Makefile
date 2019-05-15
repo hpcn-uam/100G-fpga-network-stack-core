@@ -6,11 +6,12 @@ ARPSRC=$(TOPDIR)/hls/arp_server
 ETHSRC=$(TOPDIR)/hls/ethernet_inserter
 ICMPSRC=$(TOPDIR)/hls/icmp_server
 PKTSRC=$(TOPDIR)/hls/packet_handler
+USRSRC=$(TOPDIR)/hls/user_abstraction
 TCLDIR=$(TOPDIR)/scripts
 
 
 project = TOE_hls_prj IPERF2_TCP_hls_prj ECHOSERVER_hls_prj ARP_hls_prj \
-	      ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj
+	      ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj userAbstraction_prj
 
 all: build
 	
@@ -59,6 +60,11 @@ PKT_HANDLER_prj: $(shell find $(PKTSRC) -type f) \
 			 $(TCLDIR)/packet_handler_script.tcl
 	rm -rf 	PKT_HANDLER_prj
 	vivado_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(project)
+
+userAbstraction_prj: $(shell find $(USRSRC) -type f) \
+			 $(TCLDIR)/userAbstraction.tcl
+	rm -rf 	userAbstraction_prj
+	vivado_hls -f $(TCLDIR)/userAbstraction.tcl -tclargs $(project)	
 
 .PHONY: list help
 list:

@@ -83,7 +83,7 @@ static const uint16_t WINDOW_BITS=(16+WINDOW_SCALE_BITS);
 //static const uint16_t MAX_SESSIONS = 10000;
 #endif
 // Delete afterwards
-static const uint16_t MAX_SESSIONS = 1024;
+static const uint16_t MAX_SESSIONS = 64;
 
 static const uint32_t BUFFER_SIZE=(1<<WINDOW_BITS);
 static const ap_uint<WINDOW_BITS> CONGESTION_WINDOW_MAX = (BUFFER_SIZE-2048);
@@ -193,6 +193,10 @@ struct ipTuple
 {
 	ap_uint<32>	ip_address;
 	ap_uint<16>	ip_port;
+	ipTuple() {}
+	ipTuple(ap_uint<32> a , ap_uint<16> p)
+		: ip_address(a), ip_port(p) {}
+
 };
 
 struct sessionLookupQuery
