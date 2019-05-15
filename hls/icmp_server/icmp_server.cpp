@@ -174,7 +174,7 @@ void icmp_server(
 
             currWord.data( 71, 64) = 128;                                   // IP time to live
             currWord.data( 95, 72) = ICMP_PROTOCOL;                         // IP protocol
-            currWord.data( 95, 80) = 0;                                     // IP checksum
+            currWord.data( 95, 80) = 0;                                     // clear IP checksum, it is inserted later
             currWord.data(127, 96) = prevWord.data(159,128);                
             currWord.data(159,128) = prevWord.data(127, 96);                // swap IPs
 
@@ -182,12 +182,9 @@ void icmp_server(
                 auxIPheader(159-m*8,152-m*8) = currWord.data((m*8)+7,m*8);
             }
 
-            auxInchecksum = computeCheckSum20B(auxIPheader);
-            currWord.data( 95, 80) = (auxInchecksum(7,0),auxInchecksum(15,8));          // insert the proper IP checksum
-
             icmpChecksumTmp = icmpChecksum(15,0) + icmpChecksum.bit(16);
             currWord.data(167,160) = ECHO_REPLY;
-            currWord.data(191,176) = (icmpChecksumTmp(7,0),icmpChecksumTmp(15,8));     // Insert new checksum
+            currWord.data(191,176) = (icmpChecksumTmp(7,0),icmpChecksumTmp(15,8));     // Insert ICMP checksum
 
             if (prevWord.last)
                 aiFSMState = READ_PACKET;
