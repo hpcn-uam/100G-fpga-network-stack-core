@@ -27,6 +27,9 @@ void manageActiveConnections (
                     stream<ipTuple>&                openConnection, 
                     stream<openStatus>&             openConStatus,
                     stream<ap_uint<16> >&           closeConnection,
+                    stream<txApp_client_status>&    txAppNewClientNoty,
+                    stream<ap_uint<16> >&           userID,
+                    stream<ap_uint<16> >&           toeID,
                     userRegs&                       settings_regs)
 {
 #pragma HLS PIPELINE II=1
@@ -36,10 +39,13 @@ void manageActiveConnections (
     static oc_states oc_fsm_state = WAIT_PULSE;
     static ap_uint< 1>  openConn_r = 1;
     static ap_uint< 1>  closeConn_r = 1;
-    static ap_uint<16>  memoryIDtranslator[MAX_SESSIONS];
+    static ap_uint<16>  translateTable[MAX_SESSIONS];
+//#pragma HLS DEPENDENCE variable=translateTable inter false
+#pragma HLS RESOURCE variable=translateTable core=RAM_2P_BRAM
     
-    openStatus          requestStatus;
-    
+    openStatus              requestStatus;
+    txApp_client_status     rx_client_notification;
+    ap_uint<16>             currUserID;
     settings_regs.maxConnections = MAX_SESSIONS;
 
     switch (oc_fsm_state) {
@@ -48,6 +54,14 @@ void manageActiveConnections (
                 oc_fsm_state = ISSUE_REQUEST;
             else if (!closeConn_r && settings_regs.closeConn)
                 oc_fsm_state = CLOSE_CNN;
+            else if (!txAppNewClientNoty.empty()){
+                txAppNewClientNoty.read(rx_client_notification);
+                translateTable[rx_client_notification.sessionID] = rx_client_notification.sessionID;
+            }
+            else if (!userID.empty()){
+                userID.read(currUserID);
+                toeID.write(translateTable[currUserID]);
+            }
             break;
         case ISSUE_REQUEST :
             openConnection.write(ipTuple(settings_regs.dstIP,settings_regs.dstPort));
@@ -57,13 +71,13 @@ void manageActiveConnections (
             if (!openConStatus.empty()){
                 openConStatus.read(requestStatus);
                 if (requestStatus.success){
-                    memoryIDtranslator[settings_regs.connID] = requestStatus.sessionID;
+                    translateTable[settings_regs.connID] = requestStatus.sessionID;
                 }
                 oc_fsm_state = WAIT_PULSE;
             }
             break;
         case CLOSE_CNN:
-            closeConnection.write(memoryIDtranslator[settings_regs.connID]);
+            closeConnection.write(translateTable[settings_regs.connID]);
             oc_fsm_state = WAIT_PULSE;
             break;   
         default :
@@ -72,11 +86,11 @@ void manageActiveConnections (
     }
     openConn_r = settings_regs.openConn;
     closeConn_r = settings_regs.closeConn;
+
 }
 void managePasiveConnections(    
                 stream<ap_uint<16> >&           listenPort, 
-                stream<listenPortStatus>&       listenPortRes,
-                stream<txApp_client_status>&    txAppNewClientNoty)
+                stream<listenPortStatus>&       listenPortRes)
 {
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -90,16 +104,10 @@ void managePasiveConnections(
     static ap_uint<16>      listen_port;
     
     listenPortStatus        listen_rsp;
-    txApp_client_status     rx_client_notification;
     appNotification         notification;
     axiWord                 currWord;
 
     static ap_uint<16>      connectionID=0;
-
-    if (!txAppNewClientNoty.empty()){
-        txAppNewClientNoty.read(rx_client_notification);
-    }
-
 
     switch (op_fsm_state){
         case OPEN_PORT:
@@ -182,6 +190,7 @@ void consumeTOEtoUser(  /*TOE interface */
 void countSegmentBytes (
                         stream<axiWordUser>&            txUsr2Shell,
                         stream<axiWord>&                txUsrData_i,
+                        stream<ap_uint<16> >&           userID,
                         stream<txMessageMetaData>&      usrMsgMetaData){
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -189,32 +198,34 @@ void countSegmentBytes (
 
     static ap_uint< 7>  wordCounter = 0;
     static ap_uint<16>  connID;
-    static bool         saveID = true;
+    static bool         issueRequest = true;
     ap_uint<1>          last = 0;
     axiWordUser         currWord;
 
     if(!txUsr2Shell.empty()){
         txUsr2Shell.read(currWord);
-        if (saveID){
-            connID  = currWord.user;
-            saveID  = false;
+        if (issueRequest){
+            userID.write(currWord.user);
+            //connID  = currWord.user;
+            issueRequest  = false;
         }
         if ((wordCounter == ((MAXIMUM_SEGMENT_SIZE/64)-2) && ~currWord.last) || currWord.last){
             usrMsgMetaData.write(txMessageMetaData(wordCounter+1,connID));
             last = 1;
             wordCounter = 0;
-            saveID  = true;
+            issueRequest  = true;
         }
         else
             wordCounter++;
 
-        txUsrData_i.write(axiWord(currWord.data,currWord.keep,last));
+        txUsrData_i.write(axiWord(currWord.data,/*currWord.keep*/0xFFFFFFFFFFFFFFFF,last)); // TODO the keep is fixed but we need to count the bytes in the last transaction
     }
 }
 
 void Abstraction2TOE (
                     stream<axiWord>&                txUsrData_i,
                     stream<txMessageMetaData>&      usrMsgMetaData,
+                    stream<ap_uint<16> >&           toeID,
                     stream<appTxMeta>&              app2TOEReqMetaData,
                     stream<appTxRsp>&               TOE2appReqMetaDataRsp,
                     stream<axiWord>&                app2TOEData){
@@ -224,14 +235,16 @@ void Abstraction2TOE (
     enum a2tStates {WAIT_USER_DATA, WAIT_TOE_RESPONSE, FORWARD_DATA, RETRY_SPACE};
     static a2tStates a2tFSMState = WAIT_USER_DATA;
     static txMessageMetaData userMsg;
-    appTxRsp toeSpaceResponse;
-    axiWord  currWord;
+    appTxRsp        toeSpaceResponse;
+    axiWord         currWord;
+    ap_uint<16>     currTOEUser;
 
     switch (a2tFSMState){
         case WAIT_USER_DATA:
-            if (!usrMsgMetaData.empty()){
+            if (!usrMsgMetaData.empty() && !toeID.empty()){
                 usrMsgMetaData.read(userMsg);
-                app2TOEReqMetaData.write(appTxMeta(userMsg.connID,userMsg.words*64));
+                toeID.read(currTOEUser);
+                app2TOEReqMetaData.write(appTxMeta(currTOEUser,userMsg.words*64));
                 a2tFSMState = WAIT_TOE_RESPONSE;
             }
             break;
@@ -339,10 +352,16 @@ void user_abstraction(
     static stream<axiWord> txUsrData_i("txUsrData_i");
     #pragma HLS STREAM variable=txUsrData_i depth=512
     #pragma HLS DATA_PACK variable=txUsrData_i
+    
+    static stream<ap_uint<16> > userID_i("userID_i");
+    #pragma HLS STREAM variable=userID_i depth=16
 
-    static stream<txMessageMetaData> usrMsgMetaData("usrMsgMetaData");
-    #pragma HLS STREAM variable=usrMsgMetaData depth=16
-    #pragma HLS DATA_PACK variable=usrMsgMetaData
+    static stream<ap_uint<16> > toeID_i("toeID_i");
+    #pragma HLS STREAM variable=toeID_i depth=16    
+
+    static stream<txMessageMetaData> usrMsgMetaData_i("usrMsgMetaData_i");
+    #pragma HLS STREAM variable=usrMsgMetaData_i depth=16
+    #pragma HLS DATA_PACK variable=usrMsgMetaData_i
 
     consumeTOEtoUser(  /*TOE interface */              
                         rxAppNotification, 
@@ -355,23 +374,27 @@ void user_abstraction(
     countSegmentBytes (
                         txUsr2Shell,
                         txUsrData_i,
-                        usrMsgMetaData);
+                        userID_i,
+                        usrMsgMetaData_i);
 
     Abstraction2TOE (
                         txUsrData_i,
-                        usrMsgMetaData,
+                        usrMsgMetaData_i,
+                        toeID_i,
                         txAppDataReqMeta,
                         txAppDataReqStatus,
                         txAppData_to_TOE);
 
     managePasiveConnections(    
                         listenPortReq, 
-                        listenPortRes,
-                        txAppNewClientNoty);
+                        listenPortRes);
 
     manageActiveConnections ( 
                         txApp_openConnection, 
                         txApp_openConnStatus,
                         closeConnection,
+                        txAppNewClientNoty,
+                        userID_i,
+                        toeID_i,
                         settings_regs);
 }
