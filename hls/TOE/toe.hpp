@@ -79,7 +79,7 @@ static const uint16_t WINDOW_BITS=(16+WINDOW_SCALE_BITS);
 //static const uint16_t MAX_SESSIONS = (65536/(1<<WINDOW_SCALE_BITS)/(1+!RX_DDR_BYPASS));
 
 #else
-//static const uint8_t  WINDOW_BITS=16;
+static const uint8_t  WINDOW_BITS=16;
 //static const uint16_t MAX_SESSIONS = 10000;
 #endif
 // Delete afterwards
