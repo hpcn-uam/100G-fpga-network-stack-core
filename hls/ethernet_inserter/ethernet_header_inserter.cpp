@@ -35,8 +35,8 @@ void broadcaster_and_mac_request(
 						stream<ap_uint<32> >&			arpTableRequest,				
 						stream<axiWord>&				ip_header_out,
 						stream<axiWord>&				no_ip_header_out,
-						ap_uint<32>						regSubNetMask,
-						ap_uint<32>						regDefaultGateway)
+						ap_uint<32>&					regSubNetMask,
+						ap_uint<32>&					regDefaultGateway)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
@@ -80,7 +80,7 @@ void handle_output(
 						stream<axiWord>&				ip_header_checksum,
 						stream<axiWord>&				no_ip_header_out,
 
-						ap_uint<48>						myMacAddress,
+						ap_uint<48>&					myMacAddress,
 
 						stream<axiWord>&				dataOut
 						
@@ -306,9 +306,9 @@ void ethernet_header_inserter(
 					stream<arpTableReply>&		arpTableReplay,					// ARP cache replay
 					stream<ap_uint<32> >&		arpTableRequest,				// ARP cache request
 					
-					ap_uint<48>					myMacAddress,				// Server MAC address
-					ap_uint<32>					regSubNetMask,				// Server subnet mask
-					ap_uint<32>					regDefaultGateway)			// Server default gateway
+					ap_uint<48>&				myMacAddress,				// Server MAC address
+					ap_uint<32>&				regSubNetMask,				// Server subnet mask
+					ap_uint<32>&				regDefaultGateway)			// Server default gateway
 {
 
 #pragma HLS DATAFLOW
