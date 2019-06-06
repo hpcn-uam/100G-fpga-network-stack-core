@@ -54,7 +54,7 @@ void arp_pkg_receiver(
 		arpDataIn.read(currWord);
 
 		if (wordCount==0) {
-			meta.srcMac  		= currWord.data(95, 48);
+			meta.srcMac  		= currWord.data( 95, 48);
 			meta.ethType 		= currWord.data(111, 96);
 			meta.hwType 		= currWord.data(127, 112);
 			meta.protoType 		= currWord.data(143, 128);
@@ -62,7 +62,7 @@ void arp_pkg_receiver(
 			meta.protoLen 		= currWord.data(159, 152);
 			opCode 				= currWord.data(175, 160);
 			meta.hwAddrSrc 		= currWord.data(223, 176);
-			meta.protoAddrSrc 	= currWord.data(254, 224);
+			meta.protoAddrSrc 	= currWord.data(255, 224);
 			protoAddrDst 		= currWord.data(335, 304);
 
 			if (currWord.last == 1) {
