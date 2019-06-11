@@ -196,7 +196,7 @@ void countSegmentBytes (
 #pragma HLS INLINE off
 
 
-    static ap_uint< 7>  wordCounter = 0;
+    static ap_uint<11>  byteCounter = 0;
     static ap_uint<16>  connID;
     static bool         issueRequest = true;
     ap_uint<1>          last = 0;
@@ -206,19 +206,22 @@ void countSegmentBytes (
         txUsr2Shell.read(currWord);
         if (issueRequest){
             userID.write(currWord.user);
-            //connID  = currWord.user;
+            connID  = currWord.user;
             issueRequest  = false;
         }
-        if ((wordCounter == ((MAXIMUM_SEGMENT_SIZE/64)-2) && ~currWord.last) || currWord.last){
-            usrMsgMetaData.write(txMessageMetaData(wordCounter+1,connID));
+        if ((byteCounter >= (MAXIMUM_SEGMENT_SIZE-64) && ~currWord.last) || currWord.last){
+            ap_uint<11> aux_sum = byteCounter + keep2len(currWord.keep);
+            cout << "countSegmentBytes " << dec << aux_sum << endl;
+            usrMsgMetaData.write(txMessageMetaData(aux_sum,connID));
             last = 1;
-            wordCounter = 0;
+            byteCounter   = 0;
             issueRequest  = true;
         }
-        else
-            wordCounter++;
+        else{
+            byteCounter += 64;
+        }
 
-        txUsrData_i.write(axiWord(currWord.data,/*currWord.keep*/0xFFFFFFFFFFFFFFFF,last)); // TODO the keep is fixed but we need to count the bytes in the last transaction
+        txUsrData_i.write(axiWord(currWord.data,currWord.keep,last)); 
     }
 }
 
@@ -244,8 +247,9 @@ void Abstraction2TOE (
             if (!usrMsgMetaData.empty() && !toeID.empty()){
                 usrMsgMetaData.read(userMsg);
                 toeID.read(currTOEUser);
-                app2TOEReqMetaData.write(appTxMeta(currTOEUser,userMsg.words*64));
+                app2TOEReqMetaData.write(appTxMeta(currTOEUser,userMsg.bytes));
                 a2tFSMState = WAIT_TOE_RESPONSE;
+                cout << "Abstraction2TOE " << dec << userMsg.bytes << endl;
             }
             break;
         case WAIT_TOE_RESPONSE:
@@ -266,7 +270,7 @@ void Abstraction2TOE (
             }
             break;
         case RETRY_SPACE:
-            app2TOEReqMetaData.write(appTxMeta(userMsg.connID,userMsg.words*64));
+            app2TOEReqMetaData.write(appTxMeta(userMsg.connID,userMsg.bytes));
             a2tFSMState = WAIT_TOE_RESPONSE;
             break;
         default:

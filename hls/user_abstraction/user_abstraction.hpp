@@ -21,6 +21,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>
 ************************************************/
 #include "../TOE/toe.hpp"
+#include "../TOE/common_utilities/common_utilities.hpp"
 #include <iostream>
 
 using namespace hls;
@@ -53,11 +54,11 @@ typedef axisUser<ETH_INTERFACE_WIDTH,16> axiWordUser;
 
 
 struct txMessageMetaData{
-     ap_uint< 7>    words;
+     ap_uint<11>    bytes;
      ap_uint<16>    connID;
      txMessageMetaData(){}
-     txMessageMetaData(ap_uint< 7> l, ap_uint<16>  id)
-          : words(l), connID(id) {}
+     txMessageMetaData(ap_uint< 11> l, ap_uint<16>  id)
+          : bytes(l), connID(id) {}
 };
 
 
