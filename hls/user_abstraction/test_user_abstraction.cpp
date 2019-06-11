@@ -60,11 +60,13 @@ int main()
             currData.keep = 0xFFFFFFFFFFFFFFFF;
             currData.user = 0;
             currData.last = 0;
-            unsigned int word2send = 17;
+            unsigned int word2send = 25;
             for(unsigned int m=0; m < word2send; m++){
                 currData.data = m;
-                if (m == word2send-1)
+                if (m == word2send-1){
+                    currData.keep = 0x1;
                     currData.last = 1;
+                }
                 txUsr2Shell.write(currData);
             }
         }

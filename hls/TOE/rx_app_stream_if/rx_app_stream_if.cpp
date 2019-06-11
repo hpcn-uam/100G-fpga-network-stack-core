@@ -52,9 +52,6 @@ void rx_app_stream_if(stream<appReadRequest>&		appRxDataReq,
 {
 #pragma HLS PIPELINE II=1
 
-#pragma HLS DATA_PACK variable=rxSar2rxApp_upd_rsp
-#pragma HLS DATA_PACK variable=rxApp2rxSar_upd_req
-
 	static ap_uint<16>				rasi_readLength;
 	static ap_uint<2>				rasi_fsmState 	= 0;
 	appReadRequest					app_read_request;

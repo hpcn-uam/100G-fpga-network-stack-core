@@ -56,12 +56,6 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 #pragma HLS PIPELINE II=1
 //#pragma HLS INLINE
 
-#pragma HLS DATA_PACK variable=rxEng2timer_clearRetransmitTimer
-#pragma HLS DATA_PACK variable=txEng2timer_setRetransmitTimer
-#pragma HLS DATA_PACK variable=rtTimer2eventEng_setEvent
-#pragma HLS DATA_PACK variable=rtTimer2stateTable_releaseState
-#pragma HLS DATA_PACK variable=rtTimer2rxApp_notification
-
 	static retransmitTimerEntry retransmitTimerTable[MAX_SESSIONS];
 	#pragma HLS RESOURCE variable=retransmitTimerTable core=RAM_T2P_BRAM
 	#pragma HLS DATA_PACK variable=retransmitTimerTable
