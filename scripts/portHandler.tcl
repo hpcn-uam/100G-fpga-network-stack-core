@@ -2,7 +2,11 @@ open_project portHandler_prj
 
 set_top port_handler
 add_files hls/port_handler/port_handler.cpp
-#add_files -tb hls/user_abstraction/test_user_abstraction.cpp -cflags ""
+
+
+add_files -tb hls/port_handler/port_handler_tb.cpp -cflags ""
+add_files -tb hls/TOE/testbench/pcap.cpp -cflags ""
+add_files -tb hls/TOE/testbench/pcap2stream.cpp -cflags ""
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

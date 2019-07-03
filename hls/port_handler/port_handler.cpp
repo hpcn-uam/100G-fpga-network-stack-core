@@ -32,6 +32,43 @@ ap_uint<bitWidth> byteSwap(ap_uint<bitWidth> inputVector) {
 }
 
 
+
+
+/**
+ * @brief      Enable the tuser signal when the source port is in the proper range.
+ *             At this point the packets are at ip level
+ *
+ *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            -    
+ * |Version|  IHL  |Type of Service|          Total Length         |     0- 31  |    
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |    
+ * |         Identification        |Flags|      Fragment Offset    |    32- 63  |    
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |    
+ * |  Time to Live |    Protocol   |         Header Checksum       |    64- 95   \   
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+              IP 
+ * |                       Source Address                          |    96-127   /   
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |    
+ * |                    Destination Address                        |   128-159  |    
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |    
+ * |          Source Port          |        Destination Port       |   160-191  |        
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            -        
+ * |                        Sequence Number                        |   192-223  |        
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |        
+ * |                     Acknowledgment Number                     |   224-255   \       
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+              TCP    
+ * | Offset|  Res. |     Flags     |             Window            |   256-287   /       
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |        
+ * |            Checksum           |         Urgent Pointer        |   288-319  |        
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            |        
+ * |                    Options                    |    Padding    |   320-351  |        
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+            -        
+ *
+ * @param      dataIn        The data in
+ * @param      dataOut       The data out
+ * @param      portRangeMin  The port range minimum
+ * @param      portRangeMax  The port range maximum
+ */
+
 void port_handler(
             stream<axiWord>&            dataIn,
             stream<axiWordOut>&         dataOut,
@@ -53,14 +90,15 @@ void port_handler(
     static ap_uint<1>  destination;
     axiWord     currWord;
     axiWordOut  sendWord;
-    ap_uint<16> dstPort;
+    ap_uint<16> srcPort;
 
     switch (ph_fsm_state){
         case FIRST_WORD :
             if (!dataIn.empty()){
                 dataIn.read(currWord);
-                dstPort = byteSwap<16>(currWord.data(191,176)); // Get destination port
-                destination = (portRangeMin <= dstPort && dstPort <=portRangeMax) ? 1 : 0;  // Check if the port falls into the range
+                srcPort = byteSwap<16>(currWord.data(175,160)); // Get destination port
+                destination = ((srcPort >= portRangeMin) && (srcPort <= portRangeMax)) ? 1 : 0;  // Check if the port falls into the range
+                //std::cout << "Port " << std::dec << srcPort << " dst " << destination << std::endl;
                 // Create the output word 
                 sendWord.data = currWord.data;
                 sendWord.keep = currWord.keep;
