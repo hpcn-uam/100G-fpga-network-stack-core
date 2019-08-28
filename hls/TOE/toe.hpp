@@ -142,7 +142,7 @@ static const ap_uint<32> TIME_120s		= (120000000.0/CLOCK_PERIOD/MAX_SESSIONS) + 
 #endif
 
 
-enum eventType {TX, RT, ACK, SYN, SYN_ACK, FIN, RST, ACK_NODELAY};
+enum eventType {TX, RT, ACK, SYN, SYN_ACK, FIN, RST, ACK_NODELAY, RT_CONT};
 /*
  * There is no explicit LISTEN state
  * CLOSE-WAIT state is not used, since the FIN is sent out immediately after we receive a FIN, the application is simply notified

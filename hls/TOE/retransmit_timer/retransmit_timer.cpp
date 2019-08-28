@@ -92,7 +92,7 @@ void retransmit_timer(	stream<rxRetransmitTimerUpdate>&	rxEng2timer_clearRetrans
 		currID = rt_position;
 
 		if (!txEng2timer_setRetransmitTimer.empty()) {
-			txEng2timer_setRetransmitTimer.read(set);
+			txEng2timer_setRetransmitTimer.read(set);		// TODO reply with set.sessionID-3 to avoid to make that computation here
 			currID = set.sessionID;
 			operationSwitch = 1;
 			if (set.sessionID-3 < rt_position && rt_position <= set.sessionID) {

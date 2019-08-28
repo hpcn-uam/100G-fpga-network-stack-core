@@ -348,14 +348,9 @@ void txEng_metaLoader(
 				break;
 #endif
 			case RT:
-				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) || ml_sarLoaded) {
-					if (!ml_sarLoaded) {
-						rxSar2txEng_rsp.read(rxSar);
-						txSar2txEng_upd_rsp.read(txSar);
-					}
-					else {
-						txSar = txSar_r;
-					}
+				if ((!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty())) {
+					rxSar2txEng_rsp.read(rxSar);
+					txSar2txEng_upd_rsp.read(txSar);
 
 					// Compute how many bytes have to be retransmitted, If the fin was sent, subtract 1 byte
 					currLength = txSar.usedLength_rst;
@@ -398,6 +393,7 @@ void txEng_metaLoader(
 							//txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar.not_ackd, 1));
 							ml_FsmState = 0;
 						}
+						ml_curEvent.type = RT_CONT;
 						ml_segmentCount++;
 					}
 					else {
@@ -431,6 +427,84 @@ void txEng_metaLoader(
 #endif				
 				}
 				break;
+
+			case RT_CONT:
+
+				// Compute how many bytes have to be retransmitted, If the fin was sent, subtract 1 byte
+				currLength = txSar_r.usedLength_rst;
+
+				meta.ackNumb = rxSar.recvd;
+				meta.seqNumb = txSar_r.ackd;
+				meta.window_size = rxSar.windowSize;	//Get our space, Advertise at least a quarter/half, otherwise 0
+				meta.ack = 1; // ACK is always set when session is established
+				meta.rst = 0;
+				meta.syn = 0;
+				meta.fin = 0;
+
+				// Construct address before modifying txSar_r.ackd
+				pkgAddr(31, 30) 			= (!RX_DDR_BYPASS);					// If DDR is not used in the RX start from the beginning of the memory
+				pkgAddr(30, WINDOW_BITS)  	= ml_curEvent.sessionID(13, 0);
+				pkgAddr(WINDOW_BITS-1, 0) 	= txSar_r.ackd(WINDOW_BITS-1, 0); //ml_curEvent.address;
+
+				// Decrease Slow Start Threshold, only on first RT from retransmitTimer
+				if (!ml_sarLoaded && (ml_curEvent.rt_count == 1)) {
+					if (currLength > (4*MSS)) {// max( FlightSize/2, 2*MSS) RFC:5681
+						slowstart_threshold = currLength/2;
+					}
+					else {
+						slowstart_threshold = (2 * MSS);
+					}
+					txEng2txSar_upd_req.write(txTxSarRtQuery(ml_curEvent.sessionID, slowstart_threshold));
+				}
+
+				// Since we are retransmitting from txSar_r.ackd to txSar_r.not_ackd, this data is already inside the usableWindow
+				// => no check is required
+				// Only check if length is bigger than MMS
+				if (currLength > MSS) {
+					// We stay in this state and sent immediately another packet
+					meta.length = MSS;
+					txSar_r.ackd += MSS;
+					txSar_r.usedLength_rst	-= MSS;	
+					// TODO replace with dynamic count, remove this
+					if (ml_segmentCount == 3) {
+						// Should set a probe or sth??
+						//txEng2txSar_upd_req.write(txTxSarQuery(ml_curEvent.sessionID, txSar_r.not_ackd, 1));
+						ml_FsmState = 0;
+					}
+					ml_segmentCount++;
+				}
+				else {
+					meta.length = currLength;
+					if (txSar_r.finSent) {			// In case a FIN was sent and not ack, has to be sent again 
+						ml_curEvent.type = FIN;
+					}
+					else {
+						// set RT here???
+						ml_FsmState = 0;
+					}
+				}
+
+				// Only send a packet if there is data
+				if (meta.length != 0) {
+					txBufferReadCmd.write(cmd_internal(pkgAddr, meta.length));
+					txEng_ipMetaFifoOut.write(meta.length);
+					txEng_tcpMetaFifoOut.write(meta);
+					txEng_isLookUpFifoOut.write(true);
+#if (TCP_NODELAY)
+					txEng_isDDRbypass.write(false);
+#endif
+					txEng2sLookup_rev_req.write(ml_curEvent.sessionID);
+					// Only set RT timer if we actually send sth
+					txEng2timer_setRetransmitTimer.write(txRetransmitTimerSet(ml_curEvent.sessionID));
+				}
+
+#if (STATISTICS_MODULE)						
+				txEngStatsUpdate.write(txStatsUpdate(ml_curEvent.sessionID,0,true)); // Update Statistics retransmission
+#endif				
+
+				break;
+
+
 			case ACK:
 			case ACK_NODELAY:
 				if (!rxSar2txEng_rsp.empty() && !txSar2txEng_upd_rsp.empty()) {
