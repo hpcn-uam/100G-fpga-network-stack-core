@@ -1,11 +1,8 @@
 BSD 3-Clause License
 
 Copyright (c) 2019, 
-
 Xilinx, Inc (xilinx.com) and
-
 HPCN Group, UAM Spain (hpcn-uam.es)
-
 Systems Group, ETH Zurich (systems.ethz.ch)
 
 All rights reserved.

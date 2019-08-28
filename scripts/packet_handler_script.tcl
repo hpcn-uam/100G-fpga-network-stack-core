@@ -1,9 +1,14 @@
-open_project PKT_HANDLER_prj
+# Get the root folder
+set root_folder [lindex $argv 2]
+# Get project name from the arguments
+set proj_name [lindex $argv 3]
+# Create project
+open_project ${proj_name}
 
 set_top packet_handler
 
-add_files hls/packet_handler/packet_handler.cpp
-add_files -tb hls/packet_handler/test_packet_hanlder.cpp
+add_files ${root_folder}/hls/packet_handler/packet_handler.cpp
+add_files -tb ${root_folder}/hls/packet_handler/test_packet_hanlder.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

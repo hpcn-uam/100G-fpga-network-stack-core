@@ -1,12 +1,18 @@
-open_project portHandler_prj
+# Get the root folder
+set root_folder [lindex $argv 2]
+# Get project name from the arguments
+set proj_name [lindex $argv 3]
+# Create project
+open_project ${proj_name}
+
 
 set_top port_handler
-add_files hls/port_handler/port_handler.cpp
+add_files ${root_folder}/hls/port_handler/port_handler.cpp
 
 
-add_files -tb hls/port_handler/port_handler_tb.cpp -cflags ""
-add_files -tb hls/TOE/testbench/pcap.cpp -cflags ""
-add_files -tb hls/TOE/testbench/pcap2stream.cpp -cflags ""
+add_files -tb ${root_folder}/hls/port_handler/port_handler_tb.cpp -cflags ""
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap.cpp -cflags ""
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap2stream.cpp -cflags ""
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

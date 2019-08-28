@@ -1,7 +1,12 @@
-open_project ARP_hls_prj
+# Get the root folder
+set root_folder [lindex $argv 2]
+# Get project name from the arguments
+set proj_name [lindex $argv 3]
+# Create project
+open_project ${proj_name}
 
 set_top arp_server
-add_files hls/arp_server/arp_server.cpp
+add_files ${root_folder}/hls/arp_server/arp_server.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

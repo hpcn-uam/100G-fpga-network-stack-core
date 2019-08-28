@@ -1,11 +1,17 @@
-open_project IPERF2_TCP_hls_prj
+# Get the root folder
+set root_folder [lindex $argv 2]
+# Get project name from the arguments
+set proj_name [lindex $argv 3]
+# Create project
+open_project ${proj_name}
+
 
 set_top iperf2_client
 
-add_files hls/iperf2_tcp/iperf_client.cpp
-add_files hls/TOE/common_utilities/common_utilities.cpp
+add_files ${root_folder}/hls/iperf2_tcp/iperf_client.cpp
+add_files ${root_folder}/hls/TOE/common_utilities/common_utilities.cpp
 
-add_files -tb hls/iperf2_tcp/test_iperf_client.cpp
+add_files -tb ${root_folder}/hls/iperf2_tcp/test_iperf_client.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado

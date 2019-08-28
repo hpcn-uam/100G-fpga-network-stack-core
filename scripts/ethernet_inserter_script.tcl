@@ -1,9 +1,14 @@
-open_project ETH_inserter_hls_prj
+# Get the root folder
+set root_folder [lindex $argv 2]
+# Get project name from the arguments
+set proj_name [lindex $argv 3]
+# Create project
+open_project ${proj_name}
 
 set_top ethernet_header_inserter
 
-add_files hls/ethernet_inserter/ethernet_header_inserter.cpp
-add_files -tb hls/ethernet_inserter/ethernet_header_inserter_test.cpp
+add_files ${root_folder}/hls/ethernet_inserter/ethernet_header_inserter.cpp
+add_files -tb ${root_folder}/hls/ethernet_inserter/ethernet_header_inserter_test.cpp
 
 open_solution "ultrascale_plus"
 set_part {xcvu9p-flga2104-2l-e} -tool vivado
