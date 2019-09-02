@@ -213,7 +213,7 @@ void genInitARP (
 #pragma HLS PIPELINE II=1
 #pragma INLINE off
 
-	enum gia_states {SETUP, WAIT_TIME, GEN_IP, CONSUME,FWD};
+	enum gia_states {SETUP, WAIT_TIME, GEN_IP, CONSUME,FWD, WAIT_CYCLES};
 	static gia_states gia_fsm_state = SETUP;
 #pragma HLS RESET variable=gia_fsm_state
 
@@ -240,22 +240,38 @@ void genInitARP (
 			ip_aux =  (ip_lsb,myIpAddress(23,0));
 			macIpEncodeOut.write(ip_aux);			// Support for Gratuitous ARP
 
-			if (ip_lsb == 0xFF){
-				gia_fsm_state = CONSUME;
-			}
-			ip_lsb++;
-			if (!macIpEncode_rsp_i.empty()){
-				macIpEncode_rsp_i.read(macEnc_i);
-				encode_rsp++;
-			}
-			break;
+            if (ip_lsb == 0xFF){
+                gia_fsm_state = CONSUME;
+            }
+            else {
+                gia_fsm_state = WAIT_CYCLES;
+                time_counter = 0;
+            }
+            ip_lsb++;
+            if (!macIpEncode_rsp_i.empty()){
+                macIpEncode_rsp_i.read(macEnc_i);
+                encode_rsp++;
+            }
+            break;
+        
+        case WAIT_CYCLES:
+            if (time_counter==5) {
+                gia_fsm_state = GEN_IP;
+            }
+            if (!macIpEncode_rsp_i.empty()){
+                macIpEncode_rsp_i.read(macEnc_i);
+                encode_rsp++;
+            }
+            time_counter++;
+            break;
+                          
 		case CONSUME:
 			if (!macIpEncode_rsp_i.empty()){
 				macIpEncode_rsp_i.read(macEnc_i);
-				encode_rsp++;
 				if (encode_rsp == 255) {
 					gia_fsm_state = FWD;
 				}
+				encode_rsp++;
 			}
 			break;	
 		case FWD: 
@@ -305,7 +321,6 @@ void arp_server(
   
   static stream<ap_uint<32> >   arpRequestMetaFifo("arpRequestMetaFifo");
 #pragma HLS STREAM variable=arpRequestMetaFifo depth=4
-  //#pragma HLS DATA_PACK variable=arpRequestMetaFifo
 
   static stream<arpTableEntry>    arpTableInsertFifo("arpTableInsertFifo");
 #pragma HLS STREAM variable=arpTableInsertFifo depth=4
@@ -316,7 +331,8 @@ void arp_server(
  	#pragma HLS STREAM variable=macIpEncode_i depth=4
 
  	static stream<arpTableReply> 		macIpEncode_rsp_i("macIpEncode_rsp_i");
- 	#pragma HLS STREAM variable=macIpEncode_rsp_i depth=4
+#pragma HLS STREAM variable=macIpEncode_rsp_i depth=4
+#pragma HLS DATA_PACK variable=macIpEncode_rsp_i
  	
 	genInitARP (
 		myIpAddress,
