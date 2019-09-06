@@ -57,7 +57,7 @@ module size_checker#
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TDATA" *)  
       input  wire              [511:0] S_AXIS_TDATA   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TKEEP" *)
-      input  wire               [63:0] S_AXIS_TSTRB   ,
+      input  wire               [63:0] S_AXIS_TKEEP   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TLAST" *) 
       input  wire                      S_AXIS_TLAST   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 S_AXIS TVALID" *) 
@@ -72,7 +72,7 @@ module size_checker#
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 M_AXIS TDATA" *)   
       output reg               [511:0] M_AXIS_TDATA   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 M_AXIS TKEEP" *)
-      output reg                [63:0] M_AXIS_TSTRB   ,
+      output reg                [63:0] M_AXIS_TKEEP   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 M_AXIS TLAST" *)
       output reg                       M_AXIS_TLAST   ,
       (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 M_AXIS TVALID" *)
@@ -92,15 +92,15 @@ module size_checker#
 
   always @(*) begin
     M_AXIS_TDATA      <= S_AXIS_TDATA;    
-    M_AXIS_TSTRB      <= S_AXIS_TSTRB;    
+    M_AXIS_TKEEP      <= S_AXIS_TKEEP;    
     M_AXIS_TLAST      <= S_AXIS_TLAST;    
     M_AXIS_TVALID     <= S_AXIS_TVALID;    
     M_AXIS_TDEST      <= S_AXIS_TDEST;    
     M_AXIS_TUSER      <= S_AXIS_TUSER;          
 
     if (S_AXIS_TVALID && S_AXIS_TREADY && S_AXIS_TLAST) begin         // one-transaction packet
-      if (first_transaction && ~S_AXIS_TSTRB[60]) begin
-        M_AXIS_TSTRB    <= {4'd0,{60{1'b1}}};                         // complete packet to the minimum size (60 bytes)
+      if (first_transaction && ~S_AXIS_TKEEP[59]) begin
+        M_AXIS_TKEEP    <= {4'd0,{60{1'b1}}};                         // complete packet to the minimum size (60 bytes)
       end
     end
   end
