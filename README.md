@@ -1,6 +1,6 @@
 # 100 GbE TCP offload Engine
 
-This repository contains the different parts of the 100 GbE TCP implementation for Xilinx FPGAs.
+This repository implements from OSI layer 3 to above and is part of Limago. To generate the complete stack please refer to [Limago](https://github.com/hpcn-uam/Limago)
 
 ## Prerequisites
 
