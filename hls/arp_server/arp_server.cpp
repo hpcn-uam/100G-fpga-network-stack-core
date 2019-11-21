@@ -1,5 +1,5 @@
 /************************************************
-Copyright (c) 2016, Xilinx, Inc.
+Copyright (c) 2019, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification, 
@@ -88,7 +88,9 @@ void arp_pkg_sender(
         stream<ap_uint<32> >&     arpRequestMetaFifo,
         stream<axiWord>&          arpDataOut,
         ap_uint<48>&			  myMacAddress,
-        ap_uint<32>&              myIpAddress) {
+        ap_uint<32>&              myIpAddress,
+        ap_uint<32>&              gatewayIP,
+        ap_uint<32>&              networkMask) {
 
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -100,7 +102,7 @@ void arp_pkg_sender(
   	static ap_uint<32>		inputIP;
   
   	axiWord sendWord;
-  
+  	ap_uint<32>             auxQueryIP;
   	switch (aps_fsmState) {
    		case ARP_IDLE:
 	    	if (!arpReplyMetaFifo.empty()){
@@ -113,6 +115,14 @@ void arp_pkg_sender(
 	    	}
     		break;
   		case ARP_SENTRQ:
+
+            if((inputIP & networkMask) == (myIpAddress & networkMask)){
+                auxQueryIP = inputIP;
+            }
+            else{
+                auxQueryIP = gatewayIP;
+            }
+
 			sendWord.data(47, 0)  	= BROADCAST_MAC;
 			sendWord.data(95, 48) 	= myMacAddress;			// Sorce MAC
 			sendWord.data(111, 96) 	= 0x0608;				// Ethertype
@@ -125,7 +135,7 @@ void arp_pkg_sender(
 			sendWord.data(223, 176) = myMacAddress;
 			sendWord.data(255, 224) = myIpAddress;			// MY_IP_ADDR;
 			sendWord.data(303, 256) = 0;					// Sought-after MAC pt.1
-			sendWord.data(335, 304) = inputIP;
+			sendWord.data(335, 304) = auxQueryIP;
 			sendWord.data(383, 336) = 0;					// Sought-after MAC pt.1
 			sendWord.data(511, 384) = 0x454546464F43;		// padding
 
@@ -169,7 +179,10 @@ void arp_table(
 		stream<arpTableEntry>& 		arpTableInsertFifo,
         stream<ap_uint<32> >& 		macIpEncode_req,
         stream<arpTableReply>& 		macIpEncode_rsp,
-        stream<ap_uint<32> >& 		arpRequestMetaFifo){
+        stream<ap_uint<32> >& 		arpRequestMetaFifo,
+        ap_uint<32>&                myIpAddress,
+        ap_uint<32>&                gatewayIP,
+        ap_uint<32>&                networkMask){
 
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
@@ -179,22 +192,27 @@ void arp_table(
 	#pragma HLS DEPENDENCE variable=arpTable inter false
 
 	ap_uint<32>			query_ip;
+	ap_uint<32>         auxIP;
 	arpTableEntry		currEntry;
 
 
-	if (!arpTableInsertFifo.empty())
-	{
+	if (!arpTableInsertFifo.empty()) {
 		arpTableInsertFifo.read(currEntry);
 		arpTable[currEntry.ipAddress(31,24)] = currEntry;
 	}
-	else if (!macIpEncode_req.empty())
-	{
+	else if (!macIpEncode_req.empty()) {
 		macIpEncode_req.read(query_ip);
-		currEntry = arpTable[query_ip(31,24)];
-		if (!currEntry.valid)
-		{
-			// send ARP request
-			arpRequestMetaFifo.write(query_ip);
+
+        /*Check whether the current IP belongs to the FPGA subnet, otherwise use gateway's IP*/
+        if((query_ip & networkMask) == (myIpAddress & networkMask))
+            auxIP = query_ip;
+        else
+            auxIP = gatewayIP;
+
+
+		currEntry = arpTable[auxIP(31,24)];
+		if (!currEntry.valid) {
+			arpRequestMetaFifo.write(query_ip);	// send ARP request
 		}
 		macIpEncode_rsp.write(arpTableReply(currEntry.macAddress, currEntry.valid));
 	}
@@ -298,14 +316,19 @@ void arp_server(
 		stream<axiWord>&          		arpDataOut,
 		stream<arpTableReply>&    		macIpEncode_rsp,
 		ap_uint<48>& 					myMacAddress,
-		ap_uint<32>& 					myIpAddress)	{
+		ap_uint<32>& 					myIpAddress,
+        ap_uint<32>&                    gatewayIP,
+        ap_uint<32>&                    networkMask)	{
 
 
 #pragma HLS INTERFACE ap_ctrl_none port=return
 #pragma HLS DATAFLOW
 
-#pragma HLS INTERFACE ap_stable register port=myMacAddress
-#pragma HLS INTERFACE ap_stable register port=myIpAddress
+#pragma HLS INTERFACE ap_none register port=myMacAddress
+#pragma HLS INTERFACE ap_none register port=myIpAddress
+#pragma HLS INTERFACE ap_none register port=gatewayIP
+#pragma HLS INTERFACE ap_none register port=networkMask
+
 
 #pragma HLS INTERFACE axis register both port=arpDataIn
 #pragma HLS INTERFACE axis register both port=arpDataOut
@@ -353,7 +376,9 @@ void arp_server(
   		arpRequestMetaFifo, 
   		arpDataOut, 
   		myMacAddress, 
-  		myIpAddress);
+  		myIpAddress,
+  		gatewayIP,
+        networkMask);
 
   	arp_table(
   		arpTableInsertFifo, 
@@ -364,5 +389,8 @@ void arp_server(
   		macIpEncode_req, 
   		macIpEncode_rsp, 
 #endif  		
-  		arpRequestMetaFifo);
+  		arpRequestMetaFifo,
+  		myIpAddress,
+  		gatewayIP,
+        networkMask);
 }
