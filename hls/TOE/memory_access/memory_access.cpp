@@ -655,7 +655,6 @@ void tx_Data_to_Memory(
 	static ap_uint<23> 		bytes_first_command;
 	static mmCmd 			command_i;
 	static ap_uint<64> 		keep_last_word;
-#pragma HLS DEPENDENCE variable=keep_last_word inter false
 
 	bool 					rxWrBreakDown;
 	ap_uint<WINDOW_BITS+1> 	buffer_overflow;
