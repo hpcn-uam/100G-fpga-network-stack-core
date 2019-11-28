@@ -669,8 +669,8 @@ enum txApp_error_msg {NO_ERROR, ERROR_NOCONNECTION, ERROR_NOSPACE, ERROR_WINDOW}
 struct appTxRsp
 {
 	ap_uint<16> 				length;
-	ap_uint<WINDOW_BITS> 		remaining_space;
 	txApp_error_msg				error;
+	ap_uint<WINDOW_BITS> 		remaining_space;
 	appTxRsp() {}
 	appTxRsp(ap_uint<16> len, ap_uint<WINDOW_BITS> rem_space, txApp_error_msg err)
 		:length(len), remaining_space(rem_space), error(err) {}

@@ -64,7 +64,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 	txSarEntry 				tmp_entry_read;
 	txTxSarReply 			tmp_replay;
 	ap_uint<WINDOW_BITS> 	minWindow;
-	ap_uint<30>				scaled_recv_window = 0;
+	ap_uint<WINDOW_BITS>    scaled_recv_window = 0;
 
 	// TX Engine
 	if (!txEng2txSar_upd_req.empty()) {
