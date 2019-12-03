@@ -1183,25 +1183,25 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	#pragma HLS DATA_PACK variable=rxEng_pseudo_packet_to_metadata
 
 	static stream<axiWord>		rxEng_tcp_payload("rxEng_tcp_payload");
-	#pragma HLS STREAM variable=rxEng_tcp_payload depth=256 //critical, store the payload until is forwarded or dropped
+	#pragma HLS STREAM variable=rxEng_tcp_payload depth=512 //critical, store the payload until is forwarded or dropped
 	#pragma HLS DATA_PACK variable=rxEng_tcp_payload
 
 #if (!RX_DDR_BYPASS)
 	static stream<axiWord> 					rxPkgDrop2rxMemWriter("rxPkgDrop2rxMemWriter");
-	#pragma HLS STREAM variable=rxPkgDrop2rxMemWriter depth=16
+	#pragma HLS STREAM variable=rxPkgDrop2rxMemWriter depth=512
 	#pragma HLS DATA_PACK variable=rxPkgDrop2rxMemWriter
 #endif
 
 	// Meta Streams/FIFOs
-	static stream<bool >			rxEng_VerifyChecksumDrop("rxEng_VerifyChecksumDrop");
-	#pragma HLS STREAM variable=rxEng_VerifyChecksumDrop depth=8
+	static stream<bool>			rxEng_VerifyChecksumDrop("rxEng_VerifyChecksumDrop");
+	#pragma HLS STREAM variable=rxEng_VerifyChecksumDrop depth=32
 
 	static stream<rxEngPktMetaInfo>		rxEngMetaInfoFifo("rxEngMetaInfoFifo");
 	#pragma HLS STREAM variable=rxEngMetaInfoFifo depth=8
 	#pragma HLS DATA_PACK variable=rxEngMetaInfoFifo
 
-	static stream<rxEngPktMetaInfo>		rxEngMetaInfoValid("rx_metaDataFifo_v");
-	#pragma HLS STREAM variable=rxEngMetaInfoValid depth=8
+	static stream<rxEngPktMetaInfo>		rxEngMetaInfoValid("rxEngMetaInfoValid");
+	#pragma HLS STREAM variable=rxEngMetaInfoValid depth=32
 	#pragma HLS DATA_PACK variable=rxEngMetaInfoValid
 
 	static stream<rxFsmMetaData>		rxEng_fsmMetaDataFifo("rxEng_fsmMetaDataFifo");
@@ -1217,10 +1217,10 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 	#pragma HLS DATA_PACK variable=rxEng_fsmEventFifo
 
 	static stream<bool>					rxEng_metaHandlerDropFifo("rxEng_metaHandlerDropFifo");
-	#pragma HLS STREAM variable=rxEng_metaHandlerDropFifo depth=8
+	#pragma HLS STREAM variable=rxEng_metaHandlerDropFifo depth=32
 
 	static stream<bool>					rxEng_fsmDropFifo("rxEng_fsmDropFifo");
-	#pragma HLS STREAM variable=rxEng_fsmDropFifo depth=8
+	#pragma HLS STREAM variable=rxEng_fsmDropFifo depth=32
 
 	static stream<appNotification> rx_internalNotificationFifo("rx_internalNotificationFifo");
 	#pragma HLS STREAM variable=rx_internalNotificationFifo depth=8 //This depends on the memory delay

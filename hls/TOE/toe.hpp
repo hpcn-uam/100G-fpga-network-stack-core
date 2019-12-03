@@ -312,7 +312,6 @@ struct rxTxSarQuery
 	ap_uint<16> 			sessionID;
 	ap_uint<32> 			ackd;
 	ap_uint<16> 			recv_window;
-	ap_uint<WINDOW_BITS>	cong_window;
 	ap_uint<2>  			count;
 	bool					fastRetransmitted;
 	ap_uint<1> 				write;
@@ -320,18 +319,19 @@ struct rxTxSarQuery
 	ap_uint<4>				tx_win_shift;
 	bool 					tx_win_shift_write;
 #endif	
+	ap_uint<WINDOW_BITS>	cong_window;
 	rxTxSarQuery () {}
 	rxTxSarQuery(ap_uint<16> id)
 				:sessionID(id), ackd(0), recv_window(0), count(0), fastRetransmitted(false), write(0) {}
 	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted)
 				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1) {}
 #if (WINDOW_SCALE)
-	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<16> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
 				 ap_uint<4> ws)
 				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1),
 				 tx_win_shift_write(0),  tx_win_shift(ws) {}
 
-	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<WINDOW_BITS> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
+	rxTxSarQuery(ap_uint<16> id, ap_uint<32> ackd, ap_uint<16> recv_win, ap_uint<WINDOW_BITS> cong_win, ap_uint<2> count, bool fastRetransmitted, 
 				 bool tx_win_shift_write, ap_uint<4> ws)
 				:sessionID(id), ackd(ackd), recv_window(recv_win), cong_window(cong_win), count(count), fastRetransmitted(fastRetransmitted), write(1),
 				 tx_win_shift_write(tx_win_shift_write),  tx_win_shift(ws) {}
@@ -390,13 +390,13 @@ struct rxTxSarReply
 {
 	ap_uint<32>				prevAck;
 	ap_uint<32> 			nextByte;
-	ap_uint<WINDOW_BITS>	cong_window;
-	ap_uint<WINDOW_BITS> 	slowstart_threshold;
 	ap_uint<2>				count;
 	bool					fastRetransmitted;
 #if (WINDOW_SCALE)
 	ap_uint<4>				tx_win_shift;
 #endif	
+	ap_uint<WINDOW_BITS>	cong_window;
+	ap_uint<WINDOW_BITS> 	slowstart_threshold;
 	rxTxSarReply() {}
 	rxTxSarReply(ap_uint<32> ack, ap_uint<32> next, ap_uint<WINDOW_BITS> cong_win, ap_uint<WINDOW_BITS> sstresh, ap_uint<2> count, bool fastRetransmitted)
 			:prevAck(ack), nextByte(next), cong_window(cong_win), slowstart_threshold(sstresh), count(count), fastRetransmitted(fastRetransmitted) {}

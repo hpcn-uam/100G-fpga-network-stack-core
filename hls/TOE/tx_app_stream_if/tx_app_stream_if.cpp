@@ -73,7 +73,7 @@ void tasi_metaLoader(	stream<appTxMeta>&				appTxDataReqMetaData,
 				txSar2txApp_upd_rsp.read(writeSar);
 				maxWriteLength = (writeSar.ackd - writeSar.mempt) - 1;
 #if (TCP_NODELAY)
-				usedLength 		= writeSar.mempt(WINDOW_BITS-1,0) - writeSar.ackd;
+				usedLength 		= writeSar.mempt - writeSar.ackd;
 				if (writeSar.min_window > usedLength) {
 					usableWindow = writeSar.min_window - usedLength;
 				}
@@ -147,6 +147,7 @@ void tx_app_stream_if(	stream<appTxMeta>&				appTxDataReqMetaData,
 
 	static stream<mmCmd> tasiMetaLoaderCmd("tasiMetaLoaderCmd");
 	#pragma HLS DATA_PACK variable=tasiMetaLoaderCmd
+	#pragma HLS stream variable=tasiMetaLoaderCmd depth=4
 
 	tasi_metaLoader(	
 			appTxDataReqMetaData,
