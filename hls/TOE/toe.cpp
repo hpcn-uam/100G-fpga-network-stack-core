@@ -534,7 +534,7 @@ void toe(
 
 	// Port Table
 	static stream<ap_uint<16> >				rxEng2portTable_req("rxEng2portTable_req");
-	#pragma HLS STREAM variable=rxEng2portTable_req			depth=4
+	#pragma HLS STREAM variable=rxEng2portTable_req			depth=8
 
 	static stream<bool>						portTable2rxEng_rsp("portTable2rxEng_rsp");
 	#pragma HLS STREAM variable=portTable2rxEng_rsp			depth=4
