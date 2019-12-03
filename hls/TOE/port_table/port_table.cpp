@@ -265,7 +265,7 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_req,
 	#pragma HLS STREAM variable=pt_portCheckUsed_rsp_fifo depth=8
 
 	static stream<bool> pt_dstFifo("pt_dstFifo");
-	#pragma HLS STREAM variable=pt_dstFifo depth=8
+	#pragma HLS STREAM variable=pt_dstFifo depth=32
 
 	/*
 	 * Listening PortTable
