@@ -76,7 +76,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 					tx_table[tst_txEngUpdate.sessionID].app = tst_txEngUpdate.not_ackd;
 					tx_table[tst_txEngUpdate.sessionID].ackd = tst_txEngUpdate.not_ackd-1;
 					tx_table[tst_txEngUpdate.sessionID].cong_window = 0x3908; // 10 x 1460(MSS)
-					tx_table[tst_txEngUpdate.sessionID].slowstart_threshold = 0xFFFF;
+					tx_table[tst_txEngUpdate.sessionID].slowstart_threshold = (BUFFER_SIZE-1);
 					tx_table[tst_txEngUpdate.sessionID].finReady = tst_txEngUpdate.finReady;
 					tx_table[tst_txEngUpdate.sessionID].finSent = tst_txEngUpdate.finSent;
 					// Init ACK to txAppInterface
@@ -186,14 +186,9 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 #endif				
 			if (tst_rxEngUpdate.cong_window < scaled_recv_window) {
 				minWindow = tst_rxEngUpdate.cong_window;
-#if (WINDOW_SCALE)					
-				//std::cout << "Using Congestion win " << std::dec << tst_rxEngUpdate.cong_window << "\tshift: " << tst_rxEngUpdate.tx_win_shift;
-				//std::cout << "\trecv_window " << tst_rxEngUpdate.recv_window << "\t scaled recv_wind: " << scaled_recv_window << std::endl;
-#endif				
 			}
 			else {
 				minWindow = scaled_recv_window;			
-				//std::cout << "Scaling window size up " << std::dec << "\tmin wind " << minWindow << std::endl;
 			}
 			txSar2txApp_ack_push.write(txSarAckPush(tst_rxEngUpdate.sessionID, tst_rxEngUpdate.ackd, minWindow));
 #endif

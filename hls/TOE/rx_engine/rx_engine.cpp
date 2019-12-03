@@ -649,7 +649,7 @@ void rxEngTcpFSM(
 							&& !(fsm_txSarRequest && txSar2rxEng_upd_rsp.empty())) {
 
 				if (fsm_txSarRequest) {
-					txSar2rxEng_upd_rsp.read(txSar); // FIXME for default it was a non-block read. Why?
+					txSar2rxEng_upd_rsp.read(txSar); // FIXME by default it was a non-block read. Why?
 				}
 
 				fsm_txSarRequest = false;
@@ -682,7 +682,8 @@ void rxEngTcpFSM(
 									txSar.cong_window += MSS;
 								}
 								else if (txSar.cong_window <= CONGESTION_WINDOW_MAX) {
-									txSar.cong_window += 365; //TODO replace by approx. of (MSS x MSS) / cong_window
+									/*In theory (1/cong_window) should be added however increasing with floating/fixed point would increase memory usage */ 
+									txSar.cong_window++;
 								}
 								txSar.count = 0;
 								txSar.fastRetransmitted = false;
@@ -1217,11 +1218,9 @@ void rx_engine(	stream<axiWord>&					ipRxData,
 
 	static stream<bool>					rxEng_metaHandlerDropFifo("rxEng_metaHandlerDropFifo");
 	#pragma HLS STREAM variable=rxEng_metaHandlerDropFifo depth=8
-	#pragma HLS DATA_PACK variable=rxEng_metaHandlerDropFifo
 
 	static stream<bool>					rxEng_fsmDropFifo("rxEng_fsmDropFifo");
 	#pragma HLS STREAM variable=rxEng_fsmDropFifo depth=8
-	#pragma HLS DATA_PACK variable=rxEng_fsmDropFifo
 
 	static stream<appNotification> rx_internalNotificationFifo("rx_internalNotificationFifo");
 	#pragma HLS STREAM variable=rx_internalNotificationFifo depth=8 //This depends on the memory delay
