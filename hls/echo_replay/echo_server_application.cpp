@@ -101,7 +101,7 @@ void dummy(
 	if (!txApp_openConnStatus.empty()) {
 		txApp_openConnStatus.read(newConn);
 		tuple.ip_address 	= 0xC0A80008;  // 192.168.0.8
-		tuple.ip_port 		= 0x3412;
+		tuple.ip_port 		= 13330;
 		txApp_openConnection.write(tuple);
 		if (newConn.success) {
 			closeConnection.write(newConn.sessionID);
@@ -393,11 +393,13 @@ void echo_server_application(
 
 
 	static stream<es_metaData>		transferMetaData("transferMetaData");
+#pragma HLS stream variable=transferMetaData depth=64
+#pragma HLS DATA_PACK variable=transferMetaData
 
 	static stream<axiWord>			esa_dataFifo("esa_dataFifo");
-
-#pragma HLS stream variable=transferMetaData depth=64
 #pragma HLS stream variable=esa_dataFifo depth=512
+#pragma HLS DATA_PACK variable=esa_dataFifo
+
 
 	open_port(
 		listenPortReq, 
