@@ -119,9 +119,7 @@ struct rtlSessionLookupRequest
  */
 struct rtlSessionLookupReply
 {
-	//bool				hit;
-	//ap_uint<14>			sessionID;
-	threeTuple	key;
+	threeTuple			key;
 	ap_uint<16>			sessionID;
 	bool				hit;
 	lookupSource		source;
@@ -138,7 +136,7 @@ struct rtlSessionLookupReply
 struct rtlSessionUpdateRequest // todo
 {
 	ap_uint<16>			value;
-	threeTuple	key;
+	threeTuple			key;
 	lookupOp			op;
 	lookupSource		source;
 

@@ -81,7 +81,7 @@ void client_r(
     openStatus                  status;
     appTxMeta                   meta_i;
     ap_uint<32>                 remaining_bytes_to_send;
-    appTxRsp                    space_responce;
+    appTxRsp                    spaceReplay;
 
     axiWord                     currWord;
 
@@ -174,11 +174,11 @@ void client_r(
         case INIT_RUN:
 
             if (!txStatus.empty()){
-                txStatus.read(space_responce);
+                txStatus.read(spaceReplay);
 
-                if (space_responce.error==0){
-                    //std::cout << "Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                    //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl;
+                if (spaceReplay.error==0){
+                    //std::cout << "Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << spaceReplay.length;
+                    //std::cout << "\tremaining space: " << spaceReplay.remaining_space << "\terror: " <<  spaceReplay.error << std::endl;
                     
                     if (useTimer_r) {
                         currWord.data( 63,  0) = 0x3736353400000000;
@@ -281,12 +281,12 @@ void client_r(
 
         case SPACE_RESPONSE:    
             if (!txStatus.empty()){
-                txStatus.read(space_responce);
+                txStatus.read(spaceReplay);
 
-                //std::cout << "SPACE_RESPONSE Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                //std::cout << "SPACE_RESPONSE Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << spaceReplay.length;
+                //std::cout << "\tremaining space: " << spaceReplay.remaining_space << "\terror: " <<  spaceReplay.error << std::endl << std::endl;
                 
-                if (space_responce.error==0){
+                if (spaceReplay.error==0){
                     sessionIt++;
                     iperfFsmState = SEND_PACKET;
                     bytes_already_sent = bytes_already_sent + transaction_length;
@@ -339,12 +339,12 @@ void client_r(
 
         case SPACE_RESPONSE_1:    
             if (!txStatus.empty()){
-                txStatus.read(space_responce);
+                txStatus.read(spaceReplay);
 
-                //std::cout << "SPACE_RESPONSE_1 Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << space_responce.length;
-                //std::cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                //std::cout << "SPACE_RESPONSE_1 Response for transfer " /*<< std::setw(5)*/ << std::dec << sessionIt << " length : " << spaceReplay.length;
+                //std::cout << "\tremaining space: " << spaceReplay.remaining_space << "\terror: " <<  spaceReplay.error << std::endl << std::endl;
                 
-                if (space_responce.error==0){
+                if (spaceReplay.error==0){
                     sessionIt++;
                     iperfFsmState = SEND_PACKET;
                     bytes_already_sent = bytes_already_sent + transaction_length;
@@ -420,7 +420,6 @@ void client(
     static ap_uint< 1>          useTimer_r;
     static ap_uint< 1>          errorOpeningConnection = 0;
     static ap_uint< 1>          stopWatchEnd     = 0;
-    static bool                 closecon_sig = false;
 
     #pragma HLS RESOURCE variable=experimentID core=RAM_2P_BRAM
     #pragma HLS DEPENDENCE variable=experimentID inter false
@@ -431,7 +430,7 @@ void client(
     openStatus                  status;
     appTxMeta                   meta_i;
     ap_uint<32>                 remaining_bytes_to_send;
-    appTxRsp                    space_responce;
+    appTxRsp                    spaceReplay;
 
     axiWord                     currWord;
 
@@ -456,7 +455,6 @@ void client(
                     ipDestination_r     = settings_regs.ipDestination;
                     dstPort_r           = settings_regs.dstPort;
                     packet_mss_r        = settings_regs.packet_mss;       // Register input variables
-                    closecon_sig        = false;
                     errorOpeningConnection = 0;
                     if (settings_regs.useTimer) {
                         stopWatchStart.write(settings_regs.runTime);        // Start stopwatch
@@ -518,7 +516,10 @@ void client(
             }
             txMetaData.write(meta_i);
             sessionIt++;
-            if (sessionIt == numConnections_r) {    // Request space for every connection
+            if (stopWatchEnd) {
+                iperfFsmState = CLOSE_CONN;
+            }
+            else if (sessionIt == numConnections_r) {    // Request space for every connection
                 sessionIt = 0;
                 iperfFsmState = INIT_RUN;
             }
@@ -527,11 +528,11 @@ void client(
         case INIT_RUN:
 
             if (!txStatus.empty()){
-                txStatus.read(space_responce);
+                txStatus.read(spaceReplay);
 
-                if (space_responce.error==0){
-                    //cout << "Response for transfer " /*<< setw(5) */<< dec << sessionIt << " length : " << space_responce.length;
-                    //cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << endl;
+                if (spaceReplay.error==0){
+                    //cout << "Response for transfer " /*<< setw(5) */<< dec << sessionIt << " length : " << spaceReplay.length;
+                    //cout << "\tremaining space: " << spaceReplay.remaining_space << "\terror: " <<  spaceReplay.error << endl;
                     
                     if (useTimer_r) {
                         currWord.data( 63,  0) = 0x3736353400000000;
@@ -635,13 +636,13 @@ void client(
         case SPACE_RESPONSE:    
             if (!txStatus.empty()){
                 wordSentCount = 1;
-                txStatus.read(space_responce);
+                txStatus.read(spaceReplay);
 
-                //cout << "SPACE_RESPONSE Response for transfer " << setw(5) << std::dec << sessionIt << " length : " << space_responce.length;
-                //cout << "\tremaining space: " << space_responce.remaining_space << "\terror: " <<  space_responce.error << std::endl << std::endl;
+                //cout << "SPACE_RESPONSE Response for transfer " << setw(5) << std::dec << sessionIt << " length : " << spaceReplay.length;
+                //cout << "\tremaining space: " << spaceReplay.remaining_space << "\terror: " <<  spaceReplay.error << std::endl << std::endl;
                 
 
-                if (space_responce.error==0){
+                if (spaceReplay.error==0){
                     sessionIt++;
                     iperfFsmState = SEND_PACKET;
                     bytes_already_sent = bytes_already_sent + transaction_length;
@@ -671,9 +672,6 @@ void client(
                 if (!stopWatchEnd){
                     txMetaData.write(meta_i);
                 }
-                else {
-                    closecon_sig = true;
-                }
                 sessionIt++;
             }
 
@@ -688,7 +686,7 @@ void client(
                 }
 
                 if (useTimer_r){
-                    if (closecon_sig){
+                    if (stopWatchEnd){
                         iperfFsmState = CLOSE_CONN;
                         sessionIt=0;
                     }
