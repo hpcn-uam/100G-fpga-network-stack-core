@@ -417,12 +417,12 @@ void sessionLookupStub(
 		stream<rtlSessionUpdateRequest>& 	upd_req, 
 		stream<rtlSessionUpdateReply>& 		upd_rsp) {
 						//stream<ap_uint<14> >& new_id, stream<ap_uint<14> >& fin_id)
-	static map<threeTupleInternal, ap_uint<14> > lookupTable;
+	static map<threeTuple, ap_uint<14> > lookupTable;
 
 	rtlSessionLookupRequest request;
 	rtlSessionUpdateRequest update;
 
-	map<threeTupleInternal, ap_uint<14> >::const_iterator findPos;
+	map<threeTuple, ap_uint<14> >::const_iterator findPos;
 
 	if (!lup_req.empty()) {
 		lup_req.read(request);

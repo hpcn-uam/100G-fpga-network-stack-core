@@ -89,44 +89,16 @@ struct fourTupleInternal
 	}
 };
 
-struct threeTupleInternal
-{
-	ap_uint<16>	myPort;
-	ap_uint<16> theirPort;
-	ap_uint<32> theirIp;
-	threeTupleInternal() {}
-	threeTupleInternal(ap_uint<16> myPort, ap_uint<16> theirPort, ap_uint<32> theirIp)
-	: myPort(myPort), theirPort(theirPort), theirIp(theirIp) {}
-
-	bool operator<(const threeTupleInternal& other) const
-	{
-		if (theirIp < other.theirIp) {
-			return true;
-		}
-		else if (theirIp == other.theirIp) {
-			if (myPort < other.myPort) {
-				return true;
-			}
-			else if (myPort == other.myPort) {
-				if (theirPort < other.theirPort) {
-					return true;
-				}
-			}
-		}
-		return false;
-	}
-};
-
 /** @ingroup session_lookup_controller
  *
  */
 struct sessionLookupQueryInternal
 {
-	threeTupleInternal	tuple;
+	threeTuple			tuple;
 	bool				allowCreation;
 	lookupSource		source;
 	sessionLookupQueryInternal() {}
-	sessionLookupQueryInternal(threeTupleInternal tuple, bool allowCreation, lookupSource src)
+	sessionLookupQueryInternal(threeTuple tuple, bool allowCreation, lookupSource src)
 			:tuple(tuple), allowCreation(allowCreation), source(src) {}
 };
 
@@ -135,10 +107,10 @@ struct sessionLookupQueryInternal
  */
 struct rtlSessionLookupRequest
 {
-	threeTupleInternal	key;
+	threeTuple			key;
 	lookupSource		source;
 	rtlSessionLookupRequest() {}
-	rtlSessionLookupRequest(threeTupleInternal tuple, lookupSource src)
+	rtlSessionLookupRequest(threeTuple tuple, lookupSource src)
 				:key(tuple), source(src) {}
 };
 
@@ -149,7 +121,7 @@ struct rtlSessionLookupReply
 {
 	//bool				hit;
 	//ap_uint<14>			sessionID;
-	threeTupleInternal	key;
+	threeTuple	key;
 	ap_uint<16>			sessionID;
 	bool				hit;
 	lookupSource		source;
@@ -166,12 +138,12 @@ struct rtlSessionLookupReply
 struct rtlSessionUpdateRequest // todo
 {
 	ap_uint<16>			value;
-	threeTupleInternal	key;
+	threeTuple	key;
 	lookupOp			op;
 	lookupSource		source;
 
 	rtlSessionUpdateRequest() {}
-	rtlSessionUpdateRequest(threeTupleInternal key, ap_uint<16> value, lookupOp op, lookupSource src)
+	rtlSessionUpdateRequest(threeTuple key, ap_uint<16> value, lookupOp op, lookupSource src)
 			:key(key), value(value), op(op), source(src) {}
 };
 
@@ -182,7 +154,7 @@ struct rtlSessionUpdateRequest // todo
 struct rtlSessionUpdateReply
 {
 	ap_uint<16>			sessionID;
-	threeTupleInternal	key;
+	threeTuple			key;
 	lookupOp			op;
 	lookupSource		source;
 	bool				success;
@@ -197,9 +169,9 @@ struct rtlSessionUpdateReply
 struct revLupInsert
 {
 	ap_uint<16>			key;
-	threeTupleInternal	value;
+	threeTuple			value;
 	revLupInsert() {};
-	revLupInsert(ap_uint<16> key, threeTupleInternal value)
+	revLupInsert(ap_uint<16> key, threeTuple value)
 			:key(key), value(value) {}
 };
 
@@ -210,7 +182,7 @@ void session_lookup_controller(	stream<sessionLookupQuery>&			rxEng2sLookup_req,
 								stream<sessionLookupReply>&			sLookup2rxEng_rsp,
 								stream<ap_uint<16> >&				stateTable2sLookup_releaseSession,
 								stream<ap_uint<16> >&				sLookup2portTable_releasePort,
-								stream<fourTuple>&					txApp2sLookup_req,
+								stream<threeTuple>&					txApp2sLookup_req,
 								stream<sessionLookupReply>&			sLookup2txApp_rsp,
 								stream<ap_uint<16> >&				txEng2sLookup_rev_req,
 								stream<fourTuple>&					sLookup2txEng_rev_rsp,

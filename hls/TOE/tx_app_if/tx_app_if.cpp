@@ -61,7 +61,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 				stream<sessionState>&			stateTable2txApp_upd_rsp,
 				stream<openStatus>&				conEstablishedIn, //alter
 				stream<openStatus>&				appOpenConnRsp,
-				stream<fourTuple>&				txApp2sLookup_req,
+				stream<threeTuple>&				txApp2sLookup_req,
 				//stream<ap_uint<1> >&			txApp2portTable_port_req,
 				stream<stateQuery>&				txApp2stateTable_upd_req,
 				stream<event>&					txApp2eventEng_setEvent,
@@ -76,7 +76,6 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 	static ap_uint<16> tai_closeSessionID;
 
 	ipTuple server_addr;
-	//fourTuple tuple;
 	sessionLookupReply session;
 	sessionState state;
 	ap_uint<16> freePort;
@@ -86,8 +85,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 		appOpenConnReq.read(server_addr);
 		portTable2txApp_port_rsp.read(freePort);
 		// Implicit creationAllowed <= true
-		txApp2sLookup_req.write(fourTuple(myIpAddress, byteSwap32(server_addr.ip_address), byteSwap16(freePort), byteSwap16(server_addr.ip_port)));
-		//tai_waitFreePort = false;
+		txApp2sLookup_req.write(threeTuple(byteSwap16(freePort), byteSwap16(server_addr.ip_port),byteSwap32(server_addr.ip_address)));
 	}
 
 	switch (tai_fsmState) {
@@ -102,7 +100,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 			}
 			else {
 				// Tell application that openConnection failed
-				appOpenConnRsp.write(openStatus(0, false));
+				appOpenConnRsp.write(openStatus(session.sessionID, false));
 			}
 		}
 		else if (!conEstablishedIn.empty()) {
@@ -111,7 +109,8 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 			appOpenConnRsp.write(openSessionStatus);
 		}
 		else if (!rtTimer2txApp_notification.empty()) {
-			appOpenConnRsp.write(rtTimer2txApp_notification.read());
+			rtTimer2txApp_notification.read(openSessionStatus);
+			appOpenConnRsp.write(openSessionStatus);
 		}
 		else if(!closeConnReq.empty()) { // Close Request
 			closeConnReq.read(tai_closeSessionID);

@@ -183,6 +183,24 @@ struct threeTuple
 	threeTuple() {}
 	threeTuple(ap_uint<16> myPort, ap_uint<16> theirPort, ap_uint<32> theirIp)
 			  : myPort(myPort), theirPort(theirPort), theirIp(theirIp) {}
+
+	bool operator<(const threeTuple& other) const
+	{
+		if (theirIp < other.theirIp) {
+			return true;
+		}
+		else if (theirIp == other.theirIp) {
+			if (myPort < other.myPort) {
+				return true;
+			}
+			else if (myPort == other.myPort) {
+				if (theirPort < other.theirPort) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 };
 
 inline bool operator < (fourTuple const& lhs, fourTuple const& rhs) {
@@ -754,6 +772,8 @@ struct iperf_regs {
      ap_uint<32>    ipDestination;
      ap_uint<16>    dstPort;
      ap_uint<16>    maxConnections;
+     ap_uint<16>    currentState;
+     ap_uint< 1>    errorOpenningConnection;
 };
 
 void toe(	

@@ -41,7 +41,7 @@ void tx_app_if(	stream<ipTuple>&				appOpenConnReq,
 				stream<sessionState>&			stateTable2txApp_upd_rsp,
 				stream<openStatus>&				conEstablishedIn, //alter
 				stream<openStatus>&				appOpenConnRsp,
-				stream<fourTuple>&				txApp2sLookup_req,
+				stream<threeTuple>&				txApp2sLookup_req,
 				//stream<ap_uint<1> >&			txApp2portTable_port_req,
 				stream<stateQuery>&				txApp2stateTable_upd_req,
 				stream<event>&					txApp2eventEng_setEvent,

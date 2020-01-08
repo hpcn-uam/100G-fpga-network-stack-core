@@ -282,7 +282,6 @@ void port_table(stream<ap_uint<16> >&		rxEng2portTable_req,
 	free_port_table(
 					sLookup2portTable_releasePort,
 					pt_portCheckUsed_req_fifo,
-					//txApp2portTable_port_req,
 					pt_portCheckUsed_rsp_fifo,
 					portTable2txApp_port_rsp);
 

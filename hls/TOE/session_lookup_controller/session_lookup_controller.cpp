@@ -80,7 +80,7 @@ void lookupReplyHandler(
 		stream<rtlSessionLookupReply>&			sessionLookup_rsp,
 		stream<rtlSessionUpdateReply>&			sessionInsert_rsp,
 		stream<sessionLookupQuery>&				rxEng2sLooup_req,
-		stream<fourTuple>&						txApp2sLookup_req,
+		stream<threeTuple>&						txApp2sLookup_req,
 		stream<ap_uint<14> >&					sessionIdFreeList,
 		stream<rtlSessionLookupRequest>&		sessionLookup_req, // TODO
 		stream<sessionLookupReply>&				sLookup2rxEng_rsp,
@@ -91,7 +91,7 @@ void lookupReplyHandler(
 #pragma HLS PIPELINE II=1
 #pragma HLS INLINE off
 
-	static stream<threeTupleInternal>		slc_insertTuples("slc_insertTuples");
+	static stream<threeTuple>		slc_insertTuples("slc_insertTuples");
 	#pragma HLS STREAM variable=slc_insertTuples depth=4
 	#pragma HLS DATA_PACK variable=slc_insertTuples
 
@@ -99,8 +99,8 @@ void lookupReplyHandler(
 	#pragma HLS STREAM variable=slc_queryCache depth=8
 	#pragma HLS DATA_PACK variable=slc_queryCache
 
-	fourTuple 					toeTuple;
-	threeTupleInternal 			tuple;
+	threeTuple 					appTuple;
+	threeTuple 					tuple;
 	sessionLookupQuery 			query;
 	sessionLookupQueryInternal 	intQuery;
 	rtlSessionLookupReply 		lupReply;
@@ -115,10 +115,8 @@ void lookupReplyHandler(
 	switch (slc_fsmState) {
 		case LUP_REQ:
 			if (!txApp2sLookup_req.empty()) {
-				txApp2sLookup_req.read(toeTuple);
-				intQuery.tuple.theirIp = toeTuple.dstIp;
-				intQuery.tuple.theirPort = toeTuple.dstPort;
-				intQuery.tuple.myPort = toeTuple.srcPort;
+				txApp2sLookup_req.read(appTuple);
+				intQuery.tuple         = appTuple;
 				intQuery.allowCreation = true;
 				intQuery.source = TX_APP;
 				lookupRequest.key 		= intQuery.tuple;
@@ -127,9 +125,9 @@ void lookupReplyHandler(
 				sessionLookup_req.write(lookupRequest);
 				slc_queryCache.write(intQuery);
 				slc_fsmState = LUP_RSP;
-				//std::cout << "LUP_REQ request to look-up for " << std::dec << (toeTuple.dstIp & 0xFF) <<".";
-				//std::cout << ((toeTuple.dstIp >> 8) & 0xFF) << "." << ((toeTuple.dstIp >> 16) & 0xFF) << ".";
-				//std::cout << ((toeTuple.dstIp >> 24) & 0xFF) << ":" << (toeTuple.dstPort(7,0),toeTuple.dstPort(15,8)) << std::endl;
+				//std::cout << "LUP_REQ request to look-up for " << std::dec << (appTuple.theirIp & 0xFF) <<".";
+				//std::cout << ((appTuple.theirIp >> 8) & 0xFF) << "." << ((appTuple.theirIp >> 16) & 0xFF) << ".";
+				//std::cout << ((appTuple.theirIp >> 24) & 0xFF) << ":" << (appTuple.theirPort(7,0),appTuple.theirPort(15,8)) << std::endl;
 			}
 			else if (!rxEng2sLooup_req.empty()) {
 				rxEng2sLooup_req.read(query);
@@ -261,7 +259,7 @@ void reverseLookupTableInterface(
 
 	revLupInsert 		insert;
 	fourTuple			toeTuple;
-	threeTupleInternal	releaseTuple;
+	threeTuple			releaseTuple;
 	threeTuple 			insertTuple;
 	threeTuple 			getTuple;
 	ap_uint<16>			sessionID;
@@ -326,7 +324,7 @@ void session_lookup_controller(
 		stream<sessionLookupReply>&			sLookup2rxEng_rsp,
 		stream<ap_uint<16> >&				stateTable2sLookup_releaseSession,
 		stream<ap_uint<16> >&				sLookup2portTable_releasePort,
-		stream<fourTuple>&					txApp2sLookup_req,
+		stream<threeTuple>&					txApp2sLookup_req,
 		stream<sessionLookupReply>&			sLookup2txApp_rsp,
 		stream<ap_uint<16> >&				txEng2sLookup_rev_req,
 		stream<fourTuple>&					sLookup2txEng_rev_rsp,
