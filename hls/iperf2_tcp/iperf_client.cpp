@@ -34,8 +34,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ************************************************/
 
 #include "iperf_client.hpp"
-#include <iostream>
-
 
 void client_r(    
                 stream<ipTuple>&            openConnection, 
@@ -401,37 +399,33 @@ void client(
 #pragma HLS INLINE off
 
     enum iperfFsmStateType {WAIT_USER_START, INIT_CON, WAIT_CON, REQ_WRITE_FIRST, INIT_RUN, COMPUTE_NECESSARY_SPACE,
-                            SPACE_RESPONSE, SEND_PACKET, REQUEST_SPACE, CLOSE_CONN, CLOSE_CONN1};
+                            SPACE_RESPONSE, SEND_PACKET, REQUEST_SPACE, CLOSE_CONN, CLOSE_CONN1, ERROR_OPENING_CONNECTION};
+
     static iperfFsmStateType    iperfFsmState = WAIT_USER_START;
+    static ap_uint<64>          last_transfer_keep;
+    static ap_uint<32>          bytes_already_sent;
+    static ap_uint<32>          transfer_size_r;
+    static ap_uint<32>          ipDestination_r;
     static ap_uint<16>          experimentID[MAX_SESSIONS];
+    static ap_uint<16>          packet_mss_r;
+    static ap_uint<16>          dstPort_r;
+    static ap_uint<16>          transaction_length;
+    static ap_uint<16>          waitCounter = 0;
+    static ap_uint<14>          numConnections_r;
+    static ap_uint<14>          sessionIt       = 0;
+    static ap_uint<10>          transactions;
+    static ap_uint<10>          wordSentCount;
+    static ap_uint< 6>          bytes_last_word;
+    static ap_uint< 1>          runExperiment_r = 1;
+    static ap_uint< 1>          useTimer_r;
+    static ap_uint< 1>          errorOpeningConnection = 0;
+    static ap_uint< 1>          stopWatchEnd     = 0;
+    static bool                 closecon_sig = false;
 
     #pragma HLS RESOURCE variable=experimentID core=RAM_2P_BRAM
     #pragma HLS DEPENDENCE variable=experimentID inter false
-
-    static ap_uint<14>          sessionIt       = 0;
-    //#pragma HLS DEPENDENCE variable=sessionIt inter false
-
-    static ap_uint<32>          bytes_already_sent;
-    static ap_uint< 6>          bytes_last_word;
-    static ap_uint<10>          transactions;
-    static ap_uint<10>          wordSentCount;
-    static ap_uint<16>          transaction_length;
-    static ap_uint<16>          waitCounter = 0;
-    
-
-    static ap_uint<32>          transfer_size_r;
-    static ap_uint<16>          packet_mss_r;
-    static ap_uint<14>          numConnections_r;
-    static ap_uint<1>           runExperiment_r = 1;
-    static ap_uint<16>          dstPort_r;
-    static ap_uint<32>          ipDestination_r;
-    static ap_uint<1>           useTimer_r;
-
-    static ap_uint<1>           stopWatchEnd     = 0;
-    static ap_uint<64>          last_transfer_keep;
     #pragma HLS DEPENDENCE variable=last_transfer_keep inter false
 
-    static bool                 closecon_sig = false;
 
     ipTuple                     openTuple;
     openStatus                  status;
@@ -442,6 +436,8 @@ void client(
     axiWord                     currWord;
 
     settings_regs.maxConnections = MAX_SESSIONS;
+    settings_regs.currentState   = iperfFsmState;
+    settings_regs.errorOpenningConnection   = errorOpeningConnection;
 
     /*
      * CLIENT FSM
@@ -461,6 +457,7 @@ void client(
                     dstPort_r           = settings_regs.dstPort;
                     packet_mss_r        = settings_regs.packet_mss;       // Register input variables
                     closecon_sig        = false;
+                    errorOpeningConnection = 0;
                     if (settings_regs.useTimer) {
                         stopWatchStart.write(settings_regs.runTime);        // Start stopwatch
                     }
@@ -494,15 +491,16 @@ void client(
                 openConStatus.read(status);
                 if (status.success) {
                     experimentID[sessionIt] = status.sessionID;
+                    sessionIt++;
+                    if (sessionIt == numConnections_r) { //maybe move outside
+                        sessionIt = 0;
+                        iperfFsmState = REQ_WRITE_FIRST;
+                    }
                     std::cout << "Connection successfully opened." << std::endl;
                 }
                 else {
                     std::cout << "Connection could not be opened." << std::endl;
-                }
-                sessionIt++;
-                if (sessionIt == numConnections_r) { //maybe move outside
-                    sessionIt = 0;
-                    iperfFsmState = REQ_WRITE_FIRST;
+                    iperfFsmState = ERROR_OPENING_CONNECTION;
                 }
             }
             break;
@@ -745,7 +743,10 @@ void client(
             }
 
             break;    
-
+        case ERROR_OPENING_CONNECTION:
+            errorOpeningConnection = 1;
+            iperfFsmState = WAIT_USER_START;
+            break;
 
     }
 
