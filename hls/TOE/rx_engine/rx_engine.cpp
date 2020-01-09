@@ -200,7 +200,8 @@ void rxParseTcpOptions (
 	
 	ap_uint<8> 				optionKind;	
 	ap_uint<8> 				optionLength;
-	bool 					sendMeta = false;	
+	ap_uint<4>				recv_window_scale = 0;	
+	bool 					sendMeta = false;
 
 	switch (rtpo_fsm_state) {
 		case READ_INFO:
@@ -238,7 +239,11 @@ void rxParseTcpOptions (
 					case 3: // Window Scale option
 						sendMeta = true;
 						if (optionLength == 3){ // Double check
-							metaInfo.digest.recv_window_scale = metaInfo.tcpOptions(19 ,16);
+							recv_window_scale = metaInfo.tcpOptions(19 ,16);
+							if (metaInfo.tcpOptions(19 ,16) > WINDOW_SCALE_BITS) 		// When the other endpoint has a bigger window scale use local one
+								recv_window_scale = (ap_uint<4>) WINDOW_SCALE_BITS;
+							
+							metaInfo.digest.recv_window_scale = recv_window_scale;
 							//std::cout << "\t Window shift " << metaInfo.tcpOptions(bitOffset + 19 , bitOffset + 16);
 						}
 						break;	
@@ -617,10 +622,8 @@ void rxEngTcpFSM(
 	ap_uint<32> 			newRecvd;
 	ap_uint<WINDOW_BITS> 	free_space;
 
-#if (WINDOW_SCALE)	
 	ap_uint<4>				rx_win_shift;	// used to computed the scale option for RX buffer
 	ap_uint<4>				tx_win_shift;	// used to computed the scale option for TX buffer
-#endif
 
 	switch(fsm_state) {
 		case LOAD:
@@ -788,11 +791,11 @@ void rxEngTcpFSM(
 							// Initialize rxSar, SEQ + phantom byte, last '1' for makes sure appd is initialized + Window scale if enable
 #if (WINDOW_SCALE)							
 							rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
-							tx_win_shift = fsm_meta.meta.recv_window_scale; // The other side window scale has to be hold as it. Otherwise, problems will arise
+							tx_win_shift = fsm_meta.meta.recv_window_scale; // Keep at it is, since it was already verified
 							//std::cout << std::endl << "SYN_ACK " << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift));
 							// TX Sar table is initialized with the received window scale 
-							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));
+							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , rx_win_shift)));
 #else
 							rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1));
 							rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, 0, fsm_meta.meta.winSize, txSar.cong_window, 0, false))); //TODO maybe include count check SYN_ACK event
@@ -839,8 +842,8 @@ void rxEngTcpFSM(
 								//initialize rx_sar, SEQ + phantom byte, last '1' for appd init + Window scale if enable
 #if (WINDOW_SCALE)							
 								rx_win_shift = (fsm_meta.meta.recv_window_scale == 0) ? 0 : WINDOW_SCALE_BITS; 	// If the other side announces a WSopt we use WINDOW_SCALE_BITS
-								tx_win_shift = fsm_meta.meta.recv_window_scale; // The other side window scale has to be hold as it. Otherwise, problems will arise
-								std::cout << std::endl << "SYN_ACK " << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
+								tx_win_shift = fsm_meta.meta.recv_window_scale; // Keep at it is, since it was already verified
+								//std::cout << std::endl << "SYN_ACK " << "rx_win_shift :" << std::dec << rx_win_shift << "\ttx_win_shift " << tx_win_shift << "\trecv_window_scale " << fsm_meta.meta.recv_window_scale << std::endl << std::endl; 
 								rxEng2rxSar_upd_req.write(rxSarRecvd(fsm_meta.sessionID, fsm_meta.meta.seqNumb+1, 1, 1, rx_win_shift)); 
 								// TX Sar table is initialized with the received window scale 
 								rxEng2txSar_upd_req.write((rxTxSarQuery(fsm_meta.sessionID, fsm_meta.meta.ackNumb, fsm_meta.meta.winSize, txSar.cong_window, 0, false, true , tx_win_shift)));

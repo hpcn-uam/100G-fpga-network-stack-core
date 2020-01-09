@@ -80,7 +80,7 @@ void tx_sar_table(	stream<rxTxSarQuery>&			rxEng2txSar_upd_req,
 					tx_table[tst_txEngUpdate.sessionID].finReady = tst_txEngUpdate.finReady;
 					tx_table[tst_txEngUpdate.sessionID].finSent = tst_txEngUpdate.finSent;
 					// Init ACK to txAppInterface
-#if (!TCP_NODELAY)
+#if !(TCP_NODELAY)
 					txSar2txApp_ack_push.write(txSarAckPush(tst_txEngUpdate.sessionID, tst_txEngUpdate.not_ackd, 1));
 #else
 					txSar2txApp_ack_push.write(txSarAckPush(tst_txEngUpdate.sessionID, tst_txEngUpdate.not_ackd, 0x3908 /* 10 x 1460(MSS) */, 1));

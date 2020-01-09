@@ -135,7 +135,7 @@ void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 #pragma HLS PIPELINE II=1
 
 	static txAppTableEntry app_table[MAX_SESSIONS];
-
+	#pragma HLS RESOURCE variable=app_table core=RAM_T2P_BRAM
 
 	txSarAckPush	ackPush;
 	txAppTxSarQuery txAppUpdate;
@@ -166,7 +166,7 @@ void tx_app_table(	stream<txSarAckPush>&		txSar2txApp_ack_push,
 		}
 		else { // Read
 		
-#if (!TCP_NODELAY)
+#if !(TCP_NODELAY)
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt));
 #else
 			txApp_upd_rsp.write(txAppTxSarReply(txAppUpdate.sessionID, app_table[txAppUpdate.sessionID].ackd, app_table[txAppUpdate.sessionID].mempt, app_table[txAppUpdate.sessionID].min_window));

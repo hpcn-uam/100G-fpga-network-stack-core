@@ -433,10 +433,9 @@ struct txAppTxSarReply
 	ap_uint<WINDOW_BITS> 	min_window;
 #endif	
 	txAppTxSarReply() {}
-#if !(TCP_NODELAY)
 	txAppTxSarReply(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> pt)
 		:sessionID(id), ackd(ackd), mempt(pt) {}
-#else
+#if (TCP_NODELAY)
 	txAppTxSarReply(ap_uint<16> id, ap_uint<WINDOW_BITS> ackd, ap_uint<WINDOW_BITS> pt, ap_uint<WINDOW_BITS> min_window)
 		:sessionID(id), ackd(ackd), mempt(pt), min_window(min_window) {}
 #endif
