@@ -456,6 +456,7 @@ void client(
                     dstPort_r           = settings_regs.dstPort;
                     packet_mss_r        = settings_regs.packet_mss;       // Register input variables
                     errorOpeningConnection = 0;
+                    stopWatchEnd        = 0;
                     if (settings_regs.useTimer) {
                         stopWatchStart.write(settings_regs.runTime);        // Start stopwatch
                     }
@@ -661,10 +662,10 @@ void client(
             currWord.data(127, 64) = 0x202020202073652e;
             currWord.data(191,128) = 0x2e736d6574737973;
             currWord.data(255,192) = 0x2068632e7a687465;
-            currWord.data(319,256) = 0x3736353433323130;
-            currWord.data(383,320) = 0x3736353433323130;
-            currWord.data(447,384) = 0x3736353433323130;
-            currWord.data(511,448) = 0x3736353433323130;    // Dummy data
+            currWord.data(319,256) = wordSentCount ;
+            currWord.data(383,320) = wordSentCount + 1;
+            currWord.data(447,384) = wordSentCount + 2;
+            currWord.data(511,448) = wordSentCount + 3;    // Dummy data
 
             if (wordSentCount==1 && useTimer_r){
                 meta_i.sessionID = experimentID[sessionIt];
