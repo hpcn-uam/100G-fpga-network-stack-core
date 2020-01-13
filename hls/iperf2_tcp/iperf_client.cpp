@@ -421,8 +421,6 @@ void client(
     static ap_uint< 1>          errorOpeningConnection = 0;
     static ap_uint< 1>          stopWatchEnd     = 0;
 
-    #pragma HLS RESOURCE variable=experimentID core=RAM_2P_BRAM
-    #pragma HLS DEPENDENCE variable=experimentID inter false
     #pragma HLS DEPENDENCE variable=last_transfer_keep inter false
 
 
@@ -644,7 +642,9 @@ void client(
                 
 
                 if (spaceReplay.error==0){
-                    sessionIt++;
+                    if (sessionIt != (numConnections_r-1)){
+                        sessionIt++;
+                    }
                     iperfFsmState = SEND_PACKET;
                     bytes_already_sent = bytes_already_sent + transaction_length;
                 }
