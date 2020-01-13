@@ -86,7 +86,7 @@ module cycle_limiter (
 );
 
 
-    reg  [  11:  0]              cycle_counter = 16'h0;
+    reg  [  4:  0]              cycle_counter = 16'h0;
     reg                         internal_ready=  1'b1;
 
 
@@ -97,7 +97,7 @@ module cycle_limiter (
     assign M_AXIS_TVALID    = S_AXIS_TVALID & /* 1'b1  */internal_ready;   // Assert output valid depending on internal ready
     assign S_AXIS_TREADY    = M_AXIS_TREADY & /* 1'b1  */internal_ready;   // Assert output ready depending on internal ready
 
-    localparam integer        MAX_CYCLE_COUNT = 18;
+    localparam integer        MAX_CYCLE_COUNT = 17;
 
     localparam       INITIAL_STATE   = 0,
                      WAITING_PACKET  = 1,
