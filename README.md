@@ -45,11 +45,13 @@ If you use the TCP/IP stack or the checksum computation in your project please c
 @INPROCEEDINGS{ruiz2019tcp, 
     title={{Limago: an FPGA-based Open-source 100~GbE TCP/IP Stack}}, 
     author={Ruiz, Mario and Sidler, David and Sutter, Gustavo and Alonso, Gustavo and L{\'o}pez-Buedo, Sergio},
-    booktitle={Field Programmable Logic and Applications (FPL), 2019 29th International Conference on},
+    booktitle={{2019 29th International Conference on Field Programmable Logic and Applications (FPL)}}, 
     year={2019},
     month={Sep},
+    pages={286-292}, 
     organization={IEEE},
-    doi={},
+    doi={10.1109/FPL.2019.00053},
+    ISSN={1946-147X}, 
 }
 ```
 
