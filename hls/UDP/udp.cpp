@@ -36,29 +36,47 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "udp.hpp"
 
 
-void rxTableHandler (
-    stream<udpMetadata>     &rxMetaIn,
-    socket_table            SocketTable[NUMBER_SOCKETS],
-    stream<tableResponse>   &rxDropMeta,
-    ap_uint<16>             &numberSockets,
+void txTableHandler (
+    stream<ap_uint<16> >    &idIn,
+    stream<udpMetadata>     &MetaOut,
+    socket_table            SocketTableTx[NUMBER_SOCKETS],
     ap_uint<32>             &myIpAddress) {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
-#pragma HLS ARRAY_PARTITION variable=SocketTable complete dim=1
+    ap_uint<16>  currId;
+    socket_table cS;
+
+    if(!idIn.empty()){
+        idIn.read(currId);
+        cS = SocketTableTx[currId];
+        MetaOut.write(udpMetadata(cS.theirIP,byteSwap<32>(myIpAddress),cS.theirPort,cS.myPort,cS.valid));
+    }
+
+}
+
+void rxTableHandler (
+    stream<udpMetadata>     &MetaIn,
+    socket_table            SocketTableRx[NUMBER_SOCKETS],
+    stream<tableResponse>   &DropMeta,
+    ap_uint<16>             &numberSockets,
+    ap_uint<32>             &myIpAddress) {
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+#pragma HLS ARRAY_PARTITION variable=SocketTableRx complete dim=1
 
 
     udpMetadata     currRxMeta;
 
 
-    if (!rxMetaIn.empty()){
-        rxMetaIn.read(currRxMeta);
+    if (!MetaIn.empty()){
+        MetaIn.read(currRxMeta);
         ap_int<17> index = -1;
         for (unsigned int i = 0; i < NUMBER_SOCKETS; i++) {
 		//#pragma HLS UNROLL
-            if ((SocketTable[i].theirIP   == currRxMeta.theirIP)   &&
-                (SocketTable[i].theirPort == currRxMeta.theirPort) &&
-                (SocketTable[i].myPort    == currRxMeta.myPort)) {
+            if ((SocketTableRx[i].theirIP   == currRxMeta.theirIP)   &&
+                (SocketTableRx[i].theirPort == currRxMeta.theirPort) &&
+                (SocketTableRx[i].myPort    == currRxMeta.myPort)) {
                 index = i;
                 break;
             }
@@ -66,7 +84,7 @@ void rxTableHandler (
         tableResponse currResp;
         currResp.drop = ((currRxMeta.myIP == byteSwap<32>(myIpAddress)) && (index != -1)) ? 0 : 1;
         currResp.id = index(15,0);
-        rxDropMeta.write(currResp);
+        DropMeta.write(currResp);
     }
 
     numberSockets = NUMBER_SOCKETS;
@@ -99,9 +117,10 @@ void udpRxEngine (
     ap_uint<16>         ip_totalLen;
     ap_uint<32>         ip_dst;
     ap_uint<32>         ip_src;
-    ap_uint<32>         port_src;
-    ap_uint<32>         port_dst;
-    ap_uint<32>         udp_lenght;
+    ap_uint<16>         port_src;
+    ap_uint<16>         port_dst;
+    ap_uint<16>         udp_lenght;
+    ap_uint<16>         udp_checksum;
 
     axiWord             currWord;
     axiWord             sendWord = axiWord();
@@ -120,14 +139,15 @@ void udpRxEngine (
                 port_src        = byteSwap<16>(currWord.data(175,160));
                 port_dst        = byteSwap<16>(currWord.data(191,176));
                 udp_lenght      = byteSwap<16>(currWord.data(207,192));
+                udp_checksum    = byteSwap<16>(currWord.data(223,208));
 
                 /*Create next previous word*/
-                auxWord.data(303 , 0)  = currWord.data(511, 208);
-                auxWord.keep( 37 , 0)  = currWord.keep( 63,  26);
+                auxWord.data(287, 0)  = currWord.data(511, 224);
+                auxWord.keep( 35, 0)  = currWord.keep( 63,  28);
                 auxWord.last           = currWord.last;
 
 
-                MetaOut.write(udpMetadata(ip_src, ip_dst, port_src, port_dst)); // TODO Maybe check if payload
+                MetaOut.write(udpMetadata(ip_src, ip_dst, port_src, port_dst, 1)); // TODO Maybe check if payload
                 if (currWord.last)
                     DataOut.write(auxWord);
                 else 
@@ -141,14 +161,14 @@ void udpRxEngine (
                 DataIn.read(currWord);
 
                 /*Create current word*/
-                sendWord.data(303 ,  0)  = prevWord.data(303, 0);
-                sendWord.keep( 37 ,  0)  = prevWord.keep( 37, 0);
-                sendWord.data(511 ,304)  = currWord.data(207, 0);
-                sendWord.keep( 63 , 38)  = currWord.keep( 25, 0);
+                sendWord.data(287,  0)  = prevWord.data(287,  0);
+                sendWord.keep( 35,  0)  = prevWord.keep( 35,  0);
+                sendWord.data(511,288)  = currWord.data(223,  0);
+                sendWord.keep( 63, 36)  = currWord.keep( 27,  0);
 
                 /*Create next previous word*/
-                auxWord.data(303 , 0)  = currWord.data(511, 208);
-                auxWord.keep( 37 , 0)  = currWord.keep( 63,  26);
+                auxWord.data(287 , 0)  = currWord.data(511, 224);
+                auxWord.keep( 35 , 0)  = currWord.keep( 63,  28);
                 auxWord.last           = currWord.last;
 
 
@@ -166,8 +186,8 @@ void udpRxEngine (
             }
             break;
         case EXTRAWORD:
-            sendWord.data(303 ,  0)  = prevWord.data(303, 0);
-            sendWord.data( 37 ,  0)  = prevWord.keep( 37, 0);
+            sendWord.data(287,  0)  = prevWord.data(287,  0);
+            sendWord.data( 35,  0)  = prevWord.keep( 35,  0);
             sendWord.last            = 1;
             DataOut.write(sendWord);
             ure_state = HEADER;
@@ -220,13 +240,182 @@ void rxEngPacketDropper (
 }
 
 
+void appGetMetaData (
+    stream<axiWordUdp>      &DataIn,
+    stream<axiWord>         &DataOut,
+    stream<ap_uint<16> >    &idOut,
+    stream<ap_uint<16> >    &ploadLenOut){
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+    enum agmdStateEnum {GET_METADATA, FORWARD};
+    static agmdStateEnum agmd_state = GET_METADATA;
+    static ap_uint<16>  lenCount;
+    
+    axiWordUdp currWord;
+
+    switch(agmd_state){
+        case GET_METADATA:
+            if (!DataIn.empty()){
+                DataIn.read(currWord);
+                idOut.write(currWord.user);
+                DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
+                
+                lenCount = 64;
+
+                if (currWord.last) {
+                    ploadLenOut.write(keep2len(currWord.keep));
+                }
+                else
+                    agmd_state = FORWARD;
+            }
+            break;
+        case FORWARD:
+            if (!DataIn.empty()){
+                DataIn.read(currWord);
+                DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
+                if (currWord.last) {
+                    ploadLenOut.write((lenCount + currWord.keep));
+                    agmd_state = GET_METADATA;
+                }
+                else
+                    lenCount +=64;
+            }
+            break;
+    }
+
+}
+
+void udpTxEngine (
+    stream<axiWord>         &DataIn,
+    stream<udpMetadata>     &MetaIn,
+    stream<ap_uint<16> >    &ploadLenIn,
+    stream<axiWord>         &DataOut){
+#pragma HLS INLINE off
+#pragma HLS pipeline II=1
+
+    enum uteStateEnum {GET_METADATA, PKTHEADER, FORWARD, EXTRAWORD, DROP};
+    static uteStateEnum ute_state = GET_METADATA;
+    
+    static axiWord      prevWord;
+    static udpMetadata  currMetaData;
+    static ap_uint<16>  ip_len;
+    static ap_uint<16>  udp_len;
+    
+    axiWord     currWord;
+    axiWord     sendWord = axiWord();
+    ap_uint<16> currLen;
+
+    switch (ute_state) {
+        case GET_METADATA:
+            if (!MetaIn.empty() && !ploadLenIn.empty()){
+                MetaIn.read(currMetaData);
+                ploadLenIn.read(currLen);
+
+                ip_len  = currLen + 20 + 8;
+                udp_len = currLen + 8;
+                ute_state = (currMetaData.valid) ? PKTHEADER : DROP;
+            }
+            break;
+        case PKTHEADER:
+            if (!DataIn.empty()){
+                DataIn.read(currWord);
+                // Create the IP header
+                sendWord.data(  7,  0) = 0x45;                                  // Version && IHL
+                sendWord.data( 15,  8) = 0;                                     // TOS
+                sendWord.data( 31, 16) = byteSwap<16>(ip_len);                  //length
+                sendWord.data( 47, 32) = 0;                                     // Identification
+                sendWord.data( 50, 48) = 0;                                     //Flags
+                sendWord.data( 63, 51) = 0x0;                                   //Fragment Offset
+                sendWord.data( 71, 64) = 0x40;                                  // TTL
+                sendWord.data( 79, 72) = 0x11;                                  // Protocol = UDP
+                sendWord.data( 95, 80) = 0;                                     // IP header checksum   
+                sendWord.data(127, 96) = byteSwap<32>(currMetaData.myIP);       // Source IP
+                sendWord.data(159,128) = byteSwap<32>(currMetaData.theirIP);    // Destination IP
+                // Create the UDP header
+                sendWord.data(175,160) = byteSwap<16>(currMetaData.myPort);     // Source Port
+                sendWord.data(191,176) = byteSwap<16>(currMetaData.theirPort);  // Destination Port
+                sendWord.data(207,192) = byteSwap<16>(udp_len);                 // UDP Length
+                sendWord.data(223,208) = 0x0;                                   // CheckSum
+                sendWord.keep( 27,  0) = 0xFFFFFFF;                             // Assign 1 to all positions of IP and UDP header
+
+                // Insert Payload to the packet
+                sendWord.data(511,224)  = currWord.data(287,  0);
+                sendWord.keep( 63, 28)  = currWord.keep( 35,  0);
+                // Create next previous word
+                prevWord.data(223,  0) = currWord.data(511,288);
+                prevWord.keep( 27,  0) = currWord.keep( 63, 28);
+
+                sendWord.last = 0;
+
+                if (currWord.last){
+                    if (currWord.keep.bit(36))     // If this bit is enable we need one more cycle to complete the packet
+                        ute_state = EXTRAWORD;
+                    else{
+                        sendWord.last = 1;
+                        ute_state = GET_METADATA;
+                    }
+                }
+                else {
+                    ute_state = FORWARD;
+                }
+
+                DataOut.write(sendWord);
+            }
+            break;
+        case FORWARD:
+            if (!DataIn.empty()){
+                DataIn.read(currWord);
+
+                // Continue inserting payload to the packet
+                sendWord.data(223,  0)  = prevWord.data(223,  0);
+                sendWord.keep( 27,  0)  = prevWord.keep( 27,  0);
+                sendWord.data(511,224)  = currWord.data(287,  0);
+                sendWord.keep( 63, 28)  = currWord.keep( 35,  0);
+
+                // Create next previous word
+                prevWord.data(223,  0) = currWord.data(511,288);
+                prevWord.keep( 27,  0) = currWord.keep( 63, 28);
+
+                sendWord.last = 0;
+                if (currWord.last){
+                    if (currWord.keep.bit(36))     // If this bit is enable we need one more cycle to complete the packet
+                        ute_state = EXTRAWORD;
+                    else{
+                        sendWord.last = 1;
+                        ute_state = GET_METADATA;
+                    }
+                }
+                DataOut.write(sendWord);
+            }        
+            break;
+        case EXTRAWORD:
+            // Insert last piece of payload to the packet
+            sendWord.data(223,  0)  = prevWord.data(223,  0);
+            sendWord.keep( 27,  0)  = prevWord.keep( 27,  0);
+            sendWord.last = 1;
+            DataOut.write(sendWord);
+            ute_state = GET_METADATA;
+            break;
+        case DROP:
+            if (!DataIn.empty()){
+                DataIn.read(currWord);
+                if (currWord.last)
+                    ute_state = GET_METADATA;
+            }
+            break;
+    }
+
+}
+
+
 void udp(
     // At IP level
     stream<axiWord>         &rxUdpDataIn,
     stream<axiWord>         &txUdpDataOut,
     // Appplication Data
-    stream<axiWordUdp>      &rxDataOutApp,  
-    stream<axiWordUdp>      &txDataInApp,
+    stream<axiWordUdp>      &DataOutApp,  
+    stream<axiWordUdp>      &DataInApp,
        
     //IP Address Input
     ap_uint<32>             &myIpAddress,
@@ -240,8 +429,8 @@ void udp(
 
 #pragma HLS INTERFACE axis register both port=rxUdpDataIn name=rxUdpDataIn
 #pragma HLS INTERFACE axis register both port=txUdpDataOut name=txUdpDataOut
-#pragma HLS INTERFACE axis register both port=rxDataOutApp name=rxDataOutApp
-#pragma HLS INTERFACE axis register both port=txDataInApp name=txDataInApp
+#pragma HLS INTERFACE axis register both port=DataOutApp name=DataOutApp
+#pragma HLS INTERFACE axis register both port=DataInApp name=DataInApp
 
 #pragma HLS INTERFACE ap_stable register port=myIpAddress name=myIpAddress
 #pragma HLS INTERFACE s_axilite port=SocketTableRx bundle=s_axilite
@@ -254,6 +443,10 @@ void udp(
     #pragma HLS STREAM variable=ureDataPayload depth=512
     #pragma HLS DATA_PACK variable=ureDataPayload
 
+    static stream<axiWord>     agmdDataOut("agmdDataOut");
+    #pragma HLS STREAM variable=agmdDataOut depth=512
+    #pragma HLS DATA_PACK variable=agmdDataOut
+
     static stream<udpMetadata>     ureMetaData("ureMetaData");
     #pragma HLS STREAM variable=ureMetaData depth=32
     #pragma HLS DATA_PACK variable=ureMetaData
@@ -262,12 +455,22 @@ void udp(
     #pragma HLS STREAM variable=rthDropFifo depth=32
     #pragma HLS DATA_PACK variable=rthDropFifo
 
+    static stream<ap_uint<16> >     agmdIdOut("agmdIdOut");
+    #pragma HLS STREAM variable=agmdIdOut depth=32
+
+    static stream<ap_uint<16> >     agmdpayloadLenOut("agmdpayloadLenOut");
+    #pragma HLS STREAM variable=agmdpayloadLenOut depth=32
+
+
+    static stream<udpMetadata>     txthMetaData("txthMetaData");
+    #pragma HLS STREAM variable=txthMetaData depth=32
+    #pragma HLS DATA_PACK variable=txthMetaData
+
 
     udpRxEngine (
         rxUdpDataIn,
         ureMetaData,
         ureDataPayload);
-
 
     rxTableHandler (
         ureMetaData,
@@ -276,10 +479,28 @@ void udp(
         numberSockets,
         myIpAddress);
 
-
     rxEngPacketDropper (
         ureDataPayload,
         rthDropFifo,
-        rxDataOutApp);
+        DataOutApp);
+
+
+    appGetMetaData (
+        DataInApp,
+        agmdDataOut,
+        agmdpayloadLenOut,
+        agmdIdOut);
+
+    txTableHandler (
+        agmdIdOut,
+        txthMetaData,
+        SocketTableTx,
+        myIpAddress);
+
+    udpTxEngine (
+        agmdDataOut,
+        txthMetaData,
+        agmdpayloadLenOut,
+        txUdpDataOut);
 
 }

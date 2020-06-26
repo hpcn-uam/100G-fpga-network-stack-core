@@ -10,6 +10,7 @@ open_project ${proj_name}
 set_top udp
 
 add_files ${root_folder}/hls/UDP/udp.cpp
+add_files ${root_folder}/hls/TOE/common_utilities/common_utilities.cpp
 
 open_solution "ultrascale_plus"
 set_part ${fpga_part} -tool vivado

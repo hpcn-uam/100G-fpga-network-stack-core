@@ -24,10 +24,12 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
 #ifndef UDP_HPP
 #define UDP_HPP
 
 #include "../TOE/toe.hpp"
+#include "../TOE/common_utilities/common_utilities.hpp"
 
 using namespace hls;
 using namespace std;
@@ -53,6 +55,7 @@ struct socket_table {
     ap_uint<32>     theirIP;
     ap_uint<16>     myPort;
     ap_uint<16>     theirPort;
+    ap_uint< 1>     valid;
 };
 
 struct udpMetadata {
@@ -60,10 +63,11 @@ struct udpMetadata {
     ap_uint<32>     myIP;
     ap_uint<16>     theirPort;
     ap_uint<16>     myPort;
+    ap_uint< 1>     valid;
 
     udpMetadata () {}
-    udpMetadata (ap_uint<32> ti, ap_uint<32> mi, ap_uint<16> tp, ap_uint<16> mp) 
-        : theirIP(ti), myIP(mi), theirPort(tp), myPort(mp) {}
+    udpMetadata (ap_uint<32> ti, ap_uint<32> mi, ap_uint<16> tp, ap_uint<16> mp, ap_uint<1> v) 
+        : theirIP(ti), myIP(mi), theirPort(tp), myPort(mp), valid(v) {}
 };
 
 struct tableResponse
@@ -86,10 +90,8 @@ ap_uint<D> byteSwap(ap_uint<D> inputVector) {
         aux(i+7 , i) = inputVector(D-1-i, D-8-i);
     }
 
-
     return aux;
 
-    return (inputVector.range(7,0), inputVector(15, 8));
 }
 
 #endif
