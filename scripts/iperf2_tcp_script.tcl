@@ -2,6 +2,8 @@
 set root_folder [lindex $argv 2]
 # Get project name from the arguments
 set proj_name [lindex $argv 3]
+# Get FPGA part
+set fpga_part [lindex $argv 4]
 # Create project
 open_project ${proj_name}
 
@@ -14,7 +16,7 @@ add_files ${root_folder}/hls/TOE/common_utilities/common_utilities.cpp
 add_files -tb ${root_folder}/hls/iperf2_tcp/test_iperf_client.cpp
 
 open_solution "ultrascale_plus"
-set_part {xcvu9p-flga2104-2l-e} -tool vivado
+set_part ${fpga_part} -tool vivado
 create_clock -period 3.1 -name default
 set_clock_uncertainty 0.2
 

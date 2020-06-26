@@ -6,4 +6,4 @@ synlog.tcl
 *prj/
 *.dir/
 *.pb
-synthesis_results/
+synthesis_results_*HMB/
