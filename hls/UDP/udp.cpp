@@ -112,19 +112,17 @@ void udpRxEngine (
     static ureStateEnum ure_state = HEADER;
     static axiWord      prevWord;
 
-
-    ap_uint<4>          ip_headerlen;
-    ap_uint<16>         ip_totalLen;
     ap_uint<32>         ip_dst;
     ap_uint<32>         ip_src;
     ap_uint<16>         port_src;
     ap_uint<16>         port_dst;
     ap_uint<16>         udp_lenght;
     ap_uint<16>         udp_checksum;
-
+    ap_uint<16>         ip_totalLen;
+    ap_uint< 4>         ip_headerlen;
     axiWord             currWord;
     axiWord             sendWord = axiWord(0,0,0);
-    axiWord             auxWord = axiWord(0,0,0);
+    axiWord             auxWord  = axiWord(0,0,0);
 
     switch (ure_state){
         case HEADER:
@@ -144,8 +142,7 @@ void udpRxEngine (
                 /*Create next previous word*/
                 auxWord.data(287, 0)  = currWord.data(511, 224);
                 auxWord.keep( 35, 0)  = currWord.keep( 63,  28);
-                auxWord.last           = currWord.last;
-
+                auxWord.last          = currWord.last;
 
                 MetaOut.write(udpMetadata(ip_src, ip_dst, port_src, port_dst, 1)); // TODO Maybe check if payload
                 if (currWord.last)
@@ -153,7 +150,7 @@ void udpRxEngine (
                 else 
                     ure_state = CONSUME;
 
-                prevWord        = auxWord;
+                prevWord              = auxWord;
             }
             break;
         case CONSUME:
@@ -167,13 +164,12 @@ void udpRxEngine (
                 sendWord.keep( 63, 36)  = currWord.keep( 27,  0);
 
                 /*Create next previous word*/
-                auxWord.data(287 , 0)  = currWord.data(511, 224);
-                auxWord.keep( 35 , 0)  = currWord.keep( 63,  28);
-                auxWord.last           = currWord.last;
-
+                prevWord.data(287 , 0)  = currWord.data(511, 224);
+                prevWord.keep( 35 , 0)  = currWord.keep( 63,  28);
+                prevWord.last           = currWord.last;
 
                 if (currWord.last){
-                    if (currWord.keep.bit(26))
+                    if (currWord.keep.bit(28))
                         ure_state = EXTRAWORD;
                     else {
                         sendWord.last = 1;
@@ -181,13 +177,11 @@ void udpRxEngine (
                     }
                 }
                 DataOut.write(sendWord);
-
-                prevWord        = auxWord;
             }
             break;
         case EXTRAWORD:
             sendWord.data(287,  0)  = prevWord.data(287,  0);
-            sendWord.data( 35,  0)  = prevWord.keep( 35,  0);
+            sendWord.keep( 35,  0)  = prevWord.keep( 35,  0);
             sendWord.last            = 1;
             DataOut.write(sendWord);
             ure_state = HEADER;
@@ -230,7 +224,7 @@ void rxEngPacketDropper (
             if (!repdDataIn.empty()){
                 repdDataIn.read(currWord);
                 sendWord = axiWordUdp(currWord.data,currWord.keep, currResponse.id, currWord.last);
-                if (currResponse.drop)
+                if (!currResponse.drop)
                     repdDataOut.write(sendWord);
                 if (currWord.last)
                     repd_state = GET_RESPONSE;
