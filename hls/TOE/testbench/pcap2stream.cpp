@@ -307,7 +307,7 @@ int stream2pcap(
 		return -1;
 	}
 
-	if (!input_data.empty()){
+	while (!input_data.empty()){
 		input_data.read(currWord);
 		//cout << "Stream to pcap: " << hex << currWord.data << "\tkeep: " << currWord.keep << "\tlast: " << dec << currWord.last << endl;
 		for (int i =0 ; i<64 ; i++){

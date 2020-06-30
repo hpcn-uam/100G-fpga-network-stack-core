@@ -123,8 +123,8 @@ void udpRxEngine (
     ap_uint<16>         udp_checksum;
 
     axiWord             currWord;
-    axiWord             sendWord = axiWord();
-    axiWord             auxWord = axiWord();
+    axiWord             sendWord = axiWord(0,0,0);
+    axiWord             auxWord = axiWord(0,0,0);
 
     switch (ure_state){
         case HEADER:
@@ -275,7 +275,7 @@ void appGetMetaData (
                 DataIn.read(currWord);
                 DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
                 if (currWord.last) {
-                    ploadLenOut.write((lenCount + currWord.keep));
+                    ploadLenOut.write((lenCount + keep2len(currWord.keep)));
                     agmd_state = GET_METADATA;
                 }
                 else
@@ -303,7 +303,7 @@ void udpTxEngine (
     static ap_uint<16>  udp_len;
     
     axiWord     currWord;
-    axiWord     sendWord = axiWord();
+    axiWord     sendWord = axiWord(0,0,0);
     ap_uint<16> currLen;
 
     switch (ute_state) {
@@ -344,7 +344,7 @@ void udpTxEngine (
                 sendWord.keep( 63, 28)  = currWord.keep( 35,  0);
                 // Create next previous word
                 prevWord.data(223,  0) = currWord.data(511,288);
-                prevWord.keep( 27,  0) = currWord.keep( 63, 28);
+                prevWord.keep( 27,  0) = currWord.keep( 63, 36);
 
                 sendWord.last = 0;
 
@@ -375,7 +375,7 @@ void udpTxEngine (
 
                 // Create next previous word
                 prevWord.data(223,  0) = currWord.data(511,288);
-                prevWord.keep( 27,  0) = currWord.keep( 63, 28);
+                prevWord.keep( 27,  0) = currWord.keep( 63, 36);
 
                 sendWord.last = 0;
                 if (currWord.last){
@@ -488,8 +488,8 @@ void udp(
     appGetMetaData (
         DataInApp,
         agmdDataOut,
-        agmdpayloadLenOut,
-        agmdIdOut);
+        agmdIdOut,
+        agmdpayloadLenOut);
 
     txTableHandler (
         agmdIdOut,

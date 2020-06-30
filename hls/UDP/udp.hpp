@@ -53,9 +53,13 @@ typedef my_axis_udp<ETH_INTERFACE_WIDTH> axiWordUdp;
 
 struct socket_table {
     ap_uint<32>     theirIP;
-    ap_uint<16>     myPort;
     ap_uint<16>     theirPort;
+    ap_uint<16>     myPort;
     ap_uint< 1>     valid;
+
+    socket_table() {}
+    socket_table(ap_uint<32> ti, ap_uint<16> tp, ap_uint<16> mp, ap_uint<1> v) 
+        : theirIP(ti), theirPort(tp), myPort(mp), valid(v) {}
 };
 
 struct udpMetadata {
@@ -91,7 +95,16 @@ ap_uint<D> byteSwap(ap_uint<D> inputVector) {
     }
 
     return aux;
-
 }
+
+void udp(
+    stream<axiWord>         &rxUdpDataIn,
+    stream<axiWord>         &txUdpDataOut,
+    stream<axiWordUdp>      &DataOutApp,  
+    stream<axiWordUdp>      &DataInApp,
+    ap_uint<32>             &myIpAddress,
+    socket_table            SocketTableRx[NUMBER_SOCKETS],
+    socket_table            SocketTableTx[NUMBER_SOCKETS],
+    ap_uint<16>             &numberSockets );
 
 #endif

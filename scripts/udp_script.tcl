@@ -12,6 +12,12 @@ set_top udp
 add_files ${root_folder}/hls/UDP/udp.cpp
 add_files ${root_folder}/hls/TOE/common_utilities/common_utilities.cpp
 
+add_files -tb ${root_folder}/hls/UDP/udp_tb.cpp
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap.cpp
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap2stream.cpp
+add_files -tb ../hls/UDP/shakespeare.txt
+add_files -tb ../hls/UDP/goldenDataTx.pcap
+
 open_solution "ultrascale_plus"
 set_part ${fpga_part} -tool vivado
 create_clock -period 2.5 -name default
