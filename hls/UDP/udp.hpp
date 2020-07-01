@@ -103,8 +103,7 @@ void udp(
     stream<axiWordUdp>      &DataOutApp,  
     stream<axiWordUdp>      &DataInApp,
     ap_uint<32>             &myIpAddress,
-    socket_table            SocketTableRx[NUMBER_SOCKETS],
-    socket_table            SocketTableTx[NUMBER_SOCKETS],
+    socket_table            SocketTable[NUMBER_SOCKETS],
     ap_uint<16>             &numberSockets );
 
 #endif

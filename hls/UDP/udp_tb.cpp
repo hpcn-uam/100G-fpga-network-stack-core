@@ -37,8 +37,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../TOE/testbench/pcap2stream.hpp"
 #include <string.h>
 
-socket_table            SocketTableRx[NUMBER_SOCKETS];
-socket_table            SocketTableTx[NUMBER_SOCKETS];
+socket_table            SocketTable[NUMBER_SOCKETS];
 stream<axiWordUdp>      DataInApp("DataInApp");
 stream<axiWordUdp>      AppRxGolden("AppRxGolden");
 
@@ -81,18 +80,17 @@ void readTxtFile () {
 void fillTables(){
     // Initialize tables to 0
     for (unsigned int i=0; i < NUMBER_SOCKETS; i++){
-        SocketTableRx[i]= socket_table(0,0,0,0);
+        SocketTable[i]= socket_table(0,0,0,0);
     }
 
-    SocketTableRx[ 1] = socket_table(0xC0A8000A,53211,60279,1);
-    SocketTableRx[ 6] = socket_table(0xC0A80017,58517,60280,1);
-    SocketTableRx[11] = socket_table(0xC0A80085,54591,60281,1);
+    SocketTable[ 1] = socket_table(0xC0A8000A,53211,60279,1);
+    SocketTable[ 6] = socket_table(0xC0A80017,58517,60280,1);
+    SocketTable[11] = socket_table(0xC0A80085,54591,60281,1);
 
-    memcpy(SocketTableTx, SocketTableRx, sizeof(socket_table) * NUMBER_SOCKETS);
 #ifdef PRINT_TABLE
     for (unsigned int m=0; m< NUMBER_SOCKETS; m++){
-        std::cout<< "TxTable["<< std::setw(2) << m << "] theirIP: " << SocketTableTx[m].theirIP << "\ttheirPort: " << SocketTableTx[m].theirIP;
-        std::cout<< "\tmyPort: " << SocketTableTx[m].myPort << "\tvalid: " << SocketTableTx[m].valid <<std::endl;
+        std::cout<< "TxTable["<< std::setw(2) << m << "] theirIP: " << SocketTable[m].theirIP << "\ttheirPort: " << SocketTable[m].theirIP;
+        std::cout<< "\tmyPort: " << SocketTable[m].myPort << "\tvalid: " << SocketTable[m].valid <<std::endl;
     }
 #endif    
 }
@@ -152,8 +150,7 @@ int main(void){
             DataOutApp,  
             DataInApp,
             myIpAddress,
-            SocketTableRx,
-            SocketTableTx,
+            SocketTable,
             numberSockets);
     }
 
