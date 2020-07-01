@@ -33,40 +33,40 @@ distclean: clean
 TOE_hls_prj: $(shell find $(TOESCR) -type f) \
 			 $(TCLDIR)/toe_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 IPERF2_TCP_hls_prj: $(shell find $(IPERFSRC) -type f) \
 			 $(TCLDIR)/iperf2_tcp_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 ECHOSERVER_hls_prj: $(shell find $(ECHOSRC) -type f) $(TCLDIR)/echo_server_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/echo_server_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/echo_server_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 ARP_hls_prj: $(shell find $(ARPSRC) -type f) $(TCLDIR)/arp_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/arp_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/arp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 ETH_inserter_hls_prj: $(shell find $(ETHSRC) -type f) $(TCLDIR)/ethernet_inserter_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/ethernet_inserter_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/ethernet_inserter_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 ICMP_hls_prj: $(shell find $(ICMPSRC) -type f) $(TCLDIR)/icmp_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/icmp_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/icmp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 PKT_HANDLER_prj: $(shell find $(PKTSRC) -type f) $(TCLDIR)/packet_handler_script.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 userAbstraction_prj: $(shell find $(USRSRC) -type f) $(TCLDIR)/userAbstraction.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/userAbstraction.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/userAbstraction.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 portHandler_prj: $(shell find $(PORTSRC) -type f) $(TCLDIR)/portHandler.tcl
 	rm -rf $@
-	vivado_hls -f $(TCLDIR)/portHandler.tcl -tclargs $(TOPDIR) $@ FPGAPART
+	vivado_hls -f $(TCLDIR)/portHandler.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
 UDP_prj: $(shell find $(UDPTSRC) -type f) $(TCLDIR)/udp_script.tcl
 	rm -rf $@
