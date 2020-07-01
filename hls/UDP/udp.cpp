@@ -414,8 +414,7 @@ void udp(
     //IP Address Input
     ap_uint<32>             &myIpAddress,
 
-    socket_table            SocketTableRx[NUMBER_SOCKETS],
-    socket_table            SocketTableTx[NUMBER_SOCKETS],
+    socket_table            SocketTable[NUMBER_SOCKETS],
     ap_uint<16>             &numberSockets ) {
 
 #pragma HLS DATAFLOW
@@ -427,8 +426,7 @@ void udp(
 #pragma HLS INTERFACE axis register both port=DataInApp name=DataInApp
 
 #pragma HLS INTERFACE ap_stable register port=myIpAddress name=myIpAddress
-#pragma HLS INTERFACE s_axilite port=SocketTableRx bundle=s_axilite
-#pragma HLS INTERFACE s_axilite port=SocketTableTx bundle=s_axilite
+#pragma HLS INTERFACE s_axilite port=SocketTable bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=numberSockets bundle=s_axilite
 #pragma HLS INTERFACE ap_ctrl_none port=return
 
@@ -468,7 +466,7 @@ void udp(
 
     rxTableHandler (
         ureMetaData,
-        SocketTableRx,
+        SocketTable,
         rthDropFifo,
         numberSockets,
         myIpAddress);
@@ -488,7 +486,7 @@ void udp(
     txTableHandler (
         agmdIdOut,
         txthMetaData,
-        SocketTableTx,
+        SocketTable,
         myIpAddress);
 
     udpTxEngine (
