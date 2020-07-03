@@ -7,6 +7,7 @@ ETHSRC=$(TOPDIR)/hls/ethernet_inserter
 ICMPSRC=$(TOPDIR)/hls/icmp_server
 PKTSRC=$(TOPDIR)/hls/packet_handler
 USRSRC=$(TOPDIR)/hls/user_abstraction
+UDPSRC=$(TOPDIR)/hls/UDP
 PORTSRC=$(TOPDIR)/hls/port_handler
 TCLDIR=$(TOPDIR)/scripts
 
@@ -68,7 +69,7 @@ portHandler_prj: $(shell find $(PORTSRC) -type f) $(TCLDIR)/portHandler.tcl
 	rm -rf $@
 	vivado_hls -f $(TCLDIR)/portHandler.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
-UDP_prj: $(shell find $(UDPTSRC) -type f) $(TCLDIR)/udp_script.tcl
+UDP_prj: $(shell find $(UDPSRC) -type f) $(TCLDIR)/udp_script.tcl
 	rm -rf $@
 	vivado_hls -f $(TCLDIR)/udp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
 
