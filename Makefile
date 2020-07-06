@@ -2,7 +2,7 @@
 
 .PHONY:all
 all: create_folder_noHBM
-	make -C synthesis_results_noHMB
+	make -C synthesis_results_noHMB -j4
 
 create_folder_noHBM:
 	mkdir -p synthesis_results_noHMB
@@ -10,7 +10,7 @@ create_folder_noHBM:
 
 .PHONY:hbm
 hbm: create_folder_HBM
-	make -C synthesis_results_HMB FPGAPART=xcu280-fsvh2892-2L-e
+	make -C synthesis_results_HMB FPGAPART=xcu280-fsvh2892-2L-e -j4
 
 create_folder_HBM:
 	mkdir -p synthesis_results_HMB
