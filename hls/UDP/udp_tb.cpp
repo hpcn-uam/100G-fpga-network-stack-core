@@ -66,7 +66,7 @@ void readTxtFile () {
                 currWord.last = 1;
                 DataInApp.write(currWord);
                 AppRxGolden.write(currWord);
-                currWord.user = 0;
+                currWord.dest = 0;
             }
             else if (((i + 1) % 64) == 0){
                 DataInApp.write(currWord);
@@ -180,10 +180,10 @@ int main(void){
 #endif
             rxErrors--;
         }
-        if (goldenWord.user != currWord.user){
+        if (goldenWord.dest != currWord.dest){
 #ifndef DEBUG
             std::cerr << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
-            std::cerr << rxBeat << "] user field does not match golden data" << std::endl;
+            std::cerr << rxBeat << "] dest field does not match golden data" << std::endl;
 #endif
             rxErrors--;
         }        

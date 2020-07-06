@@ -40,12 +40,11 @@ template<int D>
 struct my_axis_udp {
     ap_uint< D >    data;
     ap_uint<D/8>    keep;
-    ap_uint<16>     user;
     ap_uint<16>     dest;
     ap_uint< 1>     last;
     my_axis_udp() {}
-    my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> user, ap_uint<1> last)
-                : data(data), keep(keep), user(user), dest(user), last(last) {}
+    my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> dest, ap_uint<1> last)
+                : data(data), keep(keep), dest(dest), last(last) {}
 };
 
 typedef my_axis_udp<ETH_INTERFACE_WIDTH> axiWordUdp;

@@ -191,7 +191,7 @@ void udpRxEngine (
 
 /**
  * @brief      This module reads the metadata and forward the payload depending on the socket status.
- *             If the payload is forwarded, the id is included in both tuser and tdest
+ *             If the payload is forwarded, the id is included in tdest
  *
  * @param      repdDataIn   Input Payload
  * @param      repdMetaIn   Input Metadata, id and drop decision
@@ -252,7 +252,7 @@ void appGetMetaData (
         case GET_METADATA:
             if (!DataIn.empty()){
                 DataIn.read(currWord);
-                idOut.write(currWord.user);
+                idOut.write(currWord.dest);
                 DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
                 
                 lenCount = 64;
