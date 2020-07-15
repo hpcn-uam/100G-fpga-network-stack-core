@@ -50,8 +50,13 @@ const ap_uint<48> BROADCAST_MAC	= 0xFFFFFFFFFFFF;	// Broadcast MAC Address
 
 // This flag enables an aggressive scanning of the IP in the subnet
 // For instance, at the beginning ARP packets will be sent to each IP in the subnet
-#define SCANNING 1
+#define SCANNING 0
 
+#ifdef __SYNTHESIS__
+#define MAX_COUNT 1500000000 // around 5 seconds
+#else
+#define MAX_COUNT 50		// short time for simulation purposes
+#endif
 
 const uint8_t 	noOfArpTableEntries	= 8;
 
@@ -128,10 +133,14 @@ struct rtlMacUpdateReply {
 
 void arp_server(  
 		stream<axiWord>&          		arpDataIn,
-    	stream<ap_uint<32> >&     		macIpEncode_req,
+		stream<ap_uint<32> >&     		macIpEncode_req,
 		stream<axiWord>&          		arpDataOut,
 		stream<arpTableReply>&    		macIpEncode_rsp,
+		arpTableEntry					arpTable[256],
+		ap_uint< 1>& 					arp_scan,
 		ap_uint<48>& 					myMacAddress,
-		ap_uint<32>& 					myIpAddress);
+		ap_uint<32>& 					myIpAddress,
+		ap_uint<32>&                    gatewayIP,
+		ap_uint<32>&                    networkMask);
 
 #endif

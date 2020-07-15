@@ -10,6 +10,10 @@ open_project ${proj_name}
 set_top arp_server
 add_files ${root_folder}/hls/arp_server/arp_server.cpp
 
+add_files -tb ${root_folder}/hls/arp_server/arp_server_tb.cpp
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap.cpp
+add_files -tb ${root_folder}/hls/TOE/testbench/pcap2stream.cpp
+
 open_solution "ultrascale_plus"
 set_part ${fpga_part} -tool vivado
 create_clock -period 3.1 -name default
