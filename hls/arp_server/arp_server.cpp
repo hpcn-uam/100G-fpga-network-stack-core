@@ -275,8 +275,9 @@ void genARPDiscovery (
 #pragma HLS RESET variable=gia_fsm_state
 
 
-	static ap_uint<8> 	ip_lsb = 0;
 	static ap_uint<32>	time_counter = 0;
+	static ap_uint<8> 	ip_lsb = 0;
+	static ap_uint< 1>	arp_scan_1d = 0;
 	ap_uint<32>			ip_aux;
 	arpTableReply 		macEnc_i;
 	ap_uint<1>			checkArpScan = 0;
@@ -319,11 +320,10 @@ void genARPDiscovery (
 			else
 				checkArpScan = 1;
 
-			if (checkArpScan == 1 && arp_scan ==1){
+			if ((checkArpScan == 1) && (arp_scan_1d == 0) && (arp_scan == 1)){
 				arp_scan = 0;
 				gia_fsm_state = SETUP;
 			}
-
 			break;
 		// Clear variables
 		case SETUP:
@@ -331,6 +331,7 @@ void genARPDiscovery (
 			gia_fsm_state = GEN_IP;
 			break;
 	}
+	arp_scan_1d = arp_scan;
 
 }
 
