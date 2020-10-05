@@ -6,7 +6,7 @@ This repository implements from OSI layer 3 to above and is part of Limago. To g
 
 *Make sure that Vivado-HLS is in the PATH and you are running a supported version*
 
-- Vivado-HLS 2018.2 or Vivado-HLS 2018.3
+- Vivado-HLS 2018.2 to Vivado-HLS 2020.1
 
 If you are not sure what version is running execute the following command:
 
