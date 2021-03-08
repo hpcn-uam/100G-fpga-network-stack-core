@@ -38,7 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 using namespace hls;
 
-unsigned int simCycleCounter=0;
+extern unsigned int simCycleCounter;
 
 int main()
 {

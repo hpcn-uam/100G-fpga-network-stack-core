@@ -16,7 +16,7 @@ add_files -tb ${root_folder}/hls/TOE/testbench/pcap2stream.cpp -cflags "-Ihls/TO
 add_files -tb ${root_folder}/hls/TOE/testbench/pcap.cpp -cflags "-Ihls/TOE/testbench/."
 
 open_solution "ultrascale_plus"
-set_part ${fpga_part} -tool vivado
+set_part ${fpga_part}
 create_clock -period 3.1 -name default
 set_clock_uncertainty 0.2
 #csim_design -argv "${root_folder}/hls/icmp_server/icmp.pcap ${root_dir}/hls/icmp_server/icmp_golden.pcap"

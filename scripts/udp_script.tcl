@@ -19,14 +19,14 @@ add_files -tb ../hls/UDP/shakespeare.txt
 add_files -tb ../hls/UDP/goldenDataTx.pcap
 
 open_solution "ultrascale_plus"
-set_part ${fpga_part} -tool vivado
+set_part ${fpga_part}
 create_clock -period 2.5 -name default
 set_clock_uncertainty 0.2
 
-csim_design
+#csim_design
 
-config_rtl -disable_start_propagation
+#config_rtl -disable_start_propagation
 csynth_design
-export_design -rtl verilog -format ip_catalog
+#export_design -rtl verilog -format ip_catalog
 #
 exit
