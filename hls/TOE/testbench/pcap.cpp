@@ -194,7 +194,7 @@ int pcap_loop (int cnt, pcap_handler callback, unsigned char *user)
 }
 
 
-int pcap_WriteHeader (bool microseconds){
+void pcap_WriteHeader (bool microseconds){
 
   pcap_hdr_t global_header;
 
@@ -218,7 +218,7 @@ int pcap_WriteHeader (bool microseconds){
 }
 
 
-int pcap_WriteData (uint8_t *data, int data_size){
+void pcap_WriteData (uint8_t *data, int data_size){
   pcaprec_hdr_t local_header;
   static bool first_call = true;
   static struct timeval tv;

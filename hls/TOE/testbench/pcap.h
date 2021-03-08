@@ -142,7 +142,7 @@ int pcap_loop (int cnt, pcap_handler callback, unsigned char *user);
 int pcap_open_write (char *path, bool microseconds);
 
 
-int pcap_WriteData (uint8_t *data, int data_size);
+void pcap_WriteData (uint8_t *data, int data_size);
 
 /**
 * @brief Close a previous file opened with pcap_open_write.
