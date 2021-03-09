@@ -84,6 +84,7 @@ void rxTableHandler (
         tableResponse currResp;
         currResp.drop = ((currRxMeta.myIP == byteSwap<32>(myIpAddress)) && (index != -1)) ? 0 : 1;
         currResp.id = index(15,0);
+        currResp.user = userMetadata(byteSwap<32>(myIpAddress), currRxMeta.theirIP, currRxMeta.myPort, currRxMeta.theirPort);
         DropMeta.write(currResp);
     }
 
@@ -209,22 +210,22 @@ void rxEngPacketDropper (
     enum repdStateEnum {GET_RESPONSE, READ};
     static repdStateEnum repd_state = GET_RESPONSE;
 
-    static tableResponse   currResponse;
+    static tableResponse   response;
     axiWord         currWord;
     axiWordUdp      sendWord;
 
     switch (repd_state){
         case GET_RESPONSE:
             if (!repdMetaIn.empty()){
-                repdMetaIn.read(currResponse);
+                repdMetaIn.read(response);
                 repd_state = READ;
             }
             break;
         case READ:
             if (!repdDataIn.empty()){
                 repdDataIn.read(currWord);
-                sendWord = axiWordUdp(currWord.data,currWord.keep, currResponse.id, currWord.last);
-                if (!currResponse.drop)
+                sendWord = axiWordUdp(currWord.data,currWord.keep, response.id, currWord.last, response.user);
+                if (!response.drop)
                     repdDataOut.write(sendWord);
                 if (currWord.last)
                     repd_state = GET_RESPONSE;

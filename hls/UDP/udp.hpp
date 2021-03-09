@@ -36,16 +36,32 @@ using namespace std;
 
 #define NUMBER_SOCKETS 16
 
+struct userMetadata {
+    ap_uint<32>     myIP;
+    ap_uint<32>     theirIP;
+    ap_uint<16>     myPort;
+    ap_uint<16>     theirPort;
+
+    userMetadata () {}
+    userMetadata (ap_uint<32> mi, ap_uint<32> ti, ap_uint<16> mp, ap_uint<16> tp) 
+        : myIP(mi), theirIP(ti), myPort(mp), theirPort(tp) {}
+
+};
+
 template<int D>
 struct my_axis_udp {
     ap_uint< D >    data;
     ap_uint<D/8>    keep;
     ap_uint<16>     dest;
     ap_uint< 1>     last;
+    userMetadata    user;
     my_axis_udp() {}
     my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> dest, ap_uint<1> last)
                 : data(data), keep(keep), dest(dest), last(last) {}
+    my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> dest, ap_uint<1> last, userMetadata user)
+                : data(data), keep(keep), dest(dest), last(last), user(user) {}
 };
+
 
 typedef my_axis_udp<ETH_INTERFACE_WIDTH> axiWordUdp;
 
@@ -76,6 +92,7 @@ struct udpMetadata {
 struct tableResponse
 {
     ap_uint<16>     id;
+    userMetadata    user;
     ap_uint< 1>     drop;
 
     tableResponse () {}
