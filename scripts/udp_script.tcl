@@ -27,6 +27,6 @@ set_clock_uncertainty 0.2
 
 #config_rtl -disable_start_propagation
 csynth_design
-#export_design -rtl verilog -format ip_catalog
+export_design -rtl verilog -format ip_catalog
 #
 exit
