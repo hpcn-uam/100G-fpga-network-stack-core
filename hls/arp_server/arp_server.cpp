@@ -381,6 +381,7 @@ void arp_server(
 #pragma HLS DATA_PACK variable=macIpEncode_rsp
 #pragma HLS INTERFACE s_axilite port=arp_scan bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=arpTable bundle=s_axilite
+#pragma HLS BIND_STORAGE variable=arpTable type=ram_t2p
 
 	static stream<arpReplyMeta>     arpReplyFifo("arpReplyFifo");
 	#pragma HLS STREAM variable=arpReplyFifo depth=4

@@ -36,47 +36,30 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "udp.hpp"
 
 
-void txTableHandler (
-    stream<ap_uint<16> >    &idIn,
-    stream<udpMetadata>     &MetaOut,
-    socket_table            SocketTableTx[NUMBER_SOCKETS],
-    ap_uint<32>             &myIpAddress) {
-#pragma HLS INLINE off
-#pragma HLS pipeline II=1
-
-    ap_uint<16>  currId;
-    socket_table cS;
-
-    if(!idIn.empty()){
-        idIn.read(currId);
-        cS = SocketTableTx[currId];
-        MetaOut.write(udpMetadata(cS.theirIP,byteSwap<32>(myIpAddress),cS.theirPort,cS.myPort,cS.valid));
-    }
-
-}
-
-void rxTableHandler (
+void TableHandler (
     stream<udpMetadata>     &MetaIn,
-    socket_table            SocketTableRx[NUMBER_SOCKETS],
+    stream<ap_uint<16> >    &idIn,
     stream<tableResponse>   &DropMeta,
+    stream<udpMetadata>     &MetaOut,
+    socket_table            SocketTable[NUMBER_SOCKETS],
     ap_uint<16>             &numberSockets,
     ap_uint<32>             &myIpAddress) {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
-#pragma HLS ARRAY_PARTITION variable=SocketTableRx complete dim=1
-
+#pragma HLS ARRAY_PARTITION variable=SocketTable complete dim=1
+#pragma HLS DISAGGREGATE variable=SocketTable
 
     udpMetadata     currRxMeta;
-
+    ap_uint<16>  currId;
+    socket_table cS;
 
     if (!MetaIn.empty()){
         MetaIn.read(currRxMeta);
         ap_int<17> index = -1;
         for (unsigned int i = 0; i < NUMBER_SOCKETS; i++) {
-		//#pragma HLS UNROLL
-            if ((SocketTableRx[i].theirIP   == currRxMeta.theirIP)   &&
-                (SocketTableRx[i].theirPort == currRxMeta.theirPort) &&
-                (SocketTableRx[i].myPort    == currRxMeta.myPort)) {
+            if ((SocketTable[i].theirIP   == currRxMeta.theirIP)   &&
+                (SocketTable[i].theirPort == currRxMeta.theirPort) &&
+                (SocketTable[i].myPort    == currRxMeta.myPort)) {
                 index = i;
                 break;
             }
@@ -86,6 +69,12 @@ void rxTableHandler (
         currResp.id = index(15,0);
         currResp.user = userMetadata(byteSwap<32>(myIpAddress), currRxMeta.theirIP, currRxMeta.myPort, currRxMeta.theirPort);
         DropMeta.write(currResp);
+    }
+
+    if(!idIn.empty()){
+        idIn.read(currId);
+        cS = SocketTable[currId];
+        MetaOut.write(udpMetadata(cS.theirIP,byteSwap<32>(myIpAddress),cS.theirPort,cS.myPort,cS.valid));
     }
 
     numberSockets = NUMBER_SOCKETS;
@@ -417,7 +406,6 @@ void udp(
 
     socket_table            SocketTable[NUMBER_SOCKETS],
     ap_uint<16>             &numberSockets ) {
-
 #pragma HLS DATAFLOW
 
 
@@ -426,7 +414,7 @@ void udp(
 #pragma HLS INTERFACE axis register both port=DataOutApp name=DataOutApp
 #pragma HLS INTERFACE axis register both port=DataInApp name=DataInApp
 
-#pragma HLS INTERFACE ap_stable register port=myIpAddress name=myIpAddress
+#pragma HLS INTERFACE ap_none register port=myIpAddress name=myIpAddress
 #pragma HLS INTERFACE s_axilite port=SocketTable bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=numberSockets bundle=s_axilite
 #pragma HLS INTERFACE ap_ctrl_none port=return
@@ -434,19 +422,15 @@ void udp(
 
     static stream<axiWord>     ureDataPayload("ureDataPayload");
     #pragma HLS STREAM variable=ureDataPayload depth=512
-    #pragma HLS DATA_PACK variable=ureDataPayload
 
     static stream<axiWord>     agmdDataOut("agmdDataOut");
     #pragma HLS STREAM variable=agmdDataOut depth=512
-    #pragma HLS DATA_PACK variable=agmdDataOut
 
     static stream<udpMetadata>     ureMetaData("ureMetaData");
     #pragma HLS STREAM variable=ureMetaData depth=32
-    #pragma HLS DATA_PACK variable=ureMetaData
 
     static stream<tableResponse>     rthDropFifo("rthDropFifo");
     #pragma HLS STREAM variable=rthDropFifo depth=32
-    #pragma HLS DATA_PACK variable=rthDropFifo
 
     static stream<ap_uint<16> >     agmdIdOut("agmdIdOut");
     #pragma HLS STREAM variable=agmdIdOut depth=32
@@ -457,7 +441,6 @@ void udp(
 
     static stream<udpMetadata>     txthMetaData("txthMetaData");
     #pragma HLS STREAM variable=txthMetaData depth=32
-    #pragma HLS DATA_PACK variable=txthMetaData
 
 
     udpRxEngine (
@@ -465,10 +448,12 @@ void udp(
         ureMetaData,
         ureDataPayload);
 
-    rxTableHandler (
+    TableHandler (
         ureMetaData,
-        SocketTable,
+        agmdIdOut,
         rthDropFifo,
+        txthMetaData,
+        SocketTable,
         numberSockets,
         myIpAddress);
 
@@ -477,18 +462,11 @@ void udp(
         rthDropFifo,
         DataOutApp);
 
-
     appGetMetaData (
         DataInApp,
         agmdDataOut,
         agmdIdOut,
         agmdpayloadLenOut);
-
-    txTableHandler (
-        agmdIdOut,
-        txthMetaData,
-        SocketTable,
-        myIpAddress);
 
     udpTxEngine (
         agmdDataOut,
