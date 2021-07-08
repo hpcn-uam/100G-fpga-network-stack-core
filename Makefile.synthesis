@@ -14,9 +14,7 @@ TCLDIR=$(TOPDIR)/scripts
 
 FPGAPART ?= xcu250-figd2104-2L-e
 
-project = TOE_hls_prj IPERF2_TCP_hls_prj ECHOSERVER_hls_prj ARP_hls_prj \
-	      ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj userAbstraction_prj \
-	      portHandler_prj UDP_prj
+project = ARP_hls_prj ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj UDP_prj
 
 
 all: build
