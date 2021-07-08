@@ -378,28 +378,24 @@ void arp_server(
 #pragma HLS INTERFACE axis register both port=arpDataOut
 #pragma HLS INTERFACE axis register both port=macIpEncode_req
 #pragma HLS INTERFACE axis register both port=macIpEncode_rsp
-#pragma HLS DATA_PACK variable=macIpEncode_rsp
 #pragma HLS INTERFACE s_axilite port=arp_scan bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=arpTable bundle=s_axilite
 #pragma HLS BIND_STORAGE variable=arpTable type=ram_t2p
 
 	static stream<arpReplyMeta>     arpReplyFifo("arpReplyFifo");
 	#pragma HLS STREAM variable=arpReplyFifo depth=4
-	#pragma HLS DATA_PACK variable=arpReplyFifo
 	  
 	static stream<ap_uint<32> >   arpRequestFifo("arpRequestFifo");
 	#pragma HLS STREAM variable=arpRequestFifo depth=4
 
 	static stream<arpTableEntry>    arpTableInsertFifo("arpTableInsertFifo");
 	#pragma HLS STREAM variable=arpTableInsertFifo depth=4
-	#pragma HLS DATA_PACK variable=arpTableInsertFifo
 
 	static stream<ap_uint<32> >     		macIpEncode_i("macIpEncode_i");
 	#pragma HLS STREAM variable=macIpEncode_i depth=4
 
 	static stream<arpTableReply> 		macIpEncode_rsp_i("macIpEncode_rsp_i");
 	#pragma HLS STREAM variable=macIpEncode_rsp_i depth=4
-	#pragma HLS DATA_PACK variable=macIpEncode_rsp_i
 
 	genARPDiscovery (
 		macIpEncode_req,
