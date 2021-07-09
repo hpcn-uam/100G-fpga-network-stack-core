@@ -39,6 +39,7 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2018 Xilinx, 
 #include "ap_int.h"
 #include <stdint.h>
 #include <vector>
+#include "ap_axi_sdata.h"
 
 #define ETH_INTERFACE_WIDTH 512
 
@@ -151,17 +152,7 @@ enum eventType {TX, RT, ACK, SYN, SYN_ACK, FIN, RST, ACK_NODELAY, RT_CONT};
  */
 enum sessionState {CLOSED, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSING, TIME_WAIT, LAST_ACK};
 
-template<int D>
-struct my_axis {
-	ap_uint< D >	data;
-	ap_uint<D/8>	keep;
-	ap_uint<1>		last;
-	my_axis() {}
-	my_axis(ap_uint<D>	 data, ap_uint<D/8> keep, ap_uint<1> last)
-				: data(data), keep(keep), last(last) {}
-};
-
-typedef my_axis<ETH_INTERFACE_WIDTH> axiWord;
+typedef ap_axiu<ETH_INTERFACE_WIDTH,0,0,0> axiWord;
 
 
 struct fourTuple

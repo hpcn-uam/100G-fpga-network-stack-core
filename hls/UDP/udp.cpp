@@ -94,13 +94,13 @@ void TableHandler (
 void udpRxEngine (
     stream<axiWord>         &DataIn,
     stream<udpMetadata>     &MetaOut,
-    stream<axiWord>         &DataOut){
+    stream<axiWordi>        &DataOut){
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
 
     enum ureStateEnum {HEADER, CONSUME, EXTRAWORD};
     static ureStateEnum ure_state = HEADER;
-    static axiWord      prevWord;
+    static axiWordi     prevWord;
 
     ap_uint<32>         ip_dst;
     ap_uint<32>         ip_src;
@@ -111,8 +111,8 @@ void udpRxEngine (
     ap_uint<16>         ip_totalLen;
     ap_uint< 4>         ip_headerlen;
     axiWord             currWord;
-    axiWord             sendWord = axiWord(0,0,0);
-    axiWord             auxWord  = axiWord(0,0,0);
+    axiWordi            sendWord = axiWordi(0,0,0);
+    axiWordi            auxWord = axiWordi(0,0,0);
 
     switch (ure_state){
         case HEADER:
@@ -188,7 +188,7 @@ void udpRxEngine (
  * @param      repdDataOut  Output Payload
  */
 void rxEngPacketDropper (
-    stream<axiWord>         &repdDataIn,
+    stream<axiWordi>        &repdDataIn,
     stream<tableResponse>   &repdMetaIn,
     stream<axiWordUdp>      &repdDataOut
     ){
@@ -200,7 +200,7 @@ void rxEngPacketDropper (
     static repdStateEnum repd_state = GET_RESPONSE;
 
     static tableResponse   response;
-    axiWord         currWord;
+    axiWordi        currWord;
     axiWordUdp      sendWord;
 
     switch (repd_state){
@@ -213,7 +213,11 @@ void rxEngPacketDropper (
         case READ:
             if (!repdDataIn.empty()){
                 repdDataIn.read(currWord);
-                sendWord = axiWordUdp(currWord.data,currWord.keep, response.id, currWord.last, response.user);
+                sendWord.data = currWord.data;
+                sendWord.keep = currWord.keep;
+                sendWord.id = response.id;
+                sendWord.last = currWord.last;
+                sendWord.user = (response.user.myIP, response.user.theirIP, response.user.myPort, response.user.theirPort);
                 if (!response.drop)
                     repdDataOut.write(sendWord);
                 if (currWord.last)
@@ -226,7 +230,7 @@ void rxEngPacketDropper (
 
 void appGetMetaData (
     stream<axiWordUdp>      &DataIn,
-    stream<axiWord>         &DataOut,
+    stream<axiWordi>        &DataOut,
     stream<ap_uint<16> >    &idOut,
     stream<ap_uint<16> >    &ploadLenOut){
 #pragma HLS INLINE off
@@ -237,13 +241,15 @@ void appGetMetaData (
     static ap_uint<16>  lenCount;
     
     axiWordUdp currWord;
+    axiWordi sendWord;
 
     switch(agmd_state){
         case GET_METADATA:
             if (!DataIn.empty()){
                 DataIn.read(currWord);
                 idOut.write(currWord.dest);
-                DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
+                sendWord = axiWordi(currWord.data, currWord.keep, currWord.last);
+                DataOut.write(sendWord);
                 
                 lenCount = 64;
 
@@ -257,7 +263,8 @@ void appGetMetaData (
         case FORWARD:
             if (!DataIn.empty()){
                 DataIn.read(currWord);
-                DataOut.write(axiWord(currWord.data,currWord.keep,currWord.last));
+                sendWord = axiWordi(currWord.data, currWord.keep, currWord.last);
+                DataOut.write(sendWord);
                 if (currWord.last) {
                     ploadLenOut.write((lenCount + keep2len(currWord.keep)));
                     agmd_state = GET_METADATA;
@@ -271,7 +278,7 @@ void appGetMetaData (
 }
 
 void udpTxEngine (
-    stream<axiWord>         &DataIn,
+    stream<axiWordi>        &DataIn,
     stream<udpMetadata>     &MetaIn,
     stream<ap_uint<16> >    &ploadLenIn,
     stream<axiWord>         &DataOut){
@@ -286,10 +293,12 @@ void udpTxEngine (
     static ap_uint<16>  ip_len;
     static ap_uint<16>  udp_len;
     
-    axiWord     currWord;
-    axiWord     sendWord = axiWord(0,0,0);
+    axiWordi    currWord;
+    axiWord     sendWord;
     ap_uint<16> currLen;
 
+#pragma HLS DISAGGREGATE variable=currWord
+    //DISAGGREGATE
     switch (ute_state) {
         case GET_METADATA:
             if (!MetaIn.empty() && !ploadLenIn.empty()){
@@ -397,7 +406,7 @@ void udp(
     // At IP level
     stream<axiWord>         &rxUdpDataIn,
     stream<axiWord>         &txUdpDataOut,
-    // Appplication Data
+    // Application Data
     stream<axiWordUdp>      &DataOutApp,  
     stream<axiWordUdp>      &DataInApp,
        
@@ -409,21 +418,23 @@ void udp(
 #pragma HLS DATAFLOW
 
 
-#pragma HLS INTERFACE axis register both port=rxUdpDataIn name=rxUdpDataIn
-#pragma HLS INTERFACE axis register both port=txUdpDataOut name=txUdpDataOut
-#pragma HLS INTERFACE axis register both port=DataOutApp name=DataOutApp
-#pragma HLS INTERFACE axis register both port=DataInApp name=DataInApp
+#pragma HLS INTERFACE axis register both port=rxUdpDataIn
+#pragma HLS INTERFACE axis register both port=txUdpDataOut
+#pragma HLS INTERFACE axis register both port=DataOutApp
+#pragma HLS INTERFACE axis register both port=DataInApp
 
-#pragma HLS INTERFACE ap_none register port=myIpAddress name=myIpAddress
+#pragma HLS INTERFACE ap_none register port=myIpAddress
 #pragma HLS INTERFACE s_axilite port=SocketTable bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=numberSockets bundle=s_axilite
 #pragma HLS INTERFACE ap_ctrl_none port=return
 
 
-    static stream<axiWord>     ureDataPayload("ureDataPayload");
+    // Internal streams are of a different type, since Vitis HLS does not support
+    // standard ap_axiu for internal channels
+    static stream<axiWordi>     ureDataPayload("ureDataPayload");
     #pragma HLS STREAM variable=ureDataPayload depth=512
 
-    static stream<axiWord>     agmdDataOut("agmdDataOut");
+    static stream<axiWordi>     agmdDataOut("agmdDataOut");
     #pragma HLS STREAM variable=agmdDataOut depth=512
 
     static stream<udpMetadata>     ureMetaData("ureMetaData");

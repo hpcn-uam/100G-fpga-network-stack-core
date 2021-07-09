@@ -49,22 +49,18 @@ struct userMetadata {
 };
 
 template<int D>
-struct my_axis_udp {
+struct axis_udp {
     ap_uint< D >    data;
     ap_uint<D/8>    keep;
-    ap_uint<16>     dest;
     ap_uint< 1>     last;
-    userMetadata    user;
-    my_axis_udp() {}
-    my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> dest, ap_uint<1> last)
-                : data(data), keep(keep), dest(dest), last(last) {}
-    my_axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<16> dest, ap_uint<1> last, userMetadata user)
-                : data(data), keep(keep), dest(dest), last(last), user(user) {}
+    axis_udp() {}
+    axis_udp(ap_uint<D>   data, ap_uint<D/8> keep, ap_uint<1> last)
+                : data(data), keep(keep), last(last) {}
 };
 
+typedef ap_axiu<ETH_INTERFACE_WIDTH,96,1,16> axiWordUdp;
 
-typedef my_axis_udp<ETH_INTERFACE_WIDTH> axiWordUdp;
-
+typedef axis_udp<ETH_INTERFACE_WIDTH> axiWordi;
 
 struct socket_table {
     ap_uint<32>     theirIP;
