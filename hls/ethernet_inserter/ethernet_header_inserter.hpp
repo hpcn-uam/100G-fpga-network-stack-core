@@ -39,21 +39,23 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 #include <hls_stream.h>
 #include "ap_int.h"
 #include <stdint.h>
+#include "ap_axi_sdata.h"
 
 using namespace hls;
 using namespace std;
 
 #define ETH_INTERFACE_WIDTH 512
 
+typedef ap_axiu<512,0,0,0> axiWord;
+
 template<int D>
 struct my_axis {
-	ap_uint< D >		data;
-	ap_uint<D/8>		keep;
-	ap_uint<1>			last;
+       ap_uint< D >  data;
+       ap_uint<D/8>  keep;
+       ap_uint<1>    last;
 };
 
-typedef my_axis<ETH_INTERFACE_WIDTH> axiWord;
-
+typedef my_axis<ETH_INTERFACE_WIDTH> axiWordi;
 
 struct arpTableReply
 {

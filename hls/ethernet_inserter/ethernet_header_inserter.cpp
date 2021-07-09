@@ -33,8 +33,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.// Copyright (c) 2015 Xilinx, 
 void broadcaster_and_mac_request(
 						stream<axiWord>&				dataIn,
 						stream<ap_uint<32> >&			arpTableRequest,				
-						stream<axiWord>&				ip_header_out,
-						stream<axiWord>&				no_ip_header_out,
+						stream<axiWordi>&				ip_header_out,
+						stream<axiWordi>&				no_ip_header_out,
 						ap_uint<32>&					regSubNetMask,
 						ap_uint<32>&					regDefaultGateway)
 {
@@ -46,6 +46,7 @@ void broadcaster_and_mac_request(
 
 //	static int 		word_count = 0;
 	axiWord 		currWord;
+	axiWordi 		sendWord;
 	ap_uint<32> 	dst_ip_addr;
 
 	switch (bmr_fsm_state){
@@ -59,15 +60,21 @@ void broadcaster_and_mac_request(
 				else
 					arpTableRequest.write(regDefaultGateway);
 
-				ip_header_out.write(currWord); 				// Writing out first transaction 
+				sendWord.data = currWord.data;
+				sendWord.keep = currWord.keep;
+				sendWord.last = currWord.last;
+				ip_header_out.write(sendWord); 				// Writing out first transaction
 				if (!currWord.last)
 					bmr_fsm_state = REMAINING;
 			}
 			break;
 		case REMAINING : 
 			if (!dataIn.empty()){							// There are data in the input stream
-				dataIn.read(currWord);	
-				no_ip_header_out.write(currWord);			// Writing out rest of transactions
+				dataIn.read(currWord);
+				sendWord.data = currWord.data;
+				sendWord.keep = currWord.keep;
+				sendWord.last = currWord.last;
+				no_ip_header_out.write(sendWord);			// Writing out rest of transactions
 				if (currWord.last)
 					bmr_fsm_state = FIRST_WORD;
 			}
@@ -77,8 +84,8 @@ void broadcaster_and_mac_request(
 
 void handle_output(
 						stream<arpTableReply>& 			arpTableReplay,
-						stream<axiWord>&				ip_header_checksum,
-						stream<axiWord>&				no_ip_header_out,
+						stream<axiWordi>&				ip_header_checksum,
+						stream<axiWordi>&				no_ip_header_out,
 
 						ap_uint<48>&					myMacAddress,
 
@@ -95,8 +102,8 @@ void handle_output(
 	static axiremaining previous_word;
 	
 	axiWord sendWord;
-	axiWord current_ip_checksum;
-	axiWord current_no_ip;
+	axiWordi current_ip_checksum;
+	axiWordi current_no_ip;
 	arpTableReply reply;
 
 	switch (mw_state){
@@ -217,8 +224,8 @@ void handle_output(
 }
 
 void compute_and_insert_ip_checksum (
-						stream<axiWord>&			dataIn,
-					  	stream<axiWord>&			dataOut)
+						stream<axiWordi>&			dataIn,
+						stream<axiWordi>&			dataOut)
 {
 #pragma HLS INLINE off
 #pragma HLS pipeline II=1
@@ -236,7 +243,7 @@ void compute_and_insert_ip_checksum (
 
 
 	static ap_uint<4> ipHeaderLen = 0;
-	axiWord currWord;
+	axiWordi currWord;
 	ap_uint<16> temp;
 
    if (!dataIn.empty())
@@ -319,26 +326,20 @@ void ethernet_header_inserter(
 
 #pragma HLS INTERFACE axis register both port=arpTableReplay
 #pragma HLS INTERFACE axis register both port=arpTableRequest	
-#pragma HLS DATA_PACK variable=arpTableReplay
 
-
-#pragma HLS INTERFACE ap_stable register port=myMacAddress name=myMacAddress
-#pragma HLS INTERFACE ap_stable register port=regSubNetMask name=regSubNetMask
-#pragma HLS INTERFACE ap_stable register port=regDefaultGateway name=regDefaultGateway
+#pragma HLS INTERFACE ap_none register port=myMacAddress
+#pragma HLS INTERFACE ap_none register port=regSubNetMask
+#pragma HLS INTERFACE ap_none register port=regDefaultGateway
 
 	// FIFOs
-	static stream<axiWord> ip_header_out;
+	static stream<axiWordi> ip_header_out;
 	#pragma HLS stream variable=ip_header_out depth=16 
-	#pragma HLS DATA_PACK variable=ip_header_out
 	
-	static stream<axiWord> no_ip_header_out;
+	static stream<axiWordi> no_ip_header_out;
 	#pragma HLS stream variable=no_ip_header_out depth=16 
-	#pragma HLS DATA_PACK variable=no_ip_header_out
 	
-	static stream<axiWord> ip_header_checksum;
+	static stream<axiWordi> ip_header_checksum;
 	#pragma HLS stream variable=ip_header_checksum depth=16 
-	#pragma HLS DATA_PACK variable=ip_header_checksum
-
 
 	broadcaster_and_mac_request (
 			dataIn, 
