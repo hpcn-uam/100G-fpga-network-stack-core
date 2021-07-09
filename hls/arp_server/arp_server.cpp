@@ -381,6 +381,7 @@ void arp_server(
 #pragma HLS INTERFACE s_axilite port=arp_scan bundle=s_axilite
 #pragma HLS INTERFACE s_axilite port=arpTable bundle=s_axilite
 #pragma HLS BIND_STORAGE variable=arpTable type=ram_t2p
+#pragma HLS DISAGGREGATE variable=arpTable
 
 	static stream<arpReplyMeta>     arpReplyFifo("arpReplyFifo");
 	#pragma HLS STREAM variable=arpReplyFifo depth=4
