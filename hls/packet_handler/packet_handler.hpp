@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ap_int.h"
 #include <stdint.h>
 #include <cstdlib>
+#include "ap_axi_sdata.h"
 
 using namespace hls;
 using namespace std;
@@ -57,22 +58,15 @@ const ap_uint< 8> PROTO_UDP 	= 17;
 
 
 
-struct axiWordIn {
-	ap_uint<512>	data;
-	ap_uint<64>		keep;
-	ap_uint<1>		last;
-};
-
-
 typedef ap_uint<3>		dest_type;
+typedef ap_axiu<512,0,0,3> axiWord;
 
-struct axiWordOut {
-	ap_uint<512>	data;
-	ap_uint<64>		keep;
-	ap_uint<1>		last;
-	dest_type		dest;
+struct axiWordi {
+  ap_uint<512>  data;
+  ap_uint<64>   keep;
+  ap_uint<1>    last;
+  dest_type     dest;
 };
-
 
 
 /**
@@ -84,7 +78,7 @@ struct axiWordOut {
  *   
  */
 void packet_handler(
-			stream<axiWordIn>&			dataIn,
-			stream<axiWordOut>&			dataOut);
+			stream<axiWord>&			dataIn,
+			stream<axiWord>&			dataOut);
 
 #endif

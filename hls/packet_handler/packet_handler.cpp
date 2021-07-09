@@ -49,17 +49,17 @@ ap_uint<16> byteSwap16(ap_uint<16> inputVector) {
  * @param      dataOut  The data out
  */
 void ethernet_remover (			
-			stream<axiWordOut>&			dataIn,
-			stream<axiWordOut>&			dataOut) {
+			stream<axiWordi>&			dataIn,
+			stream<axiWord>&			dataOut) {
 
 #pragma HLS PIPELINE II=1
 
 	enum er_states {FIRST_WORD , FWD , REMOVING, EXTRA};
 	static er_states er_fsm_state = FIRST_WORD;
 
-	axiWordOut 			currWord;
-	axiWordOut 			sendWord;
-	static axiWordOut 	prevWord;
+	axiWordi 			currWord;
+	axiWord 			sendWord;
+	static axiWordi 	prevWord;
 
 	switch (er_fsm_state){
 		case FIRST_WORD:
@@ -67,7 +67,10 @@ void ethernet_remover (
 				dataIn.read(currWord);
 				
 				if (currWord.dest == 0){			// ARP packets must remain intact
-					sendWord = currWord;
+					sendWord.data = currWord.data;
+					sendWord.keep = currWord.keep;
+					sendWord.dest = currWord.dest;
+					sendWord.last = currWord.last;
 					er_fsm_state 	= FWD;
 				}
 				else{								// No ARP packet, Re arrange the order in the output word
@@ -97,7 +100,11 @@ void ethernet_remover (
 				if (currWord.last){
 					er_fsm_state = FIRST_WORD;
 				}
-				dataOut.write(currWord);
+				sendWord.data = currWord.data;
+				sendWord.keep = currWord.keep;
+				sendWord.dest = currWord.dest;
+				sendWord.last = currWord.last;
+				dataOut.write(sendWord);
 			}
 			break;
 		case REMOVING:
@@ -159,8 +166,8 @@ void ethernet_remover (
  * @param      dataOut  The data out
  */
 void packet_identification(
-			stream<axiWordIn>&			dataIn,
-			stream<axiWordOut>&			dataOut) {
+			stream<axiWord>&			dataIn,
+			stream<axiWordi>& 		dataOut) {
 
 
 #pragma HLS PIPELINE II=1
@@ -171,8 +178,8 @@ void packet_identification(
 	static dest_type tdest_r;
 	
 	dest_type tdest;
-	axiWordIn 	currWord;
-	axiWordOut 	sendWord;
+	axiWord   	currWord;
+	axiWordi  	sendWord;
 	ap_uint<16>	ethernetType;
 	ap_uint<4>	ipVersion;
 	ap_uint<8>	ipProtocol;
@@ -266,8 +273,8 @@ void packet_identification(
  *   
  */
 void packet_handler(
-			stream<axiWordIn>&			dataIn,
-			stream<axiWordOut>&			dataOut) {
+			stream<axiWord>&			dataIn,
+			stream<axiWord>&			dataOut) {
 
 #pragma HLS INTERFACE ap_ctrl_none port=return
 #pragma HLS DATAFLOW
@@ -275,15 +282,14 @@ void packet_handler(
 #pragma HLS INTERFACE axis register both port=dataIn name=s_axis
 #pragma HLS INTERFACE axis register both port=dataOut name=m_axis
 
-	static stream<axiWordOut>     eth_level_pkt("eth_level_pkt");
+	static stream<axiWordi>     eth_level_pkt("eth_level_pkt");
 	#pragma HLS STREAM variable=eth_level_pkt depth=16
-	#pragma HLS DATA_PACK variable=eth_level_pkt
 
 	packet_identification(
 			dataIn,
 			eth_level_pkt); 
 
-	ethernet_remover (			
+	ethernet_remover (
 			eth_level_pkt,
 			dataOut);
 
