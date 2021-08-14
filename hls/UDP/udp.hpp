@@ -58,7 +58,7 @@ struct axis_udp {
                 : data(data), keep(keep), last(last) {}
 };
 
-typedef ap_axiu<ETH_INTERFACE_WIDTH,96,1,16> axiWordUdp;
+typedef ap_axiu<ETH_INTERFACE_WIDTH, 96, 0, 16> axiWordUdp;
 
 typedef axis_udp<ETH_INTERFACE_WIDTH> axiWordi;
 

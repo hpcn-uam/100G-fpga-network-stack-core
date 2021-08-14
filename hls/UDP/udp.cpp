@@ -1,5 +1,5 @@
 /**********
-Copyright (c) 2020, Xilinx, Inc.
+Copyright (c) 2021, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -215,7 +215,7 @@ void rxEngPacketDropper (
                 repdDataIn.read(currWord);
                 sendWord.data = currWord.data;
                 sendWord.keep = currWord.keep;
-                sendWord.id = response.id;
+                sendWord.dest = response.id;
                 sendWord.last = currWord.last;
                 sendWord.user = (response.user.myIP, response.user.theirIP, response.user.myPort, response.user.theirPort);
                 if (!response.drop)
@@ -297,8 +297,10 @@ void udpTxEngine (
     axiWord     sendWord;
     ap_uint<16> currLen;
 
-#pragma HLS DISAGGREGATE variable=currWord
-    //DISAGGREGATE
+    sendWord.data = 0;
+    sendWord.keep = 0;
+    sendWord.last = 0;
+
     switch (ute_state) {
         case GET_METADATA:
             if (!MetaIn.empty() && !ploadLenIn.empty()){
