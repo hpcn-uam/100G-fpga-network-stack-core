@@ -109,9 +109,11 @@ void remove_ethernet (
 					  	stream<axiWord>&			dataOut)
 {
 
-	axiWord currWord;
-	axiWord prevWord = axiWord(0,0,0);
-	axiWord sendWord = axiWord(0,0,0);;
+	axiWord currWord, prevWord, sendWord;
+	prevWord.data = 0;
+	prevWord.keep = 0;
+	prevWord.last = 0;
+	sendWord = prevWord;
 
 	static int pkt_count = 0;
 	int wordCount = 0;
