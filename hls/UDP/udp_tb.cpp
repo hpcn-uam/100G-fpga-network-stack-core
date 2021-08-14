@@ -1,5 +1,5 @@
 /**********
-Copyright (c) 2020, Xilinx, Inc.
+Copyright (c) 2021, Xilinx, Inc.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -56,7 +56,11 @@ void readTxtFile () {
 
     /*Create payloads ranging from 1 to 1508 bytes */
     for (unsigned int upper_limit= 1; upper_limit <(text.size() + 1); upper_limit++){
-        axiWordUdp currWord = axiWordUdp(0,0,1,0);
+        axiWordUdp currWord;
+        currWord.data = 0;
+        currWord.keep = 0;
+        currWord.last = 0;
+        currWord.dest = 1;
         for(unsigned int i = 0; i < upper_limit; i++) {
             unsigned int lb = (i % 64) * 8;
             currWord.data(lb + 7 , lb) = text.at(i);
@@ -71,7 +75,10 @@ void readTxtFile () {
             else if (((i + 1) % 64) == 0){
                 DataInApp.write(currWord);
                 AppRxGolden.write(currWord);
-                currWord = axiWordUdp(0,0,1,0);
+                currWord.data = 0;
+                currWord.keep = 0;
+                currWord.last = 0;
+                currWord.dest = 1;
             }
         }
     }
@@ -83,9 +90,9 @@ void fillTables(){
         SocketTable[i]= socket_table(0,0,0,0);
     }
 
-    SocketTable[ 1] = socket_table(0xC0A8000A,53211,60279,1);
-    SocketTable[ 6] = socket_table(0xC0A80017,58517,60280,1);
-    SocketTable[11] = socket_table(0xC0A80085,54591,60281,1);
+    SocketTable[ 1] = socket_table(0xC0A8000A, 53211, 60279, 1);
+    SocketTable[ 6] = socket_table(0xC0A80017, 58517, 60280, 1);
+    SocketTable[11] = socket_table(0xC0A80085, 54591, 60281, 1);
 
 #ifdef PRINT_TABLE
     for (unsigned int m=0; m< NUMBER_SOCKETS; m++){
@@ -94,7 +101,6 @@ void fillTables(){
     }
 #endif    
 }
-
 
 int main(void){
 
@@ -121,7 +127,7 @@ int main(void){
     // Duplicate pcap data, one stream is used to feed the rxUdpDataIn and the other as golden output for the Tx Side
     unsigned int rxBeats = 0;
     while(!streamGoldenData.empty()){
-        axiWord currWord,sendWord;
+        axiWord currWord, sendWord;
         streamGoldenData.read(currWord);
         sendWord = currWord;
         // Swap IPs and Port to make it match table
@@ -156,7 +162,7 @@ int main(void){
 
     /*************************************
       Check Rx output against golden data
-     *************************************/ 
+     *************************************/
     unsigned int rxPacket = 0;
     unsigned int rxBeat   = 0;
     int          rxErrors = 0;
@@ -166,31 +172,40 @@ int main(void){
         AppRxGolden.read(goldenWord);
         DataOutApp.read(currWord);
         if (goldenWord.data != currWord.data){
-#ifndef DEBUG
-            std::cerr << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
-            std::cerr << rxBeat << "] data field does not match golden data" << std::endl;
+#ifdef DEBUG
+            std::cout << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
+            std::cout << rxBeat << "] data field does not match golden data" << std::endl;
+            std::cout << "Golden: " << std::hex << std::setw(130) << std::setfill('0') << goldenWord.data << std::endl;
+            std::cout << "Result: " << std::setw(130) << std::setfill('0') << currWord.data << std::dec << std::endl;
 #endif
             rxErrors--;
         }
 
         if (goldenWord.keep != currWord.keep){
-#ifndef DEBUG
-            std::cerr << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
-            std::cerr << rxBeat << "] keep field does not match golden data" << std::endl;
+#ifdef DEBUG
+            std::cout << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
+            std::cout << rxBeat << "] keep field does not match golden data" << std::endl;
+            std::cout << "Golden: " << std::hex << std::setw(18) << std::setfill('0') << goldenWord.keep << std::endl;
+            std::cout << "Result: " << std::setw(18) << std::setfill('0') << currWord.keep << std::dec << std::endl;
 #endif
             rxErrors--;
         }
         if (goldenWord.dest != currWord.dest){
-#ifndef DEBUG
-            std::cerr << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
-            std::cerr << rxBeat << "] dest field does not match golden data" << std::endl;
+#ifdef DEBUG
+            std::cout << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
+            std::cout << rxBeat << "] dest field does not match golden data" << std::endl;
+            std::cout << "Golden: " << std::setfill('0') << std::setw(2) << goldenWord.dest << std::endl;
+            std::cout << "Result: " << std::setfill('0') << std::setw(2) << currWord.dest << std::endl;
+            std::cout << "Extra : " << std::setfill('0') << std::setw(2) << currWord.id << std::endl;
 #endif
             rxErrors--;
         }        
         if (goldenWord.last != currWord.last){
-#ifndef DEBUG
-            std::cerr << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
-            std::cerr << rxBeat << "] last field does not match golden data" << std::endl;
+#ifdef DEBUG
+            std::cout << "Rx path, packet[" << std::setw(4) << rxPacket << "][" << std::setw(2);
+            std::cout << rxBeat << "] last field does not match golden data" << std::endl;
+            std::cout << "Golden: "  << goldenWord.last << std::endl;
+            std::cout << "Result: "  << currWord.last << std::endl;
 #endif
             rxErrors--;
         }
@@ -213,7 +228,7 @@ int main(void){
     }
 
     /*Store Tx path in a pcap file*/
-    stream2pcap(outputPcap,false,false,txUdpDataOutpcap,true);
+    stream2pcap(outputPcap, false, false, txUdpDataOutpcap, true);
 
     unsigned int txPacket = 0;
     unsigned int txBeat = 0;
@@ -226,23 +241,29 @@ int main(void){
         
         if (currWordS.data != currWordG.data){
 #ifdef DEBUG
-            std::cerr << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
-            std::cerr << txBeat << "] data field does not match golden data" << std::endl;
+            std::cout << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
+            std::cout << txBeat << "] data field does not match golden data" << std::endl;
+            std::cout << "Golden: " << std::hex << std::setw(130) << std::setfill('0') << currWordG.data << std::endl;
+            std::cout << "Result: " << std::setw(130) << std::setfill('0') << currWordS.data << std::dec << std::endl;
 #endif
             txErrors--;
         }
 
         if (currWordS.keep != currWordG.keep){
 #ifdef DEBUG
-            std::cerr << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
-            std::cerr << txBeat << "] keep field does not match golden data" << std::endl;
+            std::cout << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
+            std::cout << txBeat << "] keep field does not match golden data" << std::endl;
+            std::cout << "Golden: " << std::hex << std::setw(18) << std::setfill('0') << goldenWord.keep << std::endl;
+            std::cout << "Result: " << std::setw(18) << std::setfill('0') << currWordG.keep << std::dec << std::endl;
 #endif
             txErrors--;
         }
         if (currWordS.last != currWordG.last){
 #ifdef DEBUG
-            std::cerr << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
-            std::cerr << txBeat << "] last field does not match golden data" << std::endl;
+            std::cout << "Tx path, packet[" << std::setw(4) << txPacket << "][" << std::setw(2);
+            std::cout << txBeat << "] last field does not match golden data" << std::endl;
+            std::cout << "Golden: "  << currWordG.last << std::endl;
+            std::cout << "Result: "  << currWordS.last << std::endl;
 #endif
             txErrors--;
         }
@@ -270,7 +291,4 @@ int main(void){
     }
     else
         return 0;
-
-
-
 }
