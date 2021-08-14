@@ -34,7 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ************************************************/
 
 #include "icmp_server.hpp"
-#include "pcap2stream.hpp"
+#include "../TOE/testbench/pcap2stream.hpp"
 
 using namespace hls;
 using namespace std;
