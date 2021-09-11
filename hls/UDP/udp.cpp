@@ -245,7 +245,7 @@ void appGetMetaData (
 
     switch(agmd_state){
         case GET_METADATA:
-            if (!DataIn.empty()){
+            if (!DataIn.empty() && !DataOut.full()){
                 DataIn.read(currWord);
                 idOut.write(currWord.dest);
                 sendWord = axiWordi(currWord.data, currWord.keep, currWord.last);
@@ -261,7 +261,7 @@ void appGetMetaData (
             }
             break;
         case FORWARD:
-            if (!DataIn.empty()){
+            if (!DataIn.empty() && !DataOut.full()){
                 DataIn.read(currWord);
                 sendWord = axiWordi(currWord.data, currWord.keep, currWord.last);
                 DataOut.write(sendWord);
@@ -446,10 +446,10 @@ void udp(
     #pragma HLS STREAM variable=rthDropFifo depth=32
 
     static stream<ap_uint<16> >     agmdIdOut("agmdIdOut");
-    #pragma HLS STREAM variable=agmdIdOut depth=32
+    #pragma HLS STREAM variable=agmdIdOut depth=256
 
     static stream<ap_uint<16> >     agmdpayloadLenOut("agmdpayloadLenOut");
-    #pragma HLS STREAM variable=agmdpayloadLenOut depth=32
+    #pragma HLS STREAM variable=agmdpayloadLenOut depth=256
 
 
     static stream<udpMetadata>     txthMetaData("txthMetaData");
