@@ -1,35 +1,42 @@
-# 100 GbE TCP offload Engine
+# 100 GbE UDP
 
-This repository implements from OSI layer 3 to above and is part of Limago. To generate the complete stack please refer to [Limago](https://github.com/hpcn-uam/Limago)
+This branch implements the Network layer of [VNx](https://github.com/Xilinx/xup_vitis_network_example), for the full stack (TCP) refer to the [master](https://github.com/hpcn-uam/100G-fpga-network-stack-core) branch
 
 ## Prerequisites
 
-*Make sure that Vivado-HLS is in the PATH and you are running a supported version*
+*Make sure that Vitis HLS is in the PATH and you are running a supported version*
 
-- Vivado-HLS 2018.2 to Vivado-HLS 2020.1
+- Vitis HLS 2021.1 or newer
 
 If you are not sure what version is running execute the following command:
 
 ```
-vivado_hls -version
+vitis_hls -version
 ```
-
 
 ## Getting Started
 
-Execute `make` in the root folder, a new folder named `synthesis_results` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
+The makefile process is automated to target Virtex Ultrascale+ and Virtex Ultrascale+ HBM devices.
+
+### Virtex Ultrascale+
+
+Execute `make` in the root folder, a new folder named `synthesis_results_noHBM` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
+
+### Virtex Ultrascale+ HBM
+
+Execute `make hbm` in the root folder, a new folder named `synthesis_results_HBM` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
 
 ## Explore the IP-Cores
 
-You can check the synthetized project under `synthesis_results`. For instance, if you want to open the TOE
+You can check the synthetized project under the folder `synthesis_results_noHBM` or `synthesis_results_HBM`. For instance, if you want to open the UDP IP
 
 ```
-vivado_hls -p synthesis_results/TOE_hls_prj/
+vivado_hls -p synthesis_results_HMB/UDP_prj/
 ```
 
 
 ## Citation
-If you use the TCP/IP stack or the checksum computation in your project please cite one of the following papers and/or link to the github project:
+If you use this stack or the checksum computation in your project please cite one of the following papers and/or link to the github project:
 
 ```
 @inproceedings{sutter2018fpga,
