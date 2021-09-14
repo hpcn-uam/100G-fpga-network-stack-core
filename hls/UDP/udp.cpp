@@ -434,10 +434,10 @@ void udp(
     // Internal streams are of a different type, since Vitis HLS does not support
     // standard ap_axiu for internal channels
     static stream<axiWordi>     ureDataPayload("ureDataPayload");
-    #pragma HLS STREAM variable=ureDataPayload depth=512
+    #pragma HLS STREAM variable=ureDataPayload depth=256
 
     static stream<axiWordi>     agmdDataOut("agmdDataOut");
-    #pragma HLS STREAM variable=agmdDataOut depth=512
+    #pragma HLS STREAM variable=agmdDataOut depth=256
 
     static stream<udpMetadata>     ureMetaData("ureMetaData");
     #pragma HLS STREAM variable=ureMetaData depth=32
