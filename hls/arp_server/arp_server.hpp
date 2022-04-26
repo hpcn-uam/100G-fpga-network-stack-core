@@ -60,6 +60,20 @@ const ap_uint<48> BROADCAST_MAC	= 0xFFFFFFFFFFFF;	// Broadcast MAC Address
 
 const uint8_t 	noOfArpTableEntries	= 8;
 
+struct arpTableEntry {
+public:
+	ap_uint<48>	macAddress;
+	ap_uint<32> ipAddress;
+	ap_uint<1>	valid;
+	arpTableEntry() {}
+	arpTableEntry(ap_uint<48> newMac, ap_uint<32> newIp, ap_uint<1> newValid)
+				 : macAddress(newMac), ipAddress(newIp), valid(newValid) {}
+
+	ap_uint<32> get_id(void){
+		return ipAddress(31,24);
+	}
+};
+
 struct arpTableReply
 {
 	ap_uint<48> macAddress;
@@ -67,15 +81,8 @@ struct arpTableReply
 	arpTableReply() {}
 	arpTableReply(ap_uint<48> macAdd, bool hit)
 			:macAddress(macAdd), hit(hit) {}
-};
-
-struct arpTableEntry {
-	ap_uint<48>	macAddress;
-	ap_uint<32> ipAddress;
-	ap_uint<1>	valid;
-	arpTableEntry() {}
-	arpTableEntry(ap_uint<48> newMac, ap_uint<32> newIp, ap_uint<1> newValid)
-				 : macAddress(newMac), ipAddress(newIp), valid(newValid) {}
+	arpTableReply(arpTableEntry arp_entry)
+			:macAddress(arp_entry.macAddress), hit(arp_entry.valid) {}
 };
 
 struct arpReplyMeta
