@@ -204,7 +204,7 @@ void arp_pkg_sender(
 void arp_table( 
 		stream<arpTableEntry>& 		arpTableInsertIn,
         stream<ap_uint<32> >& 		macIpEncode_req,
-        stream<arpTableReply>& 		macIpEncode_rsp,
+        stream<arpTableEntry>& 		macIpEncode_rsp,
         stream<ap_uint<32> >& 		arpRequestOut,
         arpTableEntry				arpTable[256],
         ap_uint<32>&                myIpAddress,
@@ -223,7 +223,7 @@ void arp_table(
 
 	if (!arpTableInsertIn.empty()) {
 		arpTableInsertIn.read(currEntry);
-		arpTable[currEntry.ipAddress(31,24)] = currEntry;
+		arpTable[currEntry.get_id()] = currEntry;
 	}
 	else if (!macIpEncode_req.empty()) {
 		macIpEncode_req.read(query_ip);
@@ -240,7 +240,7 @@ void arp_table(
 			arpRequestOut.write(query_ip);	// send ARP request
 		}
 		// Send response to an IP to MAC association
-		macIpEncode_rsp.write(arpTableReply(currEntry.macAddress, currEntry.valid));
+		macIpEncode_rsp.write(currEntry);
 	}
 
 }
@@ -256,7 +256,7 @@ void arp_table(
  */
 void genARPDiscovery (
 		stream<ap_uint<32> >& 		macIpEncodeIn, 
-		stream<arpTableReply>&    	macIpEncode_rsp_i,
+		stream<arpTableEntry>&    	macIpEncode_rsp_i,
 		stream<arpTableReply>&    	macIpEncode_rsp_o,
 		stream<ap_uint<32> >& 		macIpEncodeOut,
 		ap_uint< 1>& 				arp_scan,
@@ -279,7 +279,7 @@ void genARPDiscovery (
 	static ap_uint<8> 	ip_lsb = 0;
 	static ap_uint< 1>	arp_scan_1d = 0;
 	ap_uint<32>			ip_aux;
-	arpTableReply 		macEnc_i;
+	arpTableEntry 		macEnc_i;
 	ap_uint<1>			checkArpScan = 0;
 
 	switch (gia_fsm_state){
@@ -395,7 +395,7 @@ void arp_server(
 	static stream<ap_uint<32> >     		macIpEncode_i("macIpEncode_i");
 	#pragma HLS STREAM variable=macIpEncode_i depth=4
 
-	static stream<arpTableReply> 		macIpEncode_rsp_i("macIpEncode_rsp_i");
+	static stream<arpTableEntry> 		macIpEncode_rsp_i("macIpEncode_rsp_i");
 	#pragma HLS STREAM variable=macIpEncode_rsp_i depth=4
 
 	genARPDiscovery (
