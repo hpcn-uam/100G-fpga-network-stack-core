@@ -39,7 +39,7 @@ Execute `make versalhbm` in the root folder, a new folder named `synthesis_resul
 You can check the synthetized project under the folder `synthesis_results_noHBM`, `synthesis_results_HBM`, `synthesis_results_versalaicore` and `synthesis_results_versalHBM`. For instance, if you want to open the UDP IP
 
 ```sh
-vivado_hls -p synthesis_results_versalHBM/UDP_prj/
+vitis_hls -classic -p synthesis_results_versalHBM/UDP_prj/
 ```
 
 ## Citation

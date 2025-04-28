@@ -25,7 +25,7 @@ versalaicore:
 versalhbm:
 	mkdir -p synthesis_results_versalHBM
 	cp Makefile.synthesis synthesis_results_versalHBM/Makefile
-	make -C synthesis_results_versalHBM FPGAPART=xcv80-lsva4737-2MHP-e-S -j4
+	make -C synthesis_results_versalHBM FPGAPART=xcv80-lsva4737-2MHP-e-S CLKPERIOD=2.0 -j4
 
 
 clean:

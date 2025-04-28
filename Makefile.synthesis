@@ -13,6 +13,7 @@ TCLDIR=$(TOPDIR)/scripts
 
 
 FPGAPART ?= xcu250-figd2104-2L-e
+CLKPERIOD ?= 2.8
 
 project = ARP_hls_prj ETH_inserter_hls_prj ICMP_hls_prj PKT_HANDLER_prj UDP_prj
 
@@ -32,44 +33,44 @@ distclean: clean
 TOE_hls_prj: $(shell find $(TOESCR) -type f) \
 			 $(TCLDIR)/toe_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/toe_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 IPERF2_TCP_hls_prj: $(shell find $(IPERFSRC) -type f) \
 			 $(TCLDIR)/iperf2_tcp_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/iperf2_tcp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 ECHOSERVER_hls_prj: $(shell find $(ECHOSRC) -type f) $(TCLDIR)/echo_server_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/echo_server_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/echo_server_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 ARP_hls_prj: $(shell find $(ARPSRC) -type f) $(TCLDIR)/arp_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/arp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/arp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 ETH_inserter_hls_prj: $(shell find $(ETHSRC) -type f) $(TCLDIR)/ethernet_inserter_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/ethernet_inserter_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/ethernet_inserter_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 ICMP_hls_prj: $(shell find $(ICMPSRC) -type f) $(TCLDIR)/icmp_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/icmp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/icmp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 PKT_HANDLER_prj: $(shell find $(PKTSRC) -type f) $(TCLDIR)/packet_handler_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/packet_handler_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 userAbstraction_prj: $(shell find $(USRSRC) -type f) $(TCLDIR)/userAbstraction.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/userAbstraction.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/userAbstraction.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 portHandler_prj: $(shell find $(PORTSRC) -type f) $(TCLDIR)/portHandler.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/portHandler.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/portHandler.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 UDP_prj: $(shell find $(UDPSRC) -type f) $(TCLDIR)/udp_script.tcl
 	rm -rf $@
-	vitis_hls -f $(TCLDIR)/udp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART)
+	vitis_hls -f $(TCLDIR)/udp_script.tcl -tclargs $(TOPDIR) $@ $(FPGAPART) $(CLKPERIOD)
 
 .PHONY: list help
 list:
