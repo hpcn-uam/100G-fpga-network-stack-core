@@ -6,7 +6,7 @@ This branch implements the Network layer of [VNx](https://github.com/Xilinx/xup_
 
 *Make sure that Vitis HLS is in the PATH and you are running a supported version*
 
-- Vitis HLS 2021.1 or newer
+- Vitis HLS 2024.1 or newer
 
 If you are not sure what version is running execute the following command:
 
@@ -16,27 +16,34 @@ vitis_hls -version
 
 ## Getting Started
 
-The makefile process is automated to target Virtex Ultrascale+ and Virtex Ultrascale+ HBM devices.
+The Makefile process is automated to target Virtex™ Ultrascale+, Virtex™ Ultrascale+ HBM, Versal™ AI Core Series and Versal™ HBM Series devices.
 
-### Virtex Ultrascale+
+### Virtex™ Ultrascale+
 
 Execute `make` in the root folder, a new folder named `synthesis_results_noHBM` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
 
-### Virtex Ultrascale+ HBM
+### Virtex™ Ultrascale+ HBM
 
 Execute `make hbm` in the root folder, a new folder named `synthesis_results_HBM` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
 
+### Versal™ AI Core Series
+
+Execute `make versalaicore` in the root folder, a new folder named `synthesis_results_versalaicore` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
+
+### Versal™ HBM Series
+
+Execute `make versalhbm` in the root folder, a new folder named `synthesis_results_versalHBM` will be created. After the folder creation the project will launch the Synthesis of the different IP-Cores. Be patient this may take around 10 minutes.
+
 ## Explore the IP-Cores
 
-You can check the synthetized project under the folder `synthesis_results_noHBM` or `synthesis_results_HBM`. For instance, if you want to open the UDP IP
+You can check the synthetized project under the folder `synthesis_results_noHBM`, `synthesis_results_HBM`, `synthesis_results_versalaicore` and `synthesis_results_versalHBM`. For instance, if you want to open the UDP IP
 
+```sh
+vitis_hls -classic -p synthesis_results_versalHBM/UDP_prj/
 ```
-vivado_hls -p synthesis_results_HMB/UDP_prj/
-```
-
 
 ## Citation
-If you use this stack or the checksum computation in your project please cite one of the following papers and/or link to the github project:
+If you use this stack or the checksum computation in your project please cite one of the following papers and/or link to the GitHub project:
 
 ```
 @inproceedings{sutter2018fpga,

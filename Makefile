@@ -1,7 +1,7 @@
 
 
 .PHONY:all
-all: nohbm hbm versalaicore
+all: nohbm hbm versalaicore versalhbm
 
 .PHONY:nohbm
 nohbm:
@@ -20,6 +20,13 @@ versalaicore:
 	mkdir -p synthesis_results_versalaicore
 	cp Makefile.synthesis synthesis_results_versalaicore/Makefile
 	make -C synthesis_results_versalaicore FPGAPART=xcvc1902-vsva2197-2MP-e-S -j4
+
+.PHONY:versalhbm
+versalhbm:
+	mkdir -p synthesis_results_versalHBM
+	cp Makefile.synthesis synthesis_results_versalHBM/Makefile
+	make -C synthesis_results_versalHBM FPGAPART=xcv80-lsva4737-2MHP-e-S CLKPERIOD=2.0 -j4
+
 
 clean:
 	rm -rf *.log *.jou
