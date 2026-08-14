@@ -98,7 +98,7 @@ module size_checker#
     M_AXIS_TDEST      <= S_AXIS_TDEST;    
     M_AXIS_TUSER      <= S_AXIS_TUSER;          
 
-    if (S_AXIS_TVALID && S_AXIS_TREADY && S_AXIS_TLAST) begin         // one-transaction packet
+    if (S_AXIS_TVALID && S_AXIS_TLAST) begin                          // one-transaction packet
       if (first_transaction && ~S_AXIS_TKEEP[59]) begin
         M_AXIS_TKEEP    <= {4'd0,{60{1'b1}}};                         // complete packet to the minimum size (60 bytes)
       end
