@@ -21,7 +21,7 @@ module size_checker_backpressure_tb;
   reg m_axis_tready = 1'b0;
 
   reg [579:0] stalled_payload;
-  localparam [63:0] PADDED_KEEP = {4'b0000, {60{1'b1}}};
+  integer beat_id = 0;
 
   always #5 clk = ~clk;
 
@@ -55,12 +55,77 @@ module size_checker_backpressure_tb;
     };
   endfunction
 
-  task automatic check_stable;
+  function automatic [63:0] keep_mask(input integer byte_count);
     begin
-      @(posedge clk);
+      if (byte_count == 64)
+        keep_mask = {64{1'b1}};
+      else
+        keep_mask = (64'b1 << byte_count) - 1'b1;
+    end
+  endfunction
+
+  task automatic send_beat(
+    input integer valid_bytes,
+    input reg last,
+    input integer stall_cycles,
+    input [63:0] expected_keep
+  );
+    integer cycle;
+    begin
+      @(negedge clk);
+      s_axis_tdata = {448'b0, beat_id[31:0], valid_bytes[15:0], stall_cycles[15:0]};
+      s_axis_tkeep = keep_mask(valid_bytes);
+      s_axis_tlast = last;
+      s_axis_tvalid = 1'b1;
+      m_axis_tready = (stall_cycles == 0);
       #1;
-      if (output_payload() !== stalled_payload)
-        $fatal(1, "AXI output changed while TVALID was stalled");
+
+      if (!m_axis_tvalid || m_axis_tkeep !== expected_keep)
+        $fatal(1, "unexpected output mask for %0d-byte beat", valid_bytes);
+      if (m_axis_tdata !== s_axis_tdata || m_axis_tlast !== last)
+        $fatal(1, "output payload does not match the input beat");
+      stalled_payload = output_payload();
+
+      for (cycle = 0; cycle < stall_cycles; cycle = cycle + 1) begin
+        @(posedge clk);
+        #1;
+        if (output_payload() !== stalled_payload)
+          $fatal(1, "AXI output changed during stall cycle %0d", cycle);
+      end
+
+      if (stall_cycles != 0) begin
+        @(negedge clk);
+        m_axis_tready = 1'b1;
+        #1;
+        if (output_payload() !== stalled_payload)
+          $fatal(1, "AXI output changed when TREADY was released");
+      end
+
+      @(posedge clk);
+      @(negedge clk);
+      s_axis_tvalid = 1'b0;
+      s_axis_tlast = 1'b0;
+      beat_id = beat_id + 1;
+    end
+  endtask
+
+  task automatic send_packet(input integer byte_count, input integer stall_cycles);
+    integer remaining;
+    integer beat_bytes;
+    begin
+      remaining = byte_count;
+      while (remaining > 64) begin
+        send_beat(64, 1'b0, 0, keep_mask(64));
+        remaining = remaining - 64;
+      end
+
+      beat_bytes = remaining;
+      if (byte_count < 60)
+        send_beat(beat_bytes, 1'b1, stall_cycles, keep_mask(60));
+      else
+        send_beat(beat_bytes, 1'b1, stall_cycles, keep_mask(beat_bytes));
+
+      @(posedge clk);
     end
   endtask
 
@@ -72,57 +137,25 @@ module size_checker_backpressure_tb;
     @(negedge clk);
     rst_n = 1'b1;
 
-    // A short single-beat frame must be padded before READY is asserted.
-    s_axis_tdata = 512'h0123456789abcdef;
-    s_axis_tkeep = {{44{1'b0}}, {20{1'b1}}};
-    s_axis_tlast = 1'b1;
-    s_axis_tvalid = 1'b1;
     s_axis_tdest = 1'b1;
     s_axis_tuser = 1'b1;
-    m_axis_tready = 1'b0;
 
-    @(posedge clk);
-    #1;
-    if (!m_axis_tvalid || m_axis_tkeep !== PADDED_KEEP)
-      $fatal(1, "short single-beat frame was not padded while stalled");
-    stalled_payload = output_payload();
-    repeat (3) check_stable();
+    send_packet(60, 0);
+    send_packet(62, 0);
+    send_packet(50, 0);
+    send_packet(133, 0);
 
-    @(negedge clk);
-    m_axis_tready = 1'b1;
-    @(posedge clk);
-    #1;
-    if (m_axis_tkeep !== PADDED_KEEP)
-      $fatal(1, "padding changed on the acceptance cycle");
+    send_packet(60, 1);
+    send_packet(62, 1);
+    send_packet(50, 1);
+    send_packet(133, 1);
 
-    // Only a single-beat frame is padded. A short final beat of a multi-beat
-    // frame must keep the source mask stable during backpressure.
-    @(negedge clk);
-    s_axis_tdata = {512{1'b1}};
-    s_axis_tkeep = {64{1'b1}};
-    s_axis_tlast = 1'b0;
-    @(posedge clk);
+    send_packet(60, 3);
+    send_packet(62, 3);
+    send_packet(50, 3);
+    send_packet(133, 3);
 
-    @(negedge clk);
-    s_axis_tdata = 512'hfedcba9876543210;
-    s_axis_tkeep = {{54{1'b0}}, {10{1'b1}}};
-    s_axis_tlast = 1'b1;
-    m_axis_tready = 1'b0;
-    @(posedge clk);
-    #1;
-    if (m_axis_tkeep !== {{54{1'b0}}, {10{1'b1}}})
-      $fatal(1, "multi-beat final mask was incorrectly padded");
-    stalled_payload = output_payload();
-    repeat (3) check_stable();
-
-    @(negedge clk);
-    m_axis_tready = 1'b1;
-    @(posedge clk);
-    @(negedge clk);
-    s_axis_tvalid = 1'b0;
-    s_axis_tlast = 1'b0;
-
-    $display("PASS: size_checker output is stable under backpressure");
+    $display("PASS: all 12 size and backpressure cases are stable");
     $finish;
   end
 endmodule
