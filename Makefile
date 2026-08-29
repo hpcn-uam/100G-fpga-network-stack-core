@@ -4,6 +4,10 @@
 all: create_folder_noHBM
 	make -C synthesis_results_noHMB -j4
 
+.PHONY: test
+test:
+	$(MAKE) -C tests
+
 create_folder_noHBM:
 	mkdir -p synthesis_results_noHMB
 	cp Makefile.synthesis synthesis_results_noHMB/Makefile
